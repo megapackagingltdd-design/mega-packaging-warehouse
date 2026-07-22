@@ -556,10 +556,10 @@
 
           <div class="mp-dup-section">
             <h4>Not complete orders (from SendCloud)</h4>
-            <div id="ncomplete-paste-zone" tabindex="0">Click here, then paste a screenshot (Ctrl+V)</div>
+            <p class="mp-pdf-hint">Copy the customer names from the SendCloud labels page and paste them below — one per line (or however they copy; extra spacing is fine). Names are cleaned automatically (titles and reference codes removed) the same way as before.</p>
+            <textarea id="ncomplete-paste-textarea" placeholder="Paste names here, one per line…" style="width:100%; min-height:100px; font-size:14px; padding:10px 12px; border:2px solid var(--line); border-radius:8px; box-sizing:border-box; font-family:inherit; margin-bottom:10px;"></textarea>
             <div class="mp-add-row">
-              <input type="file" id="ncomplete-input" accept="image/*" style="font-size:13px;" />
-              <button class="mp-btn mp-btn-primary" id="btn-process-ncomplete">Process screenshot</button>
+              <button class="mp-btn mp-btn-primary" id="btn-process-ncomplete">Process names</button>
               <button class="mp-btn mp-btn-danger" id="btn-all-sent">All orders sent</button>
             </div>
             <div class="mp-status" id="ncomplete-status-line"></div>
@@ -1154,93 +1154,66 @@ This backup was generated in one click from Back End and contains:
     }
   });
 
-  // ---------- Not complete orders (SendCloud screenshot) ----------
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
+  // ---------- Not complete orders (manually pasted names) ----------
+  // This standalone version has no Anthropic API key wired in (putting one
+  // directly in browser-downloadable code would be a serious security risk —
+  // anyone could extract and misuse it), so instead of reading a screenshot
+  // automatically, staff paste the copied names as plain text and this
+  // cleans each one the same way the AI version used to: strips a leading
+  // title, and drops an obviously-attached PO/reference code whether it's
+  // glued directly onto the name or separated by a dash.
+  function cleanPastedName(raw) {
+    let name = raw.trim();
+    if (!name) return '';
 
-  async function extractNamesFromScreenshot(base64Image, mediaType) {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        system: `You read a screenshot of a shipping labels list (a table with customer names, one row per order) and extract every customer name visible, cleaned the same way names are cleaned for new orders so they can be matched against existing records:
-- Strip a title (Mr, Mrs, Ms, Miss, Mx, Dr, Prof, Sir, Madam, Rev) if the name starts with one.
-- Drop any obviously appended PO/reference/account code, whether it's glued directly onto the name with no space, or separated by a dash or other punctuation — keep ONLY the real human name. For example "Jen Gray - SLTPOJGRAYCULTDAY" -> "Jen Gray"; "MissAmanda P Watts" -> "Amanda P Watts"; "L Spina (FOODCYCLE)POPOR007212" -> "L Spina" (drop the parenthetical and the glued reference code, but keep initials/words that are clearly part of the actual name).
-- Otherwise keep the name exactly as printed — do not otherwise shorten or alter it.
-Read every row, do not skip any. Return ONLY a valid JSON array of the cleaned names, nothing else — no markdown fences, no prose, no explanation. The first character of your reply must be "[" and the last must be "]". Example: ["Tracy Hobson","Clare Derrick","Amanda Watts"]`,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64Image } },
-            { type: 'text', text: 'Extract every customer name from this screenshot, cleaned per the rules in the system prompt. Reply with ONLY the JSON array.' }
-          ]
-        }]
-      })
-    });
-    const data = await response.json();
-    const textBlocks = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n');
-    const cleaned = textBlocks.replace(/```json|```/g, '').trim();
-    try {
-      return JSON.parse(cleaned);
-    } catch (e) {
-      const match = cleaned.match(/\[[\s\S]*\]/);
-      if (match) return JSON.parse(match[0]);
-      throw new Error('Could not read a name list from the response');
+    // Drop a parenthetical plus anything glued directly after it with no
+    // space, e.g. "L Spina (FOODCYCLE)POPOR007212" -> "L Spina"
+    name = name.replace(/\s*\([^)]*\)\S*$/, '').trim();
+
+    // Drop a dash-attached reference/PO code — the bit after " - " with no
+    // spaces that looks code-like (contains a digit, or is a long all-caps
+    // token), e.g. "Jen Gray - SLTPOJGRAYCULTDAY" -> "Jen Gray". A normal
+    // hyphenated surname (rare, usually no spaces around the dash) is left
+    // alone since this only matches a full " - " with spaces either side.
+    const dashMatch = name.match(/^(.*?)\s+-\s+(\S+)$/);
+    if (dashMatch) {
+      const trailing = dashMatch[2];
+      const looksLikeCode = /\d/.test(trailing) || (trailing === trailing.toUpperCase() && trailing.length >= 6);
+      if (looksLikeCode) name = dashMatch[1].trim();
     }
+
+    name = splitGluedTitle(name); // e.g. "MissAmanda" -> "Miss Amanda"
+    name = name.replace(/^(Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Rev)\s+/i, '').trim();
+
+    return name;
   }
 
-  async function processScreenshotFile(file) {
+  async function processPastedNames(rawText) {
     const statusEl = document.getElementById('ncomplete-status-line');
-    // This standalone version has no Anthropic API key wired in (putting one
-    // directly in browser-downloadable code would be a serious security
-    // risk — anyone could extract and misuse it). This feature needs a
-    // small server-side proxy to work outside Claude, which hasn't been set
-    // up yet. Everything else in the app works normally.
-    statusEl.textContent = 'This feature (reading names from a screenshot) needs additional setup to work outside Claude — ask for this to be added if you want it. Everything else works normally.';
+    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+    const cleanNames = lines.map(cleanPastedName).filter(Boolean);
+
+    if (cleanNames.length === 0) {
+      statusEl.textContent = 'Paste some names first — one per line.';
+      return;
+    }
+
+    const oldNames = await getNotCompleteList();
+    const oldSet = new Set(oldNames.map(n => n.toLowerCase()));
+    const newSet = new Set(cleanNames.map(n => n.toLowerCase()));
+    const added = cleanNames.filter(n => !oldSet.has(n.toLowerCase())).length;
+    const removed = oldNames.filter(n => !newSet.has(n.toLowerCase())).length;
+
+    await setNotCompleteList(cleanNames);
+    statusEl.textContent = `Not complete list updated — ${cleanNames.length} order(s) (${added} added, ${removed} removed since last update).`;
+    updateNotCompleteButton();
   }
 
   document.getElementById('btn-process-ncomplete').addEventListener('click', async () => {
-    const input = document.getElementById('ncomplete-input');
-    const file = input.files && input.files[0];
-    if (!file) {
-      document.getElementById('ncomplete-status-line').textContent = 'Choose a screenshot first.';
-      return;
-    }
-    await processScreenshotFile(file);
-    input.value = '';
+    const textarea = document.getElementById('ncomplete-paste-textarea');
+    await processPastedNames(textarea.value);
+    textarea.value = '';
   });
-
-  // Paste a screenshot directly (Ctrl+V / Cmd+V) instead of using the file
-  // picker — works whether the paste zone is focused or anywhere else in
-  // Back End, as long as the clipboard actually contains an image.
-  const pasteZone = document.getElementById('ncomplete-paste-zone');
-  async function handleScreenshotPaste(e) {
-    const addView = document.getElementById('view-add');
-    if (!addView || !addView.classList.contains('active')) return;
-    const items = e.clipboardData && e.clipboardData.items;
-    if (!items) return;
-    for (const item of items) {
-      if (item.type && item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
-          e.preventDefault();
-          pasteZone.textContent = 'Screenshot received — reading it now…';
-          await processScreenshotFile(file);
-          pasteZone.textContent = 'Click here, then paste a screenshot (Ctrl+V)';
-        }
-        break;
-      }
-    }
-  }
-  document.addEventListener('paste', handleScreenshotPaste);
 
   document.getElementById('btn-all-sent').addEventListener('click', async () => {
     const statusEl = document.getElementById('ncomplete-status-line');
