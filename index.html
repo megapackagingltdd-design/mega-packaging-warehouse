@@ -383,6 +383,7 @@
   .mp-search-edit-btn { border: 1.5px solid var(--accent); background: #fff; color: var(--accent); }
   .mp-search-delete-btn { border: 1.5px solid #a33; background: #fff; color: #a33; }
   .mp-search-blue-btn { flex: 1; padding: 7px 0; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border: 1.5px solid #1e6fd9; background: #fff; color: #1e6fd9; }
+  .mp-search-blue-btn.remove-blue { border-color: #777; color: #777; }
   .mp-search-blue-btn:disabled { opacity: 0.6; cursor: default; }
   .mp-history-item.state-green { background: var(--good) !important; border-color: var(--good) !important; }
   .mp-history-item.state-blue { background: #1e6fd9 !important; border-color: #1e6fd9 !important; }
@@ -2949,7 +2950,7 @@ This backup was generated in one click from Back End and contains:
         <div class="mp-search-result-actions">
           <button class="mp-search-edit-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}">Edit</button>
           <button class="mp-search-delete-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}">Delete</button>
-          <button class="mp-search-blue-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${o.state === 'blue' ? ' disabled' : ''}>${o.state === 'blue' ? 'Already Blue' : 'Mark Blue'}</button>
+          <button class="mp-search-blue-btn${o.state === 'blue' ? ' remove-blue' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}" data-current-state="${o.state || 'default'}">${o.state === 'blue' ? 'Remove Blue' : 'Mark Blue'}</button>
         </div>
       </div>`).join('');
   }
@@ -3002,17 +3003,22 @@ This backup was generated in one click from Back End and contains:
     } else if (blueBtn) {
       const id = blueBtn.dataset.id;
       const addedAt = blueBtn.dataset.addedAt;
+      const isCurrentlyBlue = blueBtn.dataset.currentState === 'blue';
+      const targetState = isCurrentlyBlue ? 'default' : 'blue';
       blueBtn.disabled = true;
-      blueBtn.textContent = 'Marking…';
-      const ok = await setSlotState(id, addedAt, 'blue');
+      blueBtn.textContent = isCurrentlyBlue ? 'Removing…' : 'Marking…';
+      const ok = await setSlotState(id, addedAt, targetState);
       if (ok) {
         const order = backendSearchResultsCache.find(o => String(o.id) === String(id));
-        if (order) order.state = 'blue';
-        blueBtn.textContent = 'Already Blue';
+        if (order) order.state = targetState;
+        blueBtn.dataset.currentState = targetState;
+        blueBtn.disabled = false;
+        blueBtn.textContent = targetState === 'blue' ? 'Remove Blue' : 'Mark Blue';
+        blueBtn.classList.toggle('remove-blue', targetState === 'blue');
         loadAndRenderList(); // reflect on the grid immediately
       } else {
         blueBtn.disabled = false;
-        blueBtn.textContent = 'Mark Blue — try again';
+        blueBtn.textContent = isCurrentlyBlue ? 'Remove Blue — try again' : 'Mark Blue — try again';
       }
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
