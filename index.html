@@ -88,6 +88,9 @@
   .mp-preview-item span.prod { color:#555; flex:1; }
   .mp-dup-section { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
   .mp-dup-section h4 { margin: 0 0 6px 0; font-size: 11px; text-transform:uppercase; letter-spacing:.06em; color:#777; }
+  .mp-pin-setting-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 6px; }
+  .mp-pin-toggle { display:flex; align-items:center; gap:7px; font-size: 13px; font-weight: 600; cursor:pointer; }
+  .mp-pin-toggle input[type="checkbox"] { width:16px; height:16px; cursor:pointer; }
   .mp-dup-ok { font-size: 12px; color: var(--good); font-weight:700; padding: 4px 0; }
   .mp-dup-error-item { font-size: 12px; color: #a33; padding: 5px 9px; background: #fbeeea; border: 1px solid #e3b3a8; border-radius: 6px; margin-bottom: 5px; white-space:pre-wrap; }
   .mp-dup-item { border: 1px solid var(--warn); background: #fdf7ea; border-radius: 7px; padding: 8px; margin-bottom: 6px; }
@@ -97,6 +100,19 @@
   .mp-dup-item .dup-new { border-left: 3px solid var(--accent); }
   .mp-dup-item label { display:flex; align-items:center; gap:6px; font-size: 12px; font-weight:600; margin-top: 5px; cursor:pointer; }
   #dup-duplicates { max-height: 130px; overflow-y: auto; }
+  .mp-pin-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 9px; border: 1px solid var(--line);
+    border-radius: 7px; background: var(--panel); margin-bottom: 6px; font-size: 13px;
+  }
+  .mp-pin-row .pin-label { font-weight: 700; flex: 1; }
+  .mp-pin-row .pin-value { font-family: monospace; letter-spacing: .1em; color: #777; }
+  .mp-pin-row.inactive { opacity: 0.55; }
+  .mp-pin-toggle {
+    padding: 5px 10px; border-radius: 6px; border: 1.5px solid var(--good); background: #fff; color: var(--good);
+    font-size: 11px; font-weight: 800; cursor: pointer;
+  }
+  .mp-pin-row.inactive .mp-pin-toggle { border-color: #999; color: #999; }
+  .mp-pin-delete { padding: 5px 10px; border-radius: 6px; border: 1.5px solid #a33; background: #fff; color: #a33; font-size: 11px; font-weight: 800; cursor: pointer; }
   .mp-flag { color: var(--warn); font-weight:700; font-size:11px; }
   .mp-pdf-hint { font-size: 11.5px; color: #777; margin: 0 0 6px 0; max-width: 640px; line-height:1.3; }
   #ncomplete-paste-zone {
@@ -555,6 +571,22 @@
         <div class="mp-add">
           <div id="storage-diag" class="mp-diag">Checking storage connection…</div>
 
+          <div class="mp-dup-section" id="pin-settings-section">
+            <h4>Access PINs</h4>
+            <div class="mp-pin-setting-row">
+              <label class="mp-pin-toggle"><input type="checkbox" id="pin-toggle-backend" /> Require PIN for Back End</label>
+              <input type="text" inputmode="numeric" maxlength="4" id="pin-value-backend" placeholder="4-digit PIN" style="width:90px; font-size:13px; padding:6px 8px; border:1.5px solid var(--line); border-radius:6px;" />
+            </div>
+            <div class="mp-pin-setting-row">
+              <label class="mp-pin-toggle"><input type="checkbox" id="pin-toggle-summary" /> Require PIN for Summary page</label>
+              <input type="text" inputmode="numeric" maxlength="4" id="pin-value-summary" placeholder="4-digit PIN" style="width:90px; font-size:13px; padding:6px 8px; border:1.5px solid var(--line); border-radius:6px;" />
+            </div>
+            <div class="mp-add-row" style="margin-top:6px;">
+              <button class="mp-btn mp-btn-primary" id="btn-save-pins">Save PIN settings</button>
+            </div>
+            <div class="mp-status" id="pin-settings-status"></div>
+          </div>
+
           <div class="mp-dup-section" id="backend-search-section">
             <h4>Search &amp; manage orders</h4>
             <input type="text" id="backend-search-input" placeholder="Type a name or order text… results appear as you type" style="width:100%; font-size:14px; padding:10px 12px; border:2px solid var(--line); border-radius:8px; box-sizing:border-box; margin-bottom:10px;" autocomplete="off" />
@@ -599,6 +631,18 @@
               <button class="mp-btn mp-btn-danger" id="btn-all-sent">All orders sent</button>
             </div>
             <div class="mp-status" id="ncomplete-status-line"></div>
+          </div>
+
+          <div class="mp-dup-section">
+            <h4>Summary page access</h4>
+            <p class="mp-pdf-hint">Manage PINs for the separate summary dashboard (totals + product breakdown). Each PIN can be switched on or off independently — e.g. to revoke one manager's access without affecting anyone else's.</p>
+            <div id="summary-pins-list"></div>
+            <div class="mp-add-row">
+              <input type="text" id="summary-pin-label-input" placeholder="Label (e.g. Manager)" style="flex:1; min-width:120px; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; box-sizing:border-box;" />
+              <input type="text" id="summary-pin-value-input" placeholder="4-digit PIN" inputmode="numeric" pattern="[0-9]*" maxlength="4" style="width:100px; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; box-sizing:border-box;" />
+              <button class="mp-btn mp-btn-primary" id="btn-add-summary-pin">Add PIN</button>
+            </div>
+            <div class="mp-status" id="summary-pins-status-line"></div>
           </div>
         </div>
       </div>
@@ -657,18 +701,37 @@
     }
   }
 
-  // Back End is PIN-gated — asked fresh every time, never stays unlocked.
-  // A wrong PIN (or cancelling) just leaves whichever view was already
-  // showing untouched, so a wrong attempt from Warehouse simply stays on
-  // Warehouse.
-  const BACKEND_PIN = '1988';
-  function showPinModal() {
+  // Back End is PIN-gated by default — but both whether a PIN is required at
+  // all, and what the PIN actually is, are now stored settings rather than
+  // hardcoded, editable from the "Access PINs" section in Back End.
+  const PIN_SETTINGS_KEY = 'pin-settings';
+  const DEFAULT_PIN_SETTINGS = {
+    backendPinEnabled: true, backendPin: '1988',
+    summaryPinEnabled: false, summaryPin: ''
+  };
+
+  async function getPinSettings() {
+    try {
+      const res = await window.storage.get(PIN_SETTINGS_KEY, true);
+      if (!res || !res.value) return { ...DEFAULT_PIN_SETTINGS };
+      return { ...DEFAULT_PIN_SETTINGS, ...JSON.parse(res.value) };
+    } catch (e) {
+      return { ...DEFAULT_PIN_SETTINGS };
+    }
+  }
+
+  async function setPinSettings(settings) {
+    const setRes = await window.storage.set(PIN_SETTINGS_KEY, JSON.stringify(settings), true);
+    return !!setRes;
+  }
+
+  function showPinModal(pin, title) {
     return new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.className = 'mp-modal-overlay';
       overlay.innerHTML = `
         <div class="mp-modal-box" style="max-width:320px; text-align:center;">
-          <p style="font-weight:700; margin-bottom:14px;">Enter 4-digit PIN for Back End</p>
+          <p style="font-weight:700; margin-bottom:14px;">${escapeHtml(title || 'Enter 4-digit PIN')}</p>
           <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pin-input"
             style="width:100%; font-size:28px; text-align:center; letter-spacing:12px; padding:10px; border:2px solid var(--line); border-radius:8px; box-sizing:border-box;" autocomplete="off" />
           <div id="pin-error" style="color:#a33; font-size:13px; font-weight:700; margin-top:8px; min-height:18px;"></div>
@@ -683,7 +746,7 @@
       input.focus();
 
       const submit = () => {
-        if (input.value === BACKEND_PIN) {
+        if (input.value === pin) {
           overlay.remove();
           resolve(true);
         } else {
@@ -702,8 +765,11 @@
 
   tabs.forEach(t => t.addEventListener('click', async () => {
     if (t.dataset.tab === 'add') {
-      const correct = await showPinModal();
-      if (!correct) return; // wrong PIN or cancelled — leaves the current view untouched
+      const settings = await getPinSettings();
+      if (settings.backendPinEnabled) {
+        const correct = await showPinModal(settings.backendPin, 'Enter 4-digit PIN for Back End');
+        if (!correct) return;
+      }
       switchToTab('add');
       return;
     }
@@ -1182,6 +1248,80 @@ This backup was generated in one click from Back End and contains:
     return { restored, skippedDuplicate, skippedNoDate, total: rows.length };
   }
 
+  // ---------- Summary page PIN management UI ----------
+  function genPinId() {
+    return 'pin_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+  }
+
+  async function renderSummaryPinsList() {
+    const listEl = document.getElementById('summary-pins-list');
+    const pins = await getSummaryPins();
+    if (pins.length === 0) {
+      listEl.innerHTML = '<div class="mp-empty">No PINs set up yet — the summary page will show a "no PINs configured" message until you add one.</div>';
+      return;
+    }
+    listEl.innerHTML = pins.map(p => `
+      <div class="mp-pin-row${p.active ? '' : ' inactive'}" data-id="${p.id}">
+        <span class="pin-label">${escapeHtml(p.label || 'Unnamed')}</span>
+        <span class="pin-value">${escapeHtml(p.pin)}</span>
+        <button class="mp-pin-toggle" data-action="toggle" data-id="${p.id}">${p.active ? 'Active' : 'Inactive'}</button>
+        <button class="mp-pin-delete" data-action="delete" data-id="${p.id}">Delete</button>
+      </div>`).join('');
+  }
+
+  document.getElementById('btn-add-summary-pin').addEventListener('click', async () => {
+    const labelInput = document.getElementById('summary-pin-label-input');
+    const pinInput = document.getElementById('summary-pin-value-input');
+    const statusEl = document.getElementById('summary-pins-status-line');
+    const label = labelInput.value.trim();
+    const pin = pinInput.value.trim();
+    if (!/^\d{4}$/.test(pin)) {
+      statusEl.textContent = 'PIN must be exactly 4 digits.';
+      return;
+    }
+    const pins = await getSummaryPins();
+    if (pins.some(p => p.pin === pin)) {
+      statusEl.textContent = 'That PIN is already in use — choose a different one.';
+      return;
+    }
+    pins.push({ id: genPinId(), label: label || 'Unnamed', pin, active: true });
+    const ok = await setSummaryPins(pins);
+    if (ok) {
+      statusEl.textContent = 'PIN added.';
+      labelInput.value = '';
+      pinInput.value = '';
+      renderSummaryPinsList();
+    } else {
+      statusEl.textContent = 'Could not save — try again.';
+    }
+  });
+
+  document.getElementById('summary-pins-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const statusEl = document.getElementById('summary-pins-status-line');
+    const pins = await getSummaryPins();
+    const idx = pins.findIndex(p => p.id === id);
+    if (idx === -1) return;
+
+    if (btn.dataset.action === 'toggle') {
+      pins[idx].active = !pins[idx].active;
+      const ok = await setSummaryPins(pins);
+      statusEl.textContent = ok ? `"${pins[idx].label}" is now ${pins[idx].active ? 'active' : 'inactive'}.` : 'Could not save — try again.';
+      if (ok) renderSummaryPinsList();
+    } else if (btn.dataset.action === 'delete') {
+      const confirmed = await customConfirm(`Delete the PIN for "${pins[idx].label}"?`, 'Yes, delete');
+      if (!confirmed) return;
+      pins.splice(idx, 1);
+      const ok = await setSummaryPins(pins);
+      statusEl.textContent = ok ? 'PIN deleted.' : 'Could not save — try again.';
+      if (ok) renderSummaryPinsList();
+    }
+  });
+
+  renderSummaryPinsList();
+
   document.getElementById('btn-close-browser').addEventListener('click', async () => {
     const confirmed = await customConfirm('Are you sure you want to close this browser tab?', 'Yes, close');
     if (!confirmed) return;
@@ -1647,6 +1787,29 @@ This backup was generated in one click from Back End and contains:
   async function setNotCompleteList(names) {
     return queueStorageWrite(NOT_COMPLETE_KEY, async () => {
       const setRes = await window.storage.set(NOT_COMPLETE_KEY, JSON.stringify(names), true);
+      return !!setRes;
+    });
+  }
+
+  // ---------- Summary page PIN management ----------
+  // Multiple independent PINs can be created for the separate summary
+  // dashboard page — each with its own label and active/inactive toggle, so
+  // e.g. a manager's access can be revoked without affecting anyone else's.
+  const SUMMARY_PINS_KEY = 'summary-pins';
+
+  async function getSummaryPins() {
+    try {
+      const res = await window.storage.get(SUMMARY_PINS_KEY, true);
+      if (!res || !res.value) return [];
+      return JSON.parse(res.value);
+    } catch (e) {
+      return [];
+    }
+  }
+
+  async function setSummaryPins(pins) {
+    return queueStorageWrite(SUMMARY_PINS_KEY, async () => {
+      const setRes = await window.storage.set(SUMMARY_PINS_KEY, JSON.stringify(pins), true);
       return !!setRes;
     });
   }
@@ -3012,6 +3175,38 @@ This backup was generated in one click from Back End and contains:
     }
   }
   runStorageDiagnostic();
+
+  // ---------- Access PIN settings ----------
+  async function loadPinSettingsIntoForm() {
+    const settings = await getPinSettings();
+    document.getElementById('pin-toggle-backend').checked = settings.backendPinEnabled;
+    document.getElementById('pin-value-backend').value = settings.backendPin;
+    document.getElementById('pin-toggle-summary').checked = settings.summaryPinEnabled;
+    document.getElementById('pin-value-summary').value = settings.summaryPin;
+  }
+  loadPinSettingsIntoForm();
+
+  document.getElementById('btn-save-pins').addEventListener('click', async () => {
+    const statusEl = document.getElementById('pin-settings-status');
+    const backendPinEnabled = document.getElementById('pin-toggle-backend').checked;
+    const backendPin = document.getElementById('pin-value-backend').value.trim();
+    const summaryPinEnabled = document.getElementById('pin-toggle-summary').checked;
+    const summaryPin = document.getElementById('pin-value-summary').value.trim();
+
+    if (backendPinEnabled && !/^\d{4}$/.test(backendPin)) {
+      statusEl.textContent = 'Back End PIN must be exactly 4 digits (or untick the checkbox to disable it).';
+      return;
+    }
+    if (summaryPinEnabled && !/^\d{4}$/.test(summaryPin)) {
+      statusEl.textContent = 'Summary page PIN must be exactly 4 digits (or untick the checkbox to disable it).';
+      return;
+    }
+
+    statusEl.textContent = 'Saving…';
+    const ok = await setPinSettings({ backendPinEnabled, backendPin, summaryPinEnabled, summaryPin });
+    statusEl.textContent = ok ? 'PIN settings saved.' : 'Could not save — try again.';
+  });
+
 
   // ---------- Back End: search & manage orders ----------
   // Unlike Warehouse's picking-focused search, this shows EVERY matching
