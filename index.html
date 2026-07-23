@@ -37,6 +37,12 @@
   .mp-brand { display:flex; align-items:center; gap:10px; font-weight:800; letter-spacing:0.02em; font-size:15px; text-transform:uppercase; }
   .mp-brand .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); }
   .mp-tabs { display:flex; gap:6px; }
+  #btn-close-browser {
+    margin-left: 12px; padding: 8px 14px; border-radius: 7px; border: 1.5px solid #cc2b2b;
+    background: transparent; color: #ff8a8a; font-weight: 800; font-size: 12.5px; cursor: pointer;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  #btn-close-browser:active { background: #cc2b2b; color: #fff; }
   .mp-tab {
     padding: 8px 16px; border-radius: 7px; cursor: pointer; font-weight:700; font-size:13px;
     background: transparent; color: #cfcdc6; border: 1px solid transparent; user-select:none;
@@ -519,6 +525,7 @@
         <div class="mp-tab" data-tab="add">Back End</div>
         <div class="mp-tab active" data-tab="wh">Warehouse</div>
       </div>
+      <button id="btn-close-browser" title="Close browser">✕ Close</button>
     </div>
     <div class="mp-body">
       <div class="mp-view" id="view-add">
@@ -1152,6 +1159,12 @@ This backup was generated in one click from Back End and contains:
     return { restored, skippedDuplicate, skippedNoDate, total: rows.length };
   }
 
+  document.getElementById('btn-close-browser').addEventListener('click', async () => {
+    const confirmed = await customConfirm('Are you sure you want to close this browser tab?', 'Yes, close');
+    if (!confirmed) return;
+    window.close();
+  });
+
   document.getElementById('btn-restore-backup').addEventListener('click', async () => {
     const input = document.getElementById('restore-input');
     const statusEl = document.getElementById('backup-status-line');
@@ -1160,7 +1173,7 @@ This backup was generated in one click from Back End and contains:
       statusEl.textContent = 'Choose a backup .xlsx file first.';
       return;
     }
-    const confirmed = await customConfirm(`Restore orders from "${file.name}"? Anything not already in SLOTS will be added back exactly as it was — this won't delete or duplicate anything already present.`);
+    const confirmed = await customConfirm(`Restore orders from "${file.name}"? Anything not already in SLOTS will be added back exactly as it was — this won't delete or duplicate anything already present.`, 'Restore');
     if (!confirmed) return;
 
     statusEl.textContent = 'Restoring backup…';
@@ -1241,7 +1254,7 @@ This backup was generated in one click from Back End and contains:
 
   document.getElementById('btn-all-sent').addEventListener('click', async () => {
     const statusEl = document.getElementById('ncomplete-status-line');
-    const confirmed = await customConfirm('Mark all orders as sent? This clears the entire "Not complete orders" list.');
+    const confirmed = await customConfirm('Mark all orders as sent? This clears the entire "Not complete orders" list.', 'Yes, clear');
     if (!confirmed) return;
     try {
       await setNotCompleteList([]);
@@ -1256,7 +1269,7 @@ This backup was generated in one click from Back End and contains:
   // Native confirm()/alert() are blocked (silently return false / no-op) inside
   // this sandboxed artifact frame, which is why "Clear all" appeared to do nothing.
   // These render an in-app modal instead.
-  function customConfirm(message) {
+  function customConfirm(message, confirmLabel) {
     return new Promise(resolve => {
       const overlay = document.createElement('div');
       overlay.className = 'mp-modal-overlay';
@@ -1265,7 +1278,7 @@ This backup was generated in one click from Back End and contains:
           <p>${escapeHtml(message)}</p>
           <div class="mp-modal-actions">
             <button class="mp-btn mp-btn-ghost" id="modal-cancel">Cancel</button>
-            <button class="mp-btn mp-btn-danger" id="modal-confirm" style="background:#a33; color:#fff; border:none;">Yes, clear</button>
+            <button class="mp-btn mp-btn-danger" id="modal-confirm" style="background:#a33; color:#fff; border:none;">${escapeHtml(confirmLabel || 'Confirm')}</button>
           </div>
         </div>`;
       root.appendChild(overlay);
@@ -1291,7 +1304,7 @@ This backup was generated in one click from Back End and contains:
   }
 
   document.getElementById('btn-clear').addEventListener('click', async () => {
-    const ok = await customConfirm("Clear ALL saved orders — not just today's, everything in SLOTS history? This can't be undone.");
+    const ok = await customConfirm("Clear ALL saved orders — not just today's, everything in SLOTS history? This can't be undone.", 'Yes, clear');
     if (!ok) return;
     try {
       const result = await clearAllOrders();
@@ -2093,7 +2106,7 @@ This backup was generated in one click from Back End and contains:
         }
       }
     } else if (action === 'delete') {
-      const confirmed = await customConfirm('Delete this slot? This cannot be undone.');
+      const confirmed = await customConfirm('Delete this slot? This cannot be undone.', 'Yes, delete');
       if (confirmed) {
         const ok = await deleteSlot(id, addedAt);
         if (ok) {
@@ -3062,7 +3075,7 @@ This backup was generated in one click from Back End and contains:
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
       const addedAt = deleteBtn.dataset.addedAt;
-      const confirmed = await customConfirm('Delete this order? This cannot be undone.');
+      const confirmed = await customConfirm('Delete this order? This cannot be undone.', 'Yes, delete');
       if (confirmed) {
         const ok = await deleteSlot(id, addedAt);
         if (ok) {
