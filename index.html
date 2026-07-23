@@ -653,10 +653,6 @@
           <span class="ncomplete-count" id="ncomplete-count">0</span>
         </button>
         <div class="mp-wh-list">
-          <div class="mp-wh-list-head">
-            <span>SLOTS</span>
-            <span id="wh-count">0</span>
-          </div>
           <div class="mp-wh-list-wrap">
             <div class="mp-wh-list-body" id="wh-list-body"><div class="mp-wh-list-inner" id="wh-list-inner"><div class="mp-empty">No orders yet — add some in "Back End".</div></div></div>
             <div class="mp-wh-nav-col">
@@ -2074,7 +2070,6 @@ This backup was generated in one click from Back End and contains:
     const todayOrders = allOrders.filter(o => o.addedAt && isToday(o.addedAt));
     checkForNewOrdersAndChime(todayOrders);
     updateSummaryBanner(todayOrders);
-    document.getElementById('wh-count').textContent = todayOrders.length;
     const body = document.getElementById('wh-list-inner');
     if (todayOrders.length === 0) {
       body.innerHTML = '<div class="mp-empty">No slots loaded today yet — add some in "Back End". (Older orders are still searchable.)</div>';
@@ -2964,7 +2959,6 @@ This backup was generated in one click from Back End and contains:
   async function runSearch(val) {
     if (!val) return;
     allOrders = await getAllOrders(); // refresh before searching
-    document.getElementById('wh-count').textContent = allOrders.length;
 
     if (looksLikeBarcodeScan(val)) {
       const extractedName = extractNameFromBarcodeScan(val);
