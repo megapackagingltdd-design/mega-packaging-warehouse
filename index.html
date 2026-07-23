@@ -35,6 +35,10 @@
     flex-shrink: 0;
   }
   .mp-summary-banner { display:flex; gap: 8px; }
+  .mp-clock { flex: 1; text-align: center; }
+  .mp-clock-time { font-size: 26px; font-weight: 900; line-height: 1.1; letter-spacing: .02em; }
+  .mp-clock-date { font-size: 12px; font-weight: 700; color: #ccc; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
+  .mp-top-right { display: flex; align-items: center; gap: 12px; }
   .mp-summary-box {
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding: 4px 16px; border-radius: 8px; min-width: 64px;
@@ -48,7 +52,7 @@
   .mp-brand .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); }
   .mp-tabs { display:flex; gap:6px; }
   #btn-close-browser {
-    margin-left: 12px; padding: 8px 14px; border-radius: 7px; border: 1.5px solid #cc2b2b;
+    padding: 8px 14px; border-radius: 7px; border: 1.5px solid #cc2b2b;
     background: transparent; color: #ff8a8a; font-weight: 800; font-size: 12.5px; cursor: pointer;
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
@@ -560,11 +564,17 @@
           <div class="mp-summary-label">Total</div>
         </div>
       </div>
-      <div class="mp-tabs">
-        <div class="mp-tab" data-tab="add">Back End</div>
-        <div class="mp-tab active" data-tab="wh">Warehouse</div>
+      <div class="mp-clock" id="mp-clock">
+        <div class="mp-clock-time" id="mp-clock-time">--:--:--</div>
+        <div class="mp-clock-date" id="mp-clock-date">-- --- ----</div>
       </div>
-      <button id="btn-close-browser" title="Close browser">✕ Close</button>
+      <div class="mp-top-right">
+        <div class="mp-tabs">
+          <div class="mp-tab" data-tab="add">Back End</div>
+          <div class="mp-tab active" data-tab="wh">Warehouse</div>
+        </div>
+        <button id="btn-close-browser" title="Close browser">✕ Close</button>
+      </div>
     </div>
     <div class="mp-body">
       <div class="mp-view" id="view-add">
@@ -3335,6 +3345,17 @@ This backup was generated in one click from Back End and contains:
       }
     }
   });
+
+  // Live clock in the header — updates every second, no page interaction needed.
+  function updateClock() {
+    const now = new Date();
+    const timeEl = document.getElementById('mp-clock-time');
+    const dateEl = document.getElementById('mp-clock-date');
+    if (timeEl) timeEl.textContent = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    if (dateEl) dateEl.textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
 
   // initial load — Warehouse is the default tab, and the search bar is
   // focused immediately so staff can start scanning/typing the instant this
