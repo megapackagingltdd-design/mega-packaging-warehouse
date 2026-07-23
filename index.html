@@ -48,47 +48,48 @@
   #view-add.active { overflow-y: auto; }
 
   /* ADD ORDERS VIEW */
-  .mp-add { padding: 22px; gap: 16px; }
+  .mp-add { padding: 12px 16px; gap: 8px; }
   .mp-add textarea {
-    width:100%; min-height: 300px; resize: vertical; padding: 14px; font-size: 14px;
-    font-family: 'SFMono-Regular', Consolas, monospace; border: 1px solid var(--line); border-radius: 8px;
-    background: var(--panel); color: var(--ink); line-height:1.5;
+    width:100%; min-height: 90px; max-height: 130px; resize: vertical; padding: 8px 10px; font-size: 13px;
+    font-family: 'SFMono-Regular', Consolas, monospace; border: 1px solid var(--line); border-radius: 7px;
+    background: var(--panel); color: var(--ink); line-height:1.4;
   }
-  .mp-add-row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px; }
+  .mp-add-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:6px; }
   .mp-btn {
-    padding: 11px 18px; border-radius: 7px; border: none; font-weight:700; font-size:13px;
+    padding: 8px 14px; border-radius: 7px; border: none; font-weight:700; font-size:12.5px;
     cursor:pointer; transition: transform .05s ease;
   }
   .mp-btn:active { transform: scale(0.97); }
   .mp-btn-primary { background: var(--accent); color:#fff; }
   .mp-btn-ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   .mp-btn-danger { background: transparent; color:#a33; border: 1px solid #d9a9a0; }
-  .mp-status { font-size: 13px; color: #555; margin-top: 4px; min-height: 18px; }
-  .mp-preview { margin-top: 16px; border-top: 1px dashed var(--line); padding-top: 14px; }
-  .mp-preview h4 { margin: 0 0 10px 0; font-size: 12px; text-transform:uppercase; letter-spacing:.06em; color:#777; }
-  .mp-preview-list { max-height: 220px; overflow-y:auto; display:flex; flex-direction:column; gap:6px; }
-  .mp-preview-item { font-size: 13px; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display:flex; justify-content:space-between; gap:10px;}
+  .mp-status { font-size: 12px; color: #555; margin-top: 2px; min-height: 15px; }
+  .mp-preview { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .mp-preview h4 { margin: 0 0 6px 0; font-size: 11px; text-transform:uppercase; letter-spacing:.06em; color:#777; }
+  .mp-preview-list { max-height: 110px; overflow-y:auto; display:flex; flex-direction:column; gap:5px; }
+  .mp-preview-item { font-size: 12px; padding: 6px 9px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; display:flex; justify-content:space-between; gap:10px;}
   .mp-preview-item b { color: var(--ink); }
   .mp-preview-item span.prod { color:#555; flex:1; }
-  .mp-dup-section { margin-top: 20px; border-top: 1px dashed var(--line); padding-top: 16px; }
-  .mp-dup-section h4 { margin: 0 0 10px 0; font-size: 12px; text-transform:uppercase; letter-spacing:.06em; color:#777; }
-  .mp-dup-ok { font-size: 13px; color: var(--good); font-weight:700; padding: 8px 0; }
-  .mp-dup-error-item { font-size: 13px; color: #a33; padding: 6px 10px; background: #fbeeea; border: 1px solid #e3b3a8; border-radius: 6px; margin-bottom: 6px; white-space:pre-wrap; }
-  .mp-dup-item { border: 1px solid var(--warn); background: #fdf7ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-  .mp-dup-item .dup-label { font-size: 11px; text-transform:uppercase; letter-spacing:.05em; color: var(--warn); font-weight:800; margin-bottom: 6px; }
-  .mp-dup-item .dup-existing, .mp-dup-item .dup-new { font-size: 13px; white-space:pre-wrap; padding: 6px 8px; border-radius: 6px; background: #fff; margin-bottom: 4px; }
+  .mp-dup-section { margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 8px; }
+  .mp-dup-section h4 { margin: 0 0 6px 0; font-size: 11px; text-transform:uppercase; letter-spacing:.06em; color:#777; }
+  .mp-dup-ok { font-size: 12px; color: var(--good); font-weight:700; padding: 4px 0; }
+  .mp-dup-error-item { font-size: 12px; color: #a33; padding: 5px 9px; background: #fbeeea; border: 1px solid #e3b3a8; border-radius: 6px; margin-bottom: 5px; white-space:pre-wrap; }
+  .mp-dup-item { border: 1px solid var(--warn); background: #fdf7ea; border-radius: 7px; padding: 8px; margin-bottom: 6px; }
+  .mp-dup-item .dup-label { font-size: 10px; text-transform:uppercase; letter-spacing:.05em; color: var(--warn); font-weight:800; margin-bottom: 4px; }
+  .mp-dup-item .dup-existing, .mp-dup-item .dup-new { font-size: 12px; white-space:pre-wrap; padding: 5px 7px; border-radius: 6px; background: #fff; margin-bottom: 3px; }
   .mp-dup-item .dup-existing { border-left: 3px solid #999; }
   .mp-dup-item .dup-new { border-left: 3px solid var(--accent); }
-  .mp-dup-item label { display:flex; align-items:center; gap:8px; font-size: 13px; font-weight:600; margin-top: 8px; cursor:pointer; }
+  .mp-dup-item label { display:flex; align-items:center; gap:6px; font-size: 12px; font-weight:600; margin-top: 5px; cursor:pointer; }
+  #dup-duplicates { max-height: 130px; overflow-y: auto; }
   .mp-flag { color: var(--warn); font-weight:700; font-size:11px; }
-  .mp-pdf-hint { font-size: 12.5px; color: #777; margin: 0 0 10px 0; max-width: 640px; line-height:1.4; }
+  .mp-pdf-hint { font-size: 11.5px; color: #777; margin: 0 0 6px 0; max-width: 640px; line-height:1.3; }
   #ncomplete-paste-zone {
-    border: 2px dashed var(--line); border-radius: 8px; padding: 16px; margin-bottom: 10px;
-    text-align: center; font-size: 13px; color: #999; cursor: text; max-width: 640px;
+    border: 2px dashed var(--line); border-radius: 7px; padding: 8px; margin-bottom: 6px;
+    text-align: center; font-size: 12px; color: #999; cursor: text; max-width: 640px;
   }
   #ncomplete-paste-zone:focus { outline: none; border-color: var(--accent); color: var(--accent); background: #fff8f3; }
   .mp-order-time { font-size: 11px; color: #999; margin-top: 5px; font-weight: 600; }
-  .mp-diag { font-size: 12.5px; font-weight: 700; padding: 8px 12px; border-radius: 7px; margin-bottom: 14px; background: #eee; color: #777; }
+  .mp-diag { font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 6px; margin-bottom: 6px; background: #eee; color: #777; }
   .mp-diag.ok { background: #eaf3ea; color: var(--good); }
   .mp-diag.bad { background: #fbeeea; color: #a33; }
 
@@ -370,12 +371,13 @@
   .mp-history-list::-webkit-scrollbar-thumb:hover { background: #a34a22; }
   .mp-history-list::-webkit-scrollbar-thumb:active { background: #8a3d1c; }
   .mp-history-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+  #backend-search-results { max-height: 150px; overflow-y: auto; }
   .mp-search-result-item {
-    border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel); margin-bottom: 8px;
+    border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--panel); margin-bottom: 6px;
   }
-  .mp-search-result-content { font-size: 13.5px; white-space: pre-wrap; color: var(--ink); line-height: 1.4; }
-  .mp-search-result-meta { font-size: 11px; color: #999; font-weight: 700; margin-top: 6px; }
-  .mp-search-result-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .mp-search-result-content { font-size: 13px; white-space: pre-wrap; color: var(--ink); line-height: 1.3; }
+  .mp-search-result-meta { font-size: 10.5px; color: #999; font-weight: 700; margin-top: 4px; }
+  .mp-search-result-actions { display: flex; gap: 6px; margin-top: 5px; }
   .mp-search-edit-btn, .mp-search-delete-btn {
     flex: 1; padding: 7px 0; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer;
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
@@ -530,6 +532,9 @@
           </div>
 
           <textarea id="paste-box" placeholder="Paste today's orders here. Separate each order with a blank line — it will be saved and shown exactly as typed, e.g.:&#10;&#10;mega website - Dominic Higman&#10;s5 jumbo bag x1&#10;&#10;mega website - kevin muhammad&#10;lids for 750 bowl x1&#10;8oz ripple cups x1"></textarea>
+          <div class="mp-add-row" style="margin-top:6px; margin-bottom:6px;">
+            <button class="mp-btn mp-btn-ghost" id="btn-paste-orders">📋 Paste from clipboard</button>
+          </div>
           <div class="mp-add-row">
             <button class="mp-btn mp-btn-primary" id="btn-parse">Preview</button>
             <button class="mp-btn mp-btn-primary" id="btn-add" style="background:#2f6b3e;">Add to SLOTS</button>
@@ -828,6 +833,24 @@
     pendingDuplicates = duplicates;
     renderDupSection(orders, duplicates, errors);
   }
+
+  document.getElementById('btn-paste-orders').addEventListener('click', async () => {
+    const box = document.getElementById('paste-box');
+    const statusEl = document.getElementById('status-line');
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        statusEl.textContent = 'Clipboard is empty — copy the order text first, then click paste.';
+        return;
+      }
+      box.value = box.value.trim() ? box.value.replace(/\s*$/, '') + '\n\n' + text : text;
+      box.focus();
+      statusEl.textContent = 'Pasted from clipboard.';
+    } catch (e) {
+      statusEl.textContent = 'Could not read the clipboard automatically (' + (e && e.message ? e.message : 'permission blocked') + ') — click into the box and press Ctrl+V / Cmd+V instead.';
+      box.focus();
+    }
+  });
 
   document.getElementById('btn-parse').addEventListener('click', async () => {
     const text = document.getElementById('paste-box').value;
@@ -2932,10 +2955,26 @@ This backup was generated in one click from Back End and contains:
     const all = await getAllOrders();
     if (mySeq !== backendSearchSeq) return; // a newer search started while this was loading
 
-    const qNorm = normalize(q);
-    const matches = all
-      .filter(o => fuzzyMatch(normalize(o.raw), qNorm))
-      .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    let matches;
+    if (looksLikeBarcodeScan(q)) {
+      const extractedName = extractNameFromBarcodeScan(q);
+      const extractedPostcode = extractPostcodeFromBarcodeScan(q);
+      const nameNorm = extractedName ? normalize(extractedName) : '';
+      const postcodeNorm = extractedPostcode ? normalize(extractedPostcode) : '';
+      matches = all.filter(o => {
+        const rawNorm = normalize(o.raw);
+        const nameHit = nameNorm && fuzzyMatch(rawNorm, nameNorm);
+        const postcodeHit = postcodeNorm && rawNorm.includes(postcodeNorm);
+        return nameHit || postcodeHit;
+      }).sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+      const input = document.getElementById('backend-search-input');
+      if (input && extractedName) input.value = extractedName;
+    } else {
+      const qNorm = normalize(q);
+      matches = all
+        .filter(o => fuzzyMatch(normalize(o.raw), qNorm))
+        .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+    }
     backendSearchResultsCache = matches;
 
     if (matches.length === 0) {
