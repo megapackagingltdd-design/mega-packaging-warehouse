@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mega Packaging — Summary</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1d1a; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; color: #1a1d1a;
+    height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ---------- PIN screen ---------- */
+  #pin-screen {
+    display: flex; flex-direction: column; align-items: center; gap: 18px;
+    background: #f6f5f1; border-radius: 16px; padding: 40px 34px; width: min(360px, 90vw);
+  }
+  #pin-screen h1 { font-size: 18px; margin: 0; text-align: center; }
+  #pin-input {
+    width: 100%; font-size: 30px; text-align: center; letter-spacing: 14px; padding: 12px;
+    border: 2px solid #d8d5cc; border-radius: 9px; box-sizing: border-box;
+  }
+  #pin-error { color: #a33; font-size: 13px; font-weight: 700; min-height: 18px; text-align: center; }
+  #pin-ok {
+    width: 100%; padding: 13px 0; font-size: 15px; font-weight: 800; border-radius: 9px; border: none;
+    background: #2f6b3e; color: #fff; cursor: pointer;
+  }
+
+  /* ---------- Dashboard ---------- */
+  #dashboard { display: none; width: 100%; height: 100%; padding: 28px 34px; overflow: hidden; flex-direction: column; }
+  #dashboard.active { display: flex; }
+  .dash-title { color: #fff; font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 18px; }
+  .dash-boxes { display: flex; gap: 16px; margin-bottom: 22px; }
+  .dash-box {
+    flex: 1; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .dash-box .num { font-size: 40px; font-weight: 900; line-height: 1; }
+  .dash-box .lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .85; }
+  .dash-box.total { background: #33372f; color: #fff; }
+  .dash-box.blue { background: #1e6fd9; color: #fff; }
+  .dash-box.green { background: #2f6b3e; color: #fff; }
+
+  .dash-products-title { color: #ccc; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
+  #product-list {
+    flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px; align-content: start;
+  }
+  .product-row {
+    background: #f6f5f1; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between;
+    align-items: center; gap: 10px;
+  }
+  .product-row .pname { font-weight: 700; font-size: 14px; color: #1a1d1a; }
+  .product-row .pqty { font-weight: 900; font-size: 15px; color: #c65d2e; white-space: nowrap; }
+  .empty-note { color: #999; font-size: 13px; text-align: center; padding: 30px; }
+  .last-updated { color: #888; font-size: 11px; margin-top: 12px; text-align: right; }
+</style>
+</head>
+<body>
+
+<div id="pin-screen">
+  <h1>MEGA PACKAGING<br/>Summary Dashboard</h1>
+  <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pin-input" autocomplete="off" />
+  <div id="pin-error"></div>
+  <button id="pin-ok">View Summary</button>
+</div>
+
+<div id="dashboard">
+  <div class="dash-title">Today's Summary</div>
+  <div class="dash-boxes">
+    <div class="dash-box total"><div class="num" id="box-total">0</div><div class="lbl">Total Orders</div></div>
+    <div class="dash-box blue"><div class="num" id="box-blue">0</div><div class="lbl">Total Blue</div></div>
+    <div class="dash-box green"><div class="num" id="box-green">0</div><div class="lbl">Total Green</div></div>
+  </div>
+  <div class="dash-products-title">Products (today)</div>
+  <div id="product-list"></div>
+  <div class="last-updated" id="last-updated"></div>
+</div>
+
+<script>
+  // Same Firebase project as the main warehouse app — this page is
+  // read-only and never writes anything, it just displays live totals.
+  const firebaseConfig = {
+    apiKey: "AIzaSyAfgBcWvpnZYMWBb_I9b1gX0xkFMgWU99w",
+    authDomain: "mega-packaging-parcels.firebaseapp.com",
+    projectId: "mega-packaging-parcels",
+    storageBucket: "mega-packaging-parcels.firebasestorage.app",
+    messagingSenderId: "792403680019",
+    appId: "1:792403680019:web:474d448da9633ec98118e6"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const storageCollection = db.collection('warehouse-storage');
+
+  async function storageGet(key) {
+    const doc = await storageCollection.doc(key).get();
+    if (!doc.exists) return null;
+    return doc.data().value;
+  }
+  async function storageList(prefix) {
+    const snap = await storageCollection
+      .where(firebase.firestore.FieldPath.documentId(), '>=', prefix)
+      .where(firebase.firestore.FieldPath.documentId(), '<', prefix + '\uf8ff')
+      .get();
+    return snap.docs.map(d => d.id);
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function isToday(ts) {
+    return new Date(ts).toDateString() === new Date().toDateString();
+  }
+
+  // Splits a raw order block into an optional header line and an array of
+  // individual product strings — identical logic to the main app, so
+  // aggregation matches exactly what staff see there.
+  function getDisplayLines(raw) {
+    const lines = raw.split('\n');
+    if (lines.length > 1) {
+      const header = lines[0];
+      const itemsPortion = lines.slice(1).join(' + ');
+      const products = itemsPortion.split(' + ').map(s => s.trim()).filter(Boolean);
+      return { header, products: products.length ? products : [itemsPortion.trim()] };
+    }
+    const dashIdx = raw.lastIndexOf(' - ');
+    const itemsPortion = dashIdx !== -1 ? raw.slice(0, dashIdx).trim() : raw.trim();
+    return { header: null, products: [itemsPortion] };
+  }
+
+  function parseProductQty(productStr) {
+    const m = productStr.match(/^(.*?)\s*x(\d+)\s*$/i);
+    if (m) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
+    return { name: productStr.trim(), qty: 1 };
+  }
+
+  async function getAllOrders() {
+    const keys = await storageList('orders:');
+    const all = [];
+    for (const k of keys) {
+      const value = await storageGet(k);
+      if (value) {
+        try { all.push(...JSON.parse(value)); } catch (e) {}
+      }
+    }
+    return all;
+  }
+
+  async function refreshDashboard() {
+    const all = await getAllOrders();
+    const todayOrders = all.filter(o => o.addedAt && isToday(o.addedAt));
+
+    document.getElementById('box-total').textContent = todayOrders.length;
+    document.getElementById('box-blue').textContent = todayOrders.filter(o => o.state === 'blue').length;
+    document.getElementById('box-green').textContent = todayOrders.filter(o => o.state === 'green').length;
+
+    const totals = new Map();
+    for (const o of todayOrders) {
+      const { products } = getDisplayLines(o.raw);
+      for (const p of products) {
+        const { name, qty } = parseProductQty(p);
+        const key = name.toLowerCase();
+        if (!totals.has(key)) totals.set(key, { displayName: name, qty: 0 });
+        totals.get(key).qty += qty;
+      }
+    }
+    const sorted = Array.from(totals.values()).sort((a, b) => b.qty - a.qty);
+
+    const listEl = document.getElementById('product-list');
+    if (sorted.length === 0) {
+      listEl.innerHTML = '<div class="empty-note">No orders yet today.</div>';
+    } else {
+      listEl.innerHTML = sorted.map(p => `
+        <div class="product-row">
+          <span class="pname">${escapeHtml(p.displayName)}</span>
+          <span class="pqty">x${p.qty}</span>
+        </div>`).join('');
+    }
+
+    document.getElementById('last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  }
+
+  // ---------- PIN gate ----------
+  async function checkPin(pin) {
+    const value = await storageGet('summary-pins');
+    if (!value) return { ok: false, reason: 'No PINs have been configured yet — set one up in Back End first.' };
+    let pins;
+    try { pins = JSON.parse(value); } catch (e) { pins = []; }
+    const match = pins.find(p => p.pin === pin && p.active);
+    return match ? { ok: true } : { ok: false, reason: 'Incorrect or inactive PIN.' };
+  }
+
+  const pinInput = document.getElementById('pin-input');
+  const pinError = document.getElementById('pin-error');
+  let refreshTimer = null;
+
+  async function submitPin() {
+    const pin = pinInput.value.trim();
+    if (!/^\d{4}$/.test(pin)) {
+      pinError.textContent = 'Enter the 4-digit PIN.';
+      return;
+    }
+    pinError.textContent = 'Checking…';
+    const result = await checkPin(pin);
+    if (result.ok) {
+      document.getElementById('pin-screen').style.display = 'none';
+      document.getElementById('dashboard').classList.add('active');
+      refreshDashboard();
+      refreshTimer = setInterval(refreshDashboard, 10000); // stays live, refreshed every 10s
+    } else {
+      pinError.textContent = result.reason;
+      pinInput.value = '';
+    }
+  }
+
+  document.getElementById('pin-ok').addEventListener('click', submitPin);
+  pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
+  pinInput.addEventListener('input', () => { if (pinInput.value.length === 4) submitPin(); });
+  pinInput.focus();
+</script>
+</body>
+</html>
