@@ -57,16 +57,12 @@
   .product-row .pqty { font-weight: 900; font-size: 15px; color: #c65d2e; white-space: nowrap; }
   .empty-note { color: #999; font-size: 13px; text-align: center; padding: 30px; }
   .last-updated { color: #888; font-size: 11px; margin-top: 12px; text-align: right; }
-  #pin-diag { font-size: 11.5px; font-weight: 700; padding: 6px 10px; border-radius: 6px; background: #eee; color: #777; text-align: center; }
-  #pin-diag.bad { background: #fbeeea; color: #a33; }
-  #pin-diag.good { background: #e6f2e8; color: #2f6b3e; }
 </style>
 </head>
 <body>
 
 <div id="pin-screen">
   <h1>MEGA PACKAGING<br/>Summary Dashboard</h1>
-  <div id="pin-diag">Checking storage connection…</div>
   <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pin-input" autocomplete="off" />
   <div id="pin-error"></div>
   <button id="pin-ok">View Summary</button>
@@ -225,33 +221,6 @@
   pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
   pinInput.addEventListener('input', () => { if (pinInput.value.length === 4) submitPin(); });
   pinInput.focus();
-
-  // Visible connection diagnostic — shows exactly what's happening without
-  // needing the browser's developer console, since this is exactly the kind
-  // of thing that's hard to debug blind otherwise.
-  (async function runDiagnostic() {
-    const diagEl = document.getElementById('pin-diag');
-    try {
-      const value = await storageGet('summary-pins');
-      if (!value) {
-        diagEl.textContent = 'Connected to storage, but no PIN data found at all under "summary-pins" — check Back End actually saved one.';
-        diagEl.className = 'bad';
-        return;
-      }
-      let pins;
-      try { pins = JSON.parse(value); } catch (e) {
-        diagEl.textContent = 'Connected, but the PIN data is not valid — raw value: ' + value.slice(0, 80);
-        diagEl.className = 'bad';
-        return;
-      }
-      const activeCount = pins.filter(p => p.active).length;
-      diagEl.textContent = `Connected — found ${pins.length} PIN(s), ${activeCount} active.`;
-      diagEl.className = 'good';
-    } catch (e) {
-      diagEl.textContent = 'Storage connection failed: ' + (e && e.message ? e.message : 'unknown error');
-      diagEl.className = 'bad';
-    }
-  })();
 </script>
 </body>
 </html>
