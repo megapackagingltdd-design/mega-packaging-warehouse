@@ -572,14 +572,10 @@
           <div id="storage-diag" class="mp-diag">Checking storage connection…</div>
 
           <div class="mp-dup-section" id="pin-settings-section">
-            <h4>Access PINs</h4>
+            <h4>Back End access PIN</h4>
             <div class="mp-pin-setting-row">
               <label class="mp-pin-toggle"><input type="checkbox" id="pin-toggle-backend" /> Require PIN for Back End</label>
               <input type="text" inputmode="numeric" maxlength="4" id="pin-value-backend" placeholder="4-digit PIN" style="width:90px; font-size:13px; padding:6px 8px; border:1.5px solid var(--line); border-radius:6px;" />
-            </div>
-            <div class="mp-pin-setting-row">
-              <label class="mp-pin-toggle"><input type="checkbox" id="pin-toggle-summary" /> Require PIN for Summary page</label>
-              <input type="text" inputmode="numeric" maxlength="4" id="pin-value-summary" placeholder="4-digit PIN" style="width:90px; font-size:13px; padding:6px 8px; border:1.5px solid var(--line); border-radius:6px;" />
             </div>
             <div class="mp-add-row" style="margin-top:6px;">
               <button class="mp-btn mp-btn-primary" id="btn-save-pins">Save PIN settings</button>
@@ -706,8 +702,7 @@
   // hardcoded, editable from the "Access PINs" section in Back End.
   const PIN_SETTINGS_KEY = 'pin-settings';
   const DEFAULT_PIN_SETTINGS = {
-    backendPinEnabled: true, backendPin: '1988',
-    summaryPinEnabled: false, summaryPin: ''
+    backendPinEnabled: true, backendPin: '1988'
   };
 
   async function getPinSettings() {
@@ -1264,7 +1259,10 @@ This backup was generated in one click from Back End and contains:
       <div class="mp-pin-row${p.active ? '' : ' inactive'}" data-id="${p.id}">
         <span class="pin-label">${escapeHtml(p.label || 'Unnamed')}</span>
         <span class="pin-value">${escapeHtml(p.pin)}</span>
-        <button class="mp-pin-toggle" data-action="toggle" data-id="${p.id}">${p.active ? 'Active' : 'Inactive'}</button>
+        <label class="mp-pin-checkbox-label">
+          <input type="checkbox" class="mp-pin-checkbox" data-action="toggle" data-id="${p.id}"${p.active ? ' checked' : ''} />
+          Active
+        </label>
         <button class="mp-pin-delete" data-action="delete" data-id="${p.id}">Delete</button>
       </div>`).join('');
   }
@@ -1296,8 +1294,23 @@ This backup was generated in one click from Back End and contains:
     }
   });
 
+  document.getElementById('summary-pins-list').addEventListener('change', async (e) => {
+    const checkbox = e.target.closest('.mp-pin-checkbox');
+    if (!checkbox) return;
+    const id = checkbox.dataset.id;
+    const statusEl = document.getElementById('summary-pins-status-line');
+    const pins = await getSummaryPins();
+    const idx = pins.findIndex(p => p.id === id);
+    if (idx === -1) return;
+
+    pins[idx].active = checkbox.checked;
+    const ok = await setSummaryPins(pins);
+    statusEl.textContent = ok ? `"${pins[idx].label}" is now ${pins[idx].active ? 'active' : 'inactive'}.` : 'Could not save — try again.';
+    if (ok) renderSummaryPinsList(); else checkbox.checked = !checkbox.checked; // revert on failure
+  });
+
   document.getElementById('summary-pins-list').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
+    const btn = e.target.closest('button[data-action="delete"]');
     if (!btn) return;
     const id = btn.dataset.id;
     const statusEl = document.getElementById('summary-pins-status-line');
@@ -1305,19 +1318,12 @@ This backup was generated in one click from Back End and contains:
     const idx = pins.findIndex(p => p.id === id);
     if (idx === -1) return;
 
-    if (btn.dataset.action === 'toggle') {
-      pins[idx].active = !pins[idx].active;
-      const ok = await setSummaryPins(pins);
-      statusEl.textContent = ok ? `"${pins[idx].label}" is now ${pins[idx].active ? 'active' : 'inactive'}.` : 'Could not save — try again.';
-      if (ok) renderSummaryPinsList();
-    } else if (btn.dataset.action === 'delete') {
-      const confirmed = await customConfirm(`Delete the PIN for "${pins[idx].label}"?`, 'Yes, delete');
-      if (!confirmed) return;
-      pins.splice(idx, 1);
-      const ok = await setSummaryPins(pins);
-      statusEl.textContent = ok ? 'PIN deleted.' : 'Could not save — try again.';
-      if (ok) renderSummaryPinsList();
-    }
+    const confirmed = await customConfirm(`Delete the PIN for "${pins[idx].label}"?`, 'Yes, delete');
+    if (!confirmed) return;
+    pins.splice(idx, 1);
+    const ok = await setSummaryPins(pins);
+    statusEl.textContent = ok ? 'PIN deleted.' : 'Could not save — try again.';
+    if (ok) renderSummaryPinsList();
   });
 
   renderSummaryPinsList();
@@ -3176,13 +3182,11 @@ This backup was generated in one click from Back End and contains:
   }
   runStorageDiagnostic();
 
-  // ---------- Access PIN settings ----------
+  // ---------- Back End PIN settings ----------
   async function loadPinSettingsIntoForm() {
     const settings = await getPinSettings();
     document.getElementById('pin-toggle-backend').checked = settings.backendPinEnabled;
     document.getElementById('pin-value-backend').value = settings.backendPin;
-    document.getElementById('pin-toggle-summary').checked = settings.summaryPinEnabled;
-    document.getElementById('pin-value-summary').value = settings.summaryPin;
   }
   loadPinSettingsIntoForm();
 
@@ -3190,20 +3194,14 @@ This backup was generated in one click from Back End and contains:
     const statusEl = document.getElementById('pin-settings-status');
     const backendPinEnabled = document.getElementById('pin-toggle-backend').checked;
     const backendPin = document.getElementById('pin-value-backend').value.trim();
-    const summaryPinEnabled = document.getElementById('pin-toggle-summary').checked;
-    const summaryPin = document.getElementById('pin-value-summary').value.trim();
 
     if (backendPinEnabled && !/^\d{4}$/.test(backendPin)) {
       statusEl.textContent = 'Back End PIN must be exactly 4 digits (or untick the checkbox to disable it).';
       return;
     }
-    if (summaryPinEnabled && !/^\d{4}$/.test(summaryPin)) {
-      statusEl.textContent = 'Summary page PIN must be exactly 4 digits (or untick the checkbox to disable it).';
-      return;
-    }
 
     statusEl.textContent = 'Saving…';
-    const ok = await setPinSettings({ backendPinEnabled, backendPin, summaryPinEnabled, summaryPin });
+    const ok = await setPinSettings({ backendPinEnabled, backendPin });
     statusEl.textContent = ok ? 'PIN settings saved.' : 'Could not save — try again.';
   });
 
