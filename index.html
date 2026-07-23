@@ -3196,30 +3196,6 @@ This backup was generated in one click from Back End and contains:
   }
   runStorageDiagnostic();
 
-  // ---------- Back End PIN settings ----------
-  async function loadPinSettingsIntoForm() {
-    const settings = await getPinSettings();
-    document.getElementById('pin-toggle-backend').checked = settings.backendPinEnabled;
-    document.getElementById('pin-value-backend').value = settings.backendPin;
-  }
-  loadPinSettingsIntoForm();
-
-  document.getElementById('btn-save-pins').addEventListener('click', async () => {
-    const statusEl = document.getElementById('pin-settings-status');
-    const backendPinEnabled = document.getElementById('pin-toggle-backend').checked;
-    const backendPin = document.getElementById('pin-value-backend').value.trim();
-
-    if (backendPinEnabled && !/^\d{4}$/.test(backendPin)) {
-      statusEl.textContent = 'Back End PIN must be exactly 4 digits (or untick the checkbox to disable it).';
-      return;
-    }
-
-    statusEl.textContent = 'Saving…';
-    const ok = await setPinSettings({ backendPinEnabled, backendPin });
-    statusEl.textContent = ok ? 'PIN settings saved.' : 'Could not save — try again.';
-  });
-
-
   // ---------- Back End: search & manage orders ----------
   // Unlike Warehouse's picking-focused search, this shows EVERY matching
   // order (including older duplicates for the same customer, not just the
