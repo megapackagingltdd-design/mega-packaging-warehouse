@@ -46,8 +46,10 @@
   .dash-box.green { background: #2f6b3e; color: #fff; }
 
   .dash-products-title { color: #ccc; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
-  #product-list {
-    flex: 1; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  .dash-products-title.dash-oos-title { color: #ff8a8a; margin-top: 20px; }
+  .dash-scroll-area { flex: 1; overflow-y: auto; min-height: 0; }
+  #product-list, #oos-list {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
     gap: 8px; align-content: start;
   }
   .product-row {
@@ -56,6 +58,9 @@
   }
   .product-row .pname { font-weight: 700; font-size: 14px; color: #1a1d1a; }
   .product-row .pqty { font-weight: 900; font-size: 15px; color: #c65d2e; white-space: nowrap; }
+  .product-row.oos { background: #fbe2e0; }
+  .product-row.oos .pname { color: #a32222; }
+  .product-row.oos .pqty { color: #a32222; }
   .empty-note { color: #999; font-size: 13px; text-align: center; padding: 30px; }
   .last-updated { color: #888; font-size: 11px; margin-top: 12px; text-align: right; }
 </style>
@@ -76,8 +81,12 @@
     <div class="dash-box blue"><div class="num" id="box-blue">0</div><div class="lbl" id="box-blue-label">Remaining</div></div>
     <div class="dash-box green"><div class="num" id="box-green">0</div><div class="lbl" id="box-green-label">Remaining</div></div>
   </div>
-  <div class="dash-products-title">Products (today)</div>
-  <div id="product-list"></div>
+  <div class="dash-scroll-area">
+    <div class="dash-products-title">Products still pending (not yet scanned)</div>
+    <div id="product-list"></div>
+    <div class="dash-products-title dash-oos-title" id="oos-title" style="display:none;">Out of stock</div>
+    <div id="oos-list"></div>
+  </div>
   <div class="last-updated" id="last-updated"></div>
 </div>
 
@@ -187,24 +196,57 @@
       greenLabelEl.textContent = 'Remaining';
     }
 
+    // Products are split into two views:
+    // - Normal breakdown: every product NOT individually marked red, from
+    //   orders that aren't blue yet (a blue slot's products are done, so
+    //   they're excluded entirely — not shown anywhere).
+    // - Out of stock: any product individually marked red (via the hand
+    //   icon), REGARDLESS of whether its slot is blue overall — e.g. a blue
+    //   slot with one red product still shows that one red product here,
+    //   while its other (non-red) product is excluded as normal since the
+    //   slot itself is done.
     const totals = new Map();
+    const oosTotals = new Map();
     for (const o of todayOrders) {
       const { products } = getDisplayLines(o.raw);
-      for (const p of products) {
+      const notDone = Array.isArray(o.notDoneProducts) ? o.notDoneProducts : [];
+      products.forEach((p, i) => {
         const { name, qty } = parseProductQty(p);
         const key = name.toLowerCase();
-        if (!totals.has(key)) totals.set(key, { displayName: name, qty: 0 });
-        totals.get(key).qty += qty;
-      }
+        if (notDone.includes(i)) {
+          if (!oosTotals.has(key)) oosTotals.set(key, { displayName: name, qty: 0 });
+          oosTotals.get(key).qty += qty;
+        } else if (o.state === 'blue') {
+          // already handled — excluded entirely, not shown anywhere
+        } else {
+          if (!totals.has(key)) totals.set(key, { displayName: name, qty: 0 });
+          totals.get(key).qty += qty;
+        }
+      });
     }
     const sorted = Array.from(totals.values()).sort((a, b) => b.qty - a.qty);
+    const oosSorted = Array.from(oosTotals.values()).sort((a, b) => b.qty - a.qty);
 
     const listEl = document.getElementById('product-list');
     if (sorted.length === 0) {
-      listEl.innerHTML = '<div class="empty-note">No orders yet today.</div>';
+      listEl.innerHTML = '<div class="empty-note">Nothing pending — all scanned or no orders yet.</div>';
     } else {
       listEl.innerHTML = sorted.map(p => `
         <div class="product-row">
+          <span class="pname">${escapeHtml(p.displayName)}</span>
+          <span class="pqty">x${p.qty}</span>
+        </div>`).join('');
+    }
+
+    const oosTitleEl = document.getElementById('oos-title');
+    const oosListEl = document.getElementById('oos-list');
+    if (oosSorted.length === 0) {
+      oosTitleEl.style.display = 'none';
+      oosListEl.innerHTML = '';
+    } else {
+      oosTitleEl.style.display = '';
+      oosListEl.innerHTML = oosSorted.map(p => `
+        <div class="product-row oos">
           <span class="pname">${escapeHtml(p.displayName)}</span>
           <span class="pqty">x${p.qty}</span>
         </div>`).join('');
