@@ -39,6 +39,7 @@
     flex: 1; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px;
   }
   .dash-box .num { font-size: 40px; font-weight: 900; line-height: 1; }
+  .dash-box .num.dash-done-text { font-size: 18px; letter-spacing: .03em; }
   .dash-box .lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .85; }
   .dash-box.total { background: #33372f; color: #fff; }
   .dash-box.blue { background: #1e6fd9; color: #fff; }
@@ -72,8 +73,8 @@
   <div class="dash-title">Today's Summary</div>
   <div class="dash-boxes">
     <div class="dash-box total"><div class="num" id="box-total">0</div><div class="lbl">Total Orders</div></div>
-    <div class="dash-box blue"><div class="num" id="box-blue">0</div><div class="lbl">Total Blue</div></div>
-    <div class="dash-box green"><div class="num" id="box-green">0</div><div class="lbl">Total Green</div></div>
+    <div class="dash-box blue"><div class="num" id="box-blue">0</div><div class="lbl" id="box-blue-label">Remaining</div></div>
+    <div class="dash-box green"><div class="num" id="box-green">0</div><div class="lbl" id="box-green-label">Remaining</div></div>
   </div>
   <div class="dash-products-title">Products (today)</div>
   <div id="product-list"></div>
@@ -154,9 +155,37 @@
     const all = await getAllOrders();
     const todayOrders = all.filter(o => o.addedAt && isToday(o.addedAt));
 
-    document.getElementById('box-total').textContent = todayOrders.length;
-    document.getElementById('box-blue').textContent = todayOrders.filter(o => o.state === 'blue').length;
-    document.getElementById('box-green').textContent = todayOrders.filter(o => o.state === 'green').length;
+    const total = todayOrders.length;
+    const blueCount = todayOrders.filter(o => o.state === 'blue').length;
+    const greenOrBlueCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue').length;
+    const blueRemaining = total - blueCount;
+    const greenRemaining = total - greenOrBlueCount;
+
+    document.getElementById('box-total').textContent = total;
+
+    const blueEl = document.getElementById('box-blue');
+    const blueLabelEl = document.getElementById('box-blue-label');
+    if (total > 0 && blueRemaining === 0) {
+      blueEl.textContent = 'COMPLETE';
+      blueEl.classList.add('dash-done-text');
+      blueLabelEl.textContent = '';
+    } else {
+      blueEl.textContent = blueRemaining;
+      blueEl.classList.remove('dash-done-text');
+      blueLabelEl.textContent = 'Remaining';
+    }
+
+    const greenEl = document.getElementById('box-green');
+    const greenLabelEl = document.getElementById('box-green-label');
+    if (total > 0 && greenRemaining === 0) {
+      greenEl.textContent = 'COMPLETE';
+      greenEl.classList.add('dash-done-text');
+      greenLabelEl.textContent = '';
+    } else {
+      greenEl.textContent = greenRemaining;
+      greenEl.classList.remove('dash-done-text');
+      greenLabelEl.textContent = 'Remaining';
+    }
 
     const totals = new Map();
     for (const o of todayOrders) {
