@@ -2939,29 +2939,48 @@ This backup was generated in one click from Back End and contains:
     return m ? name.slice(0, m[0].length) + ' ' + name.slice(m[0].length) : name;
   }
 
-  // Matches by name (fuzzy, as usual) OR by postcode (a direct substring
-  // check against the normalised order text) — either one finding a hit is
-  // enough, so a garbled/abbreviated name doesn't block a postcode match.
   // Barcode scans check TODAY's slots first. If the customer has an order
   // today, that's shown directly — no need to also flag/surface older
   // orders for them. Only if there's no match today does this fall back to
   // searching the full history (with the usual "has earlier orders" flag).
+  //
+  // Within each of those scopes, matching is now two-tier for precision:
+  // 1. Try requiring BOTH name AND postcode to hit together — this is what
+  //    actually pins down one specific order, since two different customers
+  //    with similar-sounding names (e.g. "Tom Wilson" vs "Tommy Grey") can
+  //    otherwise both fuzzy-match on the name alone, showing a confusing
+  //    multi-match popup when really only one order is correct.
+  // 2. Only if that precise combined match finds NOTHING at all (e.g. the
+  //    postcode didn't extract cleanly from this particular barcode) does
+  //    it fall back to the old looser either-one-matches behaviour, so a
+  //    genuine match still isn't lost just because one field was imperfect.
   function searchOrdersByNameOrPostcode(name, postcode) {
     const nameNorm = name ? normalize(name) : '';
     const postcodeNorm = postcode ? normalize(postcode) : '';
-    const matchPredicate = (o) => {
-      const rawNorm = normalize(o.raw);
-      const nameHit = nameNorm && fuzzyMatch(rawNorm, nameNorm);
-      const postcodeHit = postcodeNorm && rawNorm.includes(postcodeNorm);
-      return nameHit || postcodeHit;
-    };
 
-    const todaysMatches = allOrders.filter(o => o.addedAt && isToday(o.addedAt) && matchPredicate(o));
+    const nameHitOn = (o) => nameNorm && fuzzyMatch(normalize(o.raw), nameNorm);
+    const postcodeHitOn = (o) => postcodeNorm && normalize(o.raw).includes(postcodeNorm);
+    const bothPredicate = (o) => nameHitOn(o) && postcodeHitOn(o);
+    const eitherPredicate = (o) => nameHitOn(o) || postcodeHitOn(o);
+
+    function searchWithinScope(pool) {
+      // Only worth requiring both if we actually extracted both from the
+      // barcode — if postcode extraction failed entirely, there's nothing
+      // to combine with, so go straight to the name-only match.
+      if (nameNorm && postcodeNorm) {
+        const precise = pool.filter(bothPredicate);
+        if (precise.length > 0) return precise;
+      }
+      return pool.filter(eitherPredicate);
+    }
+
+    const todaysPool = allOrders.filter(o => o.addedAt && isToday(o.addedAt));
+    const todaysMatches = searchWithinScope(todaysPool);
     if (todaysMatches.length > 0) {
       return dedupeMatchesToLatestPerCustomer(todaysMatches);
     }
 
-    const allMatches = allOrders.filter(matchPredicate);
+    const allMatches = searchWithinScope(allOrders);
     return dedupeMatchesToLatestPerCustomer(allMatches);
   }
 
