@@ -286,6 +286,11 @@
     border: 2px solid var(--line); box-shadow: 0 16px 48px rgba(0,0,0,0.3);
   }
   .mp-result-card.found { border-color: var(--good); background: #f2f8f2; }
+  .mp-result-card.found.already-scanned { border-color: #1e6fd9; background: #e8f1fc; }
+  .mp-already-scanned-badge {
+    display: inline-block; font-size: 15px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase;
+    color: #fff; background: #1e6fd9; padding: 8px 18px; border-radius: 7px; margin-bottom: 12px;
+  }
   .mp-result-card.multi { border-color: var(--warn); background: #fdf7ea; display: flex; flex-direction: column; }
   .mp-multi-entries-list {
     overflow-y: auto; -webkit-overflow-scrolling: touch; flex: 1; min-height: 0;
@@ -2638,12 +2643,14 @@ This backup was generated in one click from Back End and contains:
     return out;
   }
 
-  function speakResult(matches, query) {
+  function speakResult(matches, query, alreadyScanned) {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel(); // stop anything still being read from a previous scan
 
     let text;
-    if (matches.length === 0) {
+    if (alreadyScanned) {
+      text = 'This order is marked blue.';
+    } else if (matches.length === 0) {
       text = 'No match found.';
     } else if (matches.length === 1) {
       // Only the product(s) — no customer name, postcode, or other details.
@@ -2711,10 +2718,10 @@ This backup was generated in one click from Back End and contains:
     }
   }
 
-  function showResult(matches, query, isBarcodeScan) {
+  function showResult(matches, query, isBarcodeScan, alreadyScanned) {
     const wrap = document.getElementById('result-wrap');
     clearTimeout(clearTimer);
-    speakResult(matches, query);
+    speakResult(matches, query, alreadyScanned);
 
     let cardHtml;
     let duration = 20000;
@@ -2741,7 +2748,8 @@ This backup was generated in one click from Back End and contains:
         <svg viewBox="0 0 24 24" fill="white"><rect x="5" y="4" width="5" height="16" rx="1"/><rect x="14" y="4" width="5" height="16" rx="1"/></svg>
       </button>`;
       cardHtml = `
-        <div class="mp-result-card found">
+        <div class="mp-result-card found${alreadyScanned ? ' already-scanned' : ''}">
+          ${alreadyScanned ? '<div class="mp-already-scanned-badge">ALREADY SCANNED</div>' : ''}
           ${o._hasEarlierOrders ? '<div class="mp-latest-badge">LATEST ORDER — this customer has ordered before</div>' : ''}
           ${renderProductLinesHtml(o, 'popup')}
           ${labelsBox}
@@ -2986,8 +2994,13 @@ This backup was generated in one click from Back End and contains:
       const displayVal = extractedName || val;
       scanInput.value = displayVal; // show just the name, not the raw payload
       const matches = searchOrdersByNameOrPostcode(extractedName, extractedPostcode);
-      showResult(matches, displayVal, true);
-      markMatchesBlueFromScan(matches); // fire-and-forget, doesn't block the popup
+      // If this is a single match, from TODAY's list specifically (not a
+      // historical order), and it was ALREADY blue before this scan — show
+      // the special "ALREADY SCANNED" treatment instead of the normal popup,
+      // and skip re-marking it (it's already done, nothing to update).
+      const wasAlreadyScannedToday = matches.length === 1 && matches[0].addedAt && isToday(matches[0].addedAt) && matches[0].state === 'blue';
+      showResult(matches, displayVal, true, wasAlreadyScannedToday);
+      if (!wasAlreadyScannedToday) markMatchesBlueFromScan(matches); // fire-and-forget, doesn't block the popup
       // Clear the box right away (rather than waiting for the popup to time
       // out) so staff can scan the next label immediately.
       scanInput.value = '';
