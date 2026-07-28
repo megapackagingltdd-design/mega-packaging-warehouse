@@ -7,11 +7,15 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
-  html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: #1a1d1a; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #1a1d1a;
+    overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y;
+  }
   * { box-sizing: border-box; }
   body {
     font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; color: #1a1d1a;
     height: 100vh; display: flex; align-items: center; justify-content: center;
+    overflow-x: hidden; max-width: 100vw;
   }
 
   /* ---------- PIN screen ---------- */
@@ -31,20 +35,33 @@
   }
 
   /* ---------- Dashboard ---------- */
-  #dashboard { display: none; width: 100%; height: 100%; padding: 28px 34px; overflow: hidden; flex-direction: column; }
-  #dashboard.active { display: flex; }
-  .dash-title { color: #fff; font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 18px; }
-  .dash-boxes { display: flex; gap: 16px; margin-bottom: 22px; }
-  .dash-box {
-    flex: 1; border-radius: 14px; padding: 18px; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  #dashboard {
+    display: none; width: 100%; max-width: 100vw; height: 100%; padding: 20px; overflow-x: hidden;
+    overflow-y: auto; flex-direction: column; box-sizing: border-box;
   }
-  .dash-box .num { font-size: 40px; font-weight: 900; line-height: 1; }
-  .dash-box .num.dash-done-text { font-size: 18px; letter-spacing: .03em; }
-  .dash-box .lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; opacity: .85; }
+  #dashboard.active { display: flex; }
+  .dash-title { color: #fff; font-size: 18px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 14px; }
+  .dash-boxes {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px;
+  }
+  .dash-box {
+    min-width: 0; border-radius: 12px; padding: 10px 6px; display: flex; flex-direction: column;
+    align-items: center; gap: 3px; overflow: hidden;
+  }
+  .dash-box .num { font-size: clamp(20px, 6vw, 34px); font-weight: 900; line-height: 1; }
+  .dash-box .num.dash-done-text { font-size: clamp(10px, 2.6vw, 14px); letter-spacing: .02em; text-align: center; }
+  .dash-box .lbl { font-size: clamp(9px, 2.4vw, 11px); font-weight: 700; text-transform: uppercase; letter-spacing: .03em; opacity: .85; text-align: center; }
   .dash-box.total { background: #33372f; color: #fff; }
   .dash-box.blue { background: #1e6fd9; color: #fff; }
   .dash-box.green { background: #2f6b3e; color: #fff; }
   .dash-box.purple { background: #6a2ca3; color: #fff; }
+
+  /* Two-across on narrow phone screens instead of squeezing 4 into one row */
+  @media (max-width: 480px) {
+    .dash-boxes { grid-template-columns: repeat(2, 1fr); }
+    #dashboard { padding: 14px; }
+    .dash-title { font-size: 16px; }
+  }
 
   .dash-products-title { color: #ccc; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
   .dash-products-title.dash-oos-title { color: #ff8a8a; margin-top: 20px; }
@@ -168,10 +185,14 @@
 
     const total = todayOrders.length;
     const blueCount = todayOrders.filter(o => o.state === 'blue').length;
-    const greenOrBlueCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue').length;
+    // "Remaining" for green now means "still untouched at all" — any of
+    // green (manually picked), blue (scanned complete), or purple (printed)
+    // all count as no-longer-remaining. Only red (flagged not-done) and
+    // genuinely untouched default slots stay counted as remaining.
+    const noLongerDefaultCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue' || o.state === 'purple').length;
     const purpleCount = todayOrders.filter(o => o.state === 'purple').length;
     const blueRemaining = total - blueCount;
-    const greenRemaining = total - greenOrBlueCount; // purple never affects this — deliberately unchanged
+    const greenRemaining = total - noLongerDefaultCount;
     const purpleRemaining = total - purpleCount;
 
     document.getElementById('box-total').textContent = total;
