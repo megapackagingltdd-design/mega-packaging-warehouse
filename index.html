@@ -249,6 +249,9 @@
   .mp-order-card.state-blue { background: #1e6fd9 !important; border-color: #1e6fd9 !important; }
   .mp-order-card.state-blue .mp-order-card-main { color: #fff; }
   .mp-order-card.state-blue .mp-order-time { color: rgba(255,255,255,0.8); }
+  .mp-order-card.state-purple { background: #6a2ca3 !important; border-color: #6a2ca3 !important; }
+  .mp-order-card.state-purple .mp-order-card-main { color: #fff; }
+  .mp-order-card.state-purple .mp-order-time { color: rgba(255,255,255,0.8); }
   .mp-order-card.state-red { background: #cc2b2b !important; border-color: #cc2b2b !important; }
   .mp-order-card.state-red .mp-order-card-main { color: #fff; }
   .mp-order-card.state-red .mp-order-time { color: rgba(255,255,255,0.8); }
@@ -425,13 +428,19 @@
   .mp-search-blue-btn { flex: 1; padding: 7px 0; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border: 1.5px solid #1e6fd9; background: #fff; color: #1e6fd9; }
   .mp-search-blue-btn.remove-blue { border-color: #777; color: #777; }
   .mp-search-blue-btn:disabled { opacity: 0.6; cursor: default; }
+  .mp-search-purple-btn { flex: 1; padding: 7px 0; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; border: 1.5px solid #6a2ca3; background: #fff; color: #6a2ca3; }
+  .mp-search-purple-btn.remove-purple { border-color: #777; color: #777; }
+  .mp-search-purple-btn:disabled { opacity: 0.6; cursor: default; }
   .mp-history-item.state-green { background: var(--good) !important; border-color: var(--good) !important; }
   .mp-history-item.state-blue { background: #1e6fd9 !important; border-color: #1e6fd9 !important; }
+  .mp-history-item.state-purple { background: #6a2ca3 !important; border-color: #6a2ca3 !important; }
   .mp-history-item.state-red { background: #cc2b2b !important; border-color: #cc2b2b !important; }
   .mp-history-item.state-green .mp-history-date,
   .mp-history-item.state-green .mp-history-content { color: #fff; }
   .mp-history-item.state-blue .mp-history-date,
   .mp-history-item.state-blue .mp-history-content { color: #fff; }
+  .mp-history-item.state-purple .mp-history-date,
+  .mp-history-item.state-purple .mp-history-content { color: #fff; }
   .mp-history-item.state-red .mp-history-date,
   .mp-history-item.state-red .mp-history-content { color: #fff; }
   .mp-history-date {
@@ -444,7 +453,8 @@
     background: var(--accent); color: #fff; font-size: 10.5px; font-weight: 800; flex-shrink: 0;
   }
   .mp-history-item.state-green .mp-label-badge,
-  .mp-history-item.state-blue .mp-label-badge { background: rgba(255,255,255,0.35); }
+  .mp-history-item.state-blue .mp-label-badge,
+  .mp-history-item.state-purple .mp-label-badge { background: rgba(255,255,255,0.35); }
   .mp-history-item.state-red .mp-label-badge { background: rgba(255,255,255,0.35); }
 </style>
 
@@ -848,6 +858,15 @@
     if (dashIdx !== -1) firstLine = firstLine.slice(dashIdx + 3);
     firstLine = firstLine.replace(/\*[A-Za-z0-9]+\s*$/, ''); // strip trailing *SUFFIX
     return firstLine.trim();
+  }
+
+  // Pulls the postcode out of a stored order's header line, e.g.
+  // "Jen Gray (SW1A 1AA)" -> "SW1A 1AA". Returns '' if there isn't one
+  // (e.g. single-line Amazon/eBay style orders with no postcode at all).
+  function guessPostcodeFromRaw(raw) {
+    const firstLine = raw.split('\n')[0].trim();
+    const match = firstLine.match(/\(([^)]+)\)\s*$/);
+    return match ? match[1].trim() : '';
   }
 
   // Checks each pending order's guessed name against every order already
@@ -1943,7 +1962,7 @@ This backup was generated in one click from Back End and contains:
     const headerLine = header ? `<div class="mp-card-header-line">${escapeHtml(header)}</div>` : '';
     const productLines = products.map((p, i) => `<div class="mp-card-product-line${notDone.includes(i) ? ' mp-card-product-red' : ''}">${escapeHtml(p)}</div>`).join('');
     return `
-      <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'red' ? ' state-red' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
+      <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
         ${copyWarning}
         <div class="mp-order-card-main">${headerLine}${productLines}</div>
@@ -2156,7 +2175,7 @@ This backup was generated in one click from Back End and contains:
         .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
       const match = matches[0];
       if (match) {
-        const stateClass = match.state === 'green' ? ' state-green' : match.state === 'blue' ? ' state-blue' : match.state === 'red' ? ' state-red' : '';
+        const stateClass = match.state === 'green' ? ' state-green' : match.state === 'blue' ? ' state-blue' : match.state === 'purple' ? ' state-purple' : match.state === 'red' ? ' state-red' : '';
         const timeColorFinal = stateClass ? 'rgba(255,255,255,0.85)' : '#888';
         return `<div class="mp-history-item${stateClass}">
           <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
@@ -2306,12 +2325,14 @@ This backup was generated in one click from Back End and contains:
           <div class="mp-modal-actions" style="flex-wrap:wrap;">
             <button class="mp-btn mp-btn-ghost" id="sheet-cancel">Cancel</button>
             <button class="mp-btn mp-btn-primary" id="sheet-edit">Edit</button>
+            <button class="mp-btn" id="sheet-print" style="background:#6a2ca3; color:#fff; border:none;">Print?</button>
             <button class="mp-btn" id="sheet-delete" style="background:#a33; color:#fff; border:none;">Delete</button>
           </div>
         </div>`;
       root.appendChild(overlay);
       overlay.querySelector('#sheet-cancel').addEventListener('click', () => { overlay.remove(); resolve(null); });
       overlay.querySelector('#sheet-edit').addEventListener('click', () => { overlay.remove(); resolve('edit'); });
+      overlay.querySelector('#sheet-print').addEventListener('click', () => { overlay.remove(); resolve('print'); });
       overlay.querySelector('#sheet-delete').addEventListener('click', () => { overlay.remove(); resolve('delete'); });
     });
   }
@@ -2338,6 +2359,75 @@ This backup was generated in one click from Back End and contains:
     });
   }
 
+  // ---------- Printing (via the local print-watcher helper program) ----------
+  // Writes a request into its own Firestore collection (separate from the
+  // generic key-value "warehouse-storage" one, since the local helper
+  // program needs to query for pending requests, not fetch a single key).
+  // The helper program (running on the warehouse computer) picks it up,
+  // finds the matching Sendcloud label, and sends it to the local printer —
+  // then flips this same document's status, which is what we poll for here.
+  async function createPrintRequest(name, postcode) {
+    const docRef = await _db.collection('print-requests').add({
+      name: name,
+      postcode: postcode,
+      status: 'pending',
+      requestedAt: Date.now()
+    });
+    return docRef.id;
+  }
+
+  function pollPrintRequestStatus(requestId, { timeoutMs = 60000, intervalMs = 2000 } = {}) {
+    return new Promise((resolve) => {
+      const startedAt = Date.now();
+      const check = async () => {
+        try {
+          const doc = await _db.collection('print-requests').doc(requestId).get();
+          const data = doc.exists ? doc.data() : null;
+          if (data && data.status === 'printed') { resolve({ ok: true }); return; }
+          if (data && data.status === 'failed') { resolve({ ok: false, reason: data.errorMessage || 'Unknown error' }); return; }
+        } catch (e) {
+          // transient read error — just keep polling until timeout
+        }
+        if (Date.now() - startedAt > timeoutMs) {
+          resolve({ ok: false, reason: 'Timed out waiting for the print-watcher program — is it running on the warehouse computer?' });
+          return;
+        }
+        setTimeout(check, intervalMs);
+      };
+      check();
+    });
+  }
+
+  async function handlePrintRequest(order, id, addedAt) {
+    const name = guessCustomerNameFromRaw(order.raw);
+    const postcode = guessPostcodeFromRaw(order.raw);
+    if (!name) {
+      await customAlert('Could not work out the customer name for this slot — cannot request a print.');
+      return;
+    }
+
+    const waitOverlay = document.createElement('div');
+    waitOverlay.className = 'mp-modal-overlay';
+    waitOverlay.innerHTML = `<div class="mp-modal-box" style="text-align:center;"><p style="font-weight:700;">Requesting print for ${escapeHtml(name)}…</p><p style="font-size:12px; color:#888;">Waiting for the print-watcher program to find and send the label.</p></div>`;
+    root.appendChild(waitOverlay);
+
+    try {
+      const requestId = await createPrintRequest(name, postcode);
+      const result = await pollPrintRequestStatus(requestId);
+      waitOverlay.remove();
+      if (result.ok) {
+        const ok = await setSlotState(id, addedAt, 'purple');
+        if (ok) { order.state = 'purple'; loadAndRenderList(); }
+        await customAlert(`Printed — ${name}'s label was sent to the printer.`);
+      } else {
+        await customAlert(`Could not print ${name}'s label: ${result.reason}`);
+      }
+    } catch (e) {
+      waitOverlay.remove();
+      await customAlert('Could not create the print request — try again. (' + (e && e.message ? e.message : 'unknown error') + ')');
+    }
+  }
+
   async function handleSlotLongPress(card) {
     const id = card.dataset.id;
     const addedAt = card.dataset.addedAt;
@@ -2356,6 +2446,8 @@ This backup was generated in one click from Back End and contains:
           await customAlert('Could not save the edit — try again.');
         }
       }
+    } else if (action === 'print') {
+      await handlePrintRequest(order, id, addedAt);
     } else if (action === 'delete') {
       const confirmed = await customConfirm('Delete this slot? This cannot be undone.', 'Yes, delete');
       if (confirmed) {
@@ -2411,11 +2503,11 @@ This backup was generated in one click from Back End and contains:
     const order = allOrders.find(o => String(o.id) === String(id));
     if (!order) return;
     const prevState = order.state || 'default';
-    if (prevState === 'blue') return; // locked — only clears via marking a product not-done (hand icon), never by tapping
+    if (prevState === 'blue' || prevState === 'purple') return; // locked — blue only clears via marking a product not-done; purple only clears manually in Back End
     const newState = nextSlotState(prevState);
 
     // optimistic UI update — happens instantly, before any network call
-    card.classList.remove('state-green', 'state-blue', 'state-red');
+    card.classList.remove('state-green', 'state-blue', 'state-purple', 'state-red');
     if (newState !== 'default') card.classList.add('state-' + newState);
     order.state = newState;
     inFlightToggles.add(id);
@@ -2426,7 +2518,7 @@ This backup was generated in one click from Back End and contains:
     if (!ok) {
       // revert on failure — and flash the card red briefly so it's visibly
       // clear this specific tap didn't save, not just a silent no-op.
-      card.classList.remove('state-green', 'state-blue', 'state-red');
+      card.classList.remove('state-green', 'state-blue', 'state-purple', 'state-red');
       if (prevState !== 'default') card.classList.add('state-' + prevState);
       order.state = prevState;
       card.classList.add('mp-toggle-failed');
@@ -3280,6 +3372,7 @@ This backup was generated in one click from Back End and contains:
           <button class="mp-search-edit-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}">Edit</button>
           <button class="mp-search-delete-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}">Delete</button>
           <button class="mp-search-blue-btn${o.state === 'blue' ? ' remove-blue' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}" data-current-state="${o.state || 'default'}">${o.state === 'blue' ? 'Remove Blue' : 'Mark Blue'}</button>
+          <button class="mp-search-purple-btn${o.state === 'purple' ? ' remove-purple' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}" data-current-state-purple="${o.state || 'default'}">${o.state === 'purple' ? 'Remove Purple' : 'Mark Purple'}</button>
         </div>
       </div>`).join('');
   }
@@ -3295,6 +3388,7 @@ This backup was generated in one click from Back End and contains:
     const editBtn = e.target.closest('.mp-search-edit-btn');
     const deleteBtn = e.target.closest('.mp-search-delete-btn');
     const blueBtn = e.target.closest('.mp-search-blue-btn');
+    const purpleBtn = e.target.closest('.mp-search-purple-btn');
     const productIcon = e.target.closest('.mp-product-icon[data-context="backend"]');
     if (productIcon) {
       const id = productIcon.dataset.id;
@@ -3348,6 +3442,26 @@ This backup was generated in one click from Back End and contains:
       } else {
         blueBtn.disabled = false;
         blueBtn.textContent = isCurrentlyBlue ? 'Remove Blue — try again' : 'Mark Blue — try again';
+      }
+    } else if (purpleBtn) {
+      const id = purpleBtn.dataset.id;
+      const addedAt = purpleBtn.dataset.addedAt;
+      const isCurrentlyPurple = purpleBtn.dataset.currentStatePurple === 'purple';
+      const targetState = isCurrentlyPurple ? 'default' : 'purple';
+      purpleBtn.disabled = true;
+      purpleBtn.textContent = isCurrentlyPurple ? 'Removing…' : 'Marking…';
+      const ok = await setSlotState(id, addedAt, targetState);
+      if (ok) {
+        const order = backendSearchResultsCache.find(o => String(o.id) === String(id));
+        if (order) order.state = targetState;
+        purpleBtn.dataset.currentStatePurple = targetState;
+        purpleBtn.disabled = false;
+        purpleBtn.textContent = targetState === 'purple' ? 'Remove Purple' : 'Mark Purple';
+        purpleBtn.classList.toggle('remove-purple', targetState === 'purple');
+        loadAndRenderList(); // reflect on the grid immediately
+      } else {
+        purpleBtn.disabled = false;
+        purpleBtn.textContent = isCurrentlyPurple ? 'Remove Purple — try again' : 'Mark Purple — try again';
       }
     } else if (deleteBtn) {
       const id = deleteBtn.dataset.id;
