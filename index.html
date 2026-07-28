@@ -1580,7 +1580,17 @@ This backup was generated in one click from Back End and contains:
     await _db.collection('pending-sync-review').doc(docId).delete();
   }
 
+  // Rejecting also clears the "already synced" tracking marker(s) for this
+  // order — otherwise a future sync would just skip it forever, thinking
+  // it had already been handled, when really nothing was ever added.
   async function rejectSyncReviewItem(docId) {
+    const doc = await _db.collection('pending-sync-review').doc(docId).get();
+    if (doc.exists) {
+      const orderNumbers = (doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
+      for (const num of orderNumbers) {
+        await _db.collection('synced-order-numbers').doc(num).delete().catch(() => {});
+      }
+    }
     await _db.collection('pending-sync-review').doc(docId).delete();
   }
 
@@ -1591,7 +1601,7 @@ This backup was generated in one click from Back End and contains:
     if (btn.dataset.action === 'approve-one') {
       await approveSyncReviewItem(docId);
     } else if (btn.dataset.action === 'reject-one') {
-      const confirmed = await customConfirm('Reject this order? It will not be added to SLOTS.', 'Yes, reject');
+      const confirmed = await customConfirm('Reject this order? It will not be added to SLOTS, and it can be picked up again next sync.', 'Yes, reject');
       if (!confirmed) return;
       await rejectSyncReviewItem(docId);
     }
@@ -1612,7 +1622,7 @@ This backup was generated in one click from Back End and contains:
 
   document.getElementById('btn-reject-all-sync').addEventListener('click', async () => {
     const cards = document.querySelectorAll('.mp-sync-review-card');
-    const confirmed = await customConfirm(`Reject all ${cards.length} order(s)? None will be added to SLOTS.`, `Yes, reject ${cards.length}`);
+    const confirmed = await customConfirm(`Reject all ${cards.length} order(s)? None will be added to SLOTS, and they can be picked up again next sync.`, `Yes, reject ${cards.length}`);
     if (!confirmed) return;
     for (const card of cards) {
       await rejectSyncReviewItem(card.dataset.id);
