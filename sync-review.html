@@ -110,6 +110,18 @@
     flex-shrink: 0; padding: 5px 10px; font-size: 12px; font-weight: 700; border-radius: 6px;
     border: 1.5px solid #a33; background: #fff; color: #a33; cursor: pointer;
   }
+
+  .skipped-item {
+    background: #f6f5f1; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px;
+  }
+  .skipped-item .skipped-line { margin-bottom: 3px; line-height: 1.4; }
+  .skipped-item .skipped-label { font-weight: 700; color: #777; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; }
+  .skipped-item .skipped-name { font-weight: 700; }
+  .skipped-item button {
+    margin-top: 6px; width: 100%; padding: 8px 0; font-size: 12.5px; font-weight: 700; border-radius: 6px;
+    border: 1.5px solid #c65d2e; background: #fff; color: #c65d2e; cursor: pointer;
+  }
+  .skipped-item button:disabled { opacity: 0.5; }
 </style>
 </head>
 <body>
@@ -157,6 +169,12 @@
       <button class="btn btn-good" id="btn-approve-all">Approve All</button>
       <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
     </div>
+  </div>
+
+  <div class="card" id="skipped-card" style="display:none;">
+    <h2>Skipped as duplicate</h2>
+    <p class="hint">These were excluded automatically because they matched an existing order. Worth a quick check — if a match looks wrong (e.g. two different people who happen to share a postcode), you can add it for review anyway.</p>
+    <div id="skipped-list"></div>
   </div>
 </div>
 
@@ -206,6 +224,7 @@
       document.getElementById('page').classList.add('active');
       renderManualLabelsList();
       renderReviewQueue();
+      renderSkippedList();
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -251,6 +270,7 @@
           statusEl.textContent = `Done — ${data.importedCount != null ? data.importedCount : '?'} order(s) queued below for review (${data.skippedCount != null ? data.skippedCount : 0} already in the system).`;
           btn.disabled = false;
           renderReviewQueue();
+          renderSkippedList();
           return;
         }
         if (data && data.status === 'failed') {
@@ -363,6 +383,66 @@
     if (!confirm(`Reject all ${cards.length} order(s)? None will be added as slots.`)) return;
     for (const card of cards) await rejectReviewItem(card.dataset.id);
     renderReviewQueue();
+  });
+
+  // ---------- Skipped duplicates ----------
+  async function renderSkippedList() {
+    const skippedCard = document.getElementById('skipped-card');
+    const listEl = document.getElementById('skipped-list');
+    const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt').get();
+    if (snapshot.empty) {
+      skippedCard.style.display = 'none';
+      listEl.innerHTML = '';
+      return;
+    }
+    skippedCard.style.display = 'block';
+    const rows = [];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      rows.push(`
+        <div class="skipped-item" data-id="${doc.id}">
+          <div class="skipped-line"><span class="skipped-label">From Sendcloud:</span> <span class="skipped-name">${escapeHtml(d.candidateName || '')}</span> (${escapeHtml(d.candidatePostcode || 'no postcode')})</div>
+          <div class="skipped-line"><span class="skipped-label">Matched to:</span> <span class="skipped-name">${escapeHtml(d.matchedName || '')}</span> — ${escapeHtml(d.matchedSource || '')}</div>
+          <button data-id="${doc.id}">Not a duplicate — add for review</button>
+        </div>`);
+    });
+    listEl.innerHTML = rows.join('');
+  }
+
+  document.getElementById('skipped-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    const docId = btn.dataset.id;
+    btn.disabled = true;
+    btn.textContent = 'Adding…';
+    try {
+      const reqRef = await db.collection('reprocess-skip-requests').add({ skipDocId: docId, status: 'pending', requestedAt: Date.now() });
+      const startedAt = Date.now();
+      const check = async () => {
+        const doc = await db.collection('reprocess-skip-requests').doc(reqRef.id).get();
+        const data = doc.exists ? doc.data() : null;
+        if (data && data.status === 'done') {
+          renderSkippedList();
+          renderReviewQueue();
+          return;
+        }
+        if (data && data.status === 'failed') {
+          btn.disabled = false;
+          btn.textContent = 'Failed — try again (' + (data.errorMessage || 'unknown error') + ')';
+          return;
+        }
+        if (Date.now() - startedAt > 30000) {
+          btn.disabled = false;
+          btn.textContent = 'Timed out — is print-watcher running?';
+          return;
+        }
+        setTimeout(check, 1500);
+      };
+      check();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = 'Failed — try again';
+    }
   });
 
   // ---------- Manual label upload ----------
