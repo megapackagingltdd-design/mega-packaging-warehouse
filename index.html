@@ -697,9 +697,10 @@
 
           <div class="mp-dup-section" id="sendcloud-sync-section">
             <h4>Sync orders from Sendcloud</h4>
-            <p class="mp-pdf-hint">Pulls in recent Amazon orders from Sendcloud, formatted using the exact same rules as manual packing slip processing (SKU lookup, bundling, name formatting). Nothing becomes a real slot automatically — every order lands below for you to review and approve first. Already-imported orders are never queued twice.</p>
+            <p class="mp-pdf-hint">Pulls in recent orders from Sendcloud (all connected integrations), formatted using the exact same rules as manual packing slip processing (SKU lookup, bundling, name formatting). Nothing becomes a real slot automatically — every order lands below for you to review and approve first. Already-imported orders are never queued twice.</p>
             <div class="mp-add-row">
               <button class="mp-btn mp-btn-primary" id="btn-sync-sendcloud">Sync from Sendcloud</button>
+              <button class="mp-btn mp-btn-ghost" id="btn-reset-sync-tracking">Reset sync tracking</button>
             </div>
             <div class="mp-status" id="sendcloud-sync-status"></div>
 
@@ -1500,6 +1501,24 @@ This backup was generated in one click from Back End and contains:
   });
 
   // ---------- Sync orders from Sendcloud ----------
+  document.getElementById('btn-reset-sync-tracking').addEventListener('click', async () => {
+    const statusEl = document.getElementById('sendcloud-sync-status');
+    const confirmed = await customConfirm('Reset ALL Sendcloud sync tracking? Every order will be treated as brand new on the next sync — including ones already added as slots (they\'d be queued again, so only do this if you\'re sure).', 'Yes, reset everything');
+    if (!confirmed) return;
+    statusEl.textContent = 'Resetting…';
+    try {
+      const snapshot = await _db.collection('synced-order-numbers').get();
+      let count = 0;
+      for (const doc of snapshot.docs) {
+        await doc.ref.delete();
+        count++;
+      }
+      statusEl.textContent = `Reset complete — cleared ${count} tracking marker(s). Every order will be treated as new on the next sync.`;
+    } catch (e) {
+      statusEl.textContent = 'Could not reset — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
+    }
+  });
+
   document.getElementById('btn-sync-sendcloud').addEventListener('click', async () => {
     const btn = document.getElementById('btn-sync-sendcloud');
     const statusEl = document.getElementById('sendcloud-sync-status');
