@@ -44,6 +44,7 @@
   .dash-box.total { background: #33372f; color: #fff; }
   .dash-box.blue { background: #1e6fd9; color: #fff; }
   .dash-box.green { background: #2f6b3e; color: #fff; }
+  .dash-box.purple { background: #6a2ca3; color: #fff; }
 
   .dash-products-title { color: #ccc; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }
   .dash-products-title.dash-oos-title { color: #ff8a8a; margin-top: 20px; }
@@ -80,6 +81,7 @@
     <div class="dash-box total"><div class="num" id="box-total">0</div><div class="lbl">Total Orders</div></div>
     <div class="dash-box blue"><div class="num" id="box-blue">0</div><div class="lbl" id="box-blue-label">Remaining</div></div>
     <div class="dash-box green"><div class="num" id="box-green">0</div><div class="lbl" id="box-green-label">Remaining</div></div>
+    <div class="dash-box purple"><div class="num" id="box-purple">0</div><div class="lbl" id="box-purple-label">Remaining</div></div>
   </div>
   <div class="dash-scroll-area">
     <div class="dash-products-title">Products still pending (not yet scanned)</div>
@@ -167,8 +169,10 @@
     const total = todayOrders.length;
     const blueCount = todayOrders.filter(o => o.state === 'blue').length;
     const greenOrBlueCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue').length;
+    const purpleCount = todayOrders.filter(o => o.state === 'purple').length;
     const blueRemaining = total - blueCount;
-    const greenRemaining = total - greenOrBlueCount;
+    const greenRemaining = total - greenOrBlueCount; // purple never affects this — deliberately unchanged
+    const purpleRemaining = total - purpleCount;
 
     document.getElementById('box-total').textContent = total;
 
@@ -194,6 +198,18 @@
       greenEl.textContent = greenRemaining;
       greenEl.classList.remove('dash-done-text');
       greenLabelEl.textContent = 'Remaining';
+    }
+
+    const purpleEl = document.getElementById('box-purple');
+    const purpleLabelEl = document.getElementById('box-purple-label');
+    if (total > 0 && purpleRemaining === 0) {
+      purpleEl.textContent = 'COMPLETE';
+      purpleEl.classList.add('dash-done-text');
+      purpleLabelEl.textContent = '';
+    } else {
+      purpleEl.textContent = purpleRemaining;
+      purpleEl.classList.remove('dash-done-text');
+      purpleLabelEl.textContent = 'Remaining';
     }
 
     // Products are split into two views:
