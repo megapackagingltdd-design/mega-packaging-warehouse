@@ -696,7 +696,7 @@
           </div>
 
           <div class="mp-dup-section" id="sendcloud-sync-section">
-            <h4>Sync orders from Sendcloud (Amazon)</h4>
+            <h4>Sync orders from Sendcloud</h4>
             <p class="mp-pdf-hint">Pulls in recent Amazon orders from Sendcloud, formatted using the exact same rules as manual packing slip processing (SKU lookup, bundling, name formatting). Nothing becomes a real slot automatically — every order lands below for you to review and approve first. Already-imported orders are never queued twice.</p>
             <div class="mp-add-row">
               <button class="mp-btn mp-btn-primary" id="btn-sync-sendcloud">Sync from Sendcloud</button>
@@ -1585,13 +1585,23 @@ This backup was generated in one click from Back End and contains:
   // it had already been handled, when really nothing was ever added.
   async function rejectSyncReviewItem(docId) {
     const doc = await _db.collection('pending-sync-review').doc(docId).get();
+    let orderNumbers = [];
     if (doc.exists) {
-      const orderNumbers = (doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
+      orderNumbers = (doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
+      console.log('[reject]', docId, '-> clearing tracking for order numbers:', orderNumbers);
       for (const num of orderNumbers) {
-        await _db.collection('synced-order-numbers').doc(num).delete().catch(() => {});
+        try {
+          await _db.collection('synced-order-numbers').doc(num).delete();
+          console.log('[reject]   cleared:', num);
+        } catch (e) {
+          console.error('[reject]   FAILED to clear:', num, e);
+        }
       }
+    } else {
+      console.log('[reject]', docId, '-> review doc did not exist when read');
     }
     await _db.collection('pending-sync-review').doc(docId).delete();
+    return orderNumbers;
   }
 
   document.getElementById('sync-review-list').addEventListener('click', async (e) => {
@@ -1624,9 +1634,13 @@ This backup was generated in one click from Back End and contains:
     const cards = document.querySelectorAll('.mp-sync-review-card');
     const confirmed = await customConfirm(`Reject all ${cards.length} order(s)? None will be added to SLOTS, and they can be picked up again next sync.`, `Yes, reject ${cards.length}`);
     if (!confirmed) return;
+    const statusEl = document.getElementById('sendcloud-sync-status');
+    let totalCleared = 0;
     for (const card of cards) {
-      await rejectSyncReviewItem(card.dataset.id);
+      const nums = await rejectSyncReviewItem(card.dataset.id);
+      totalCleared += nums.length;
     }
+    statusEl.textContent = `Rejected ${cards.length} order(s) — cleared ${totalCleared} tracking marker(s), so they'll come back on the next sync.`;
     renderSyncReviewList();
   });
 
