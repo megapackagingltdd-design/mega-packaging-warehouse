@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Sendcloud Sync | Mega Packaging</title>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+  html, body {
+    margin: 0; padding: 0; background: #f6f5f1;
+    overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif; color: #1a1d1a;
+    min-height: 100vh; max-width: 100vw;
+  }
+
+  /* ---------- PIN screen ---------- */
+  #pin-screen {
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 24px;
+  }
+  #pin-box {
+    display: flex; flex-direction: column; align-items: center; gap: 16px;
+    background: #fff; border-radius: 16px; padding: 34px 28px; width: min(340px, 100%);
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+  }
+  #pin-box h1 { font-size: 17px; margin: 0; text-align: center; }
+  #pin-input {
+    width: 100%; font-size: 28px; text-align: center; letter-spacing: 12px; padding: 12px;
+    border: 2px solid #d8d5cc; border-radius: 9px; box-sizing: border-box;
+  }
+  #pin-error { color: #a33; font-size: 13px; font-weight: 700; min-height: 18px; text-align: center; }
+  #pin-ok {
+    width: 100%; padding: 13px 0; font-size: 15px; font-weight: 800; border-radius: 9px; border: none;
+    background: #2f6b3e; color: #fff; cursor: pointer;
+  }
+
+  /* ---------- Main page ---------- */
+  #page { display: none; padding: 14px; padding-bottom: 60px; max-width: 720px; margin: 0 auto; }
+  #page.active { display: block; }
+  .page-title { font-size: 19px; font-weight: 900; margin: 4px 0 4px; }
+  .page-subtitle { font-size: 12.5px; color: #777; margin: 0 0 16px; line-height: 1.4; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 14px; margin-bottom: 14px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+  }
+  .card h2 { font-size: 14px; font-weight: 800; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .03em; }
+  .card p.hint { font-size: 12.5px; color: #777; line-height: 1.4; margin: 0 0 12px; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 11px 16px; border-radius: 9px; border: none; font-size: 14px; font-weight: 800;
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+    width: 100%;
+  }
+  .btn-primary { background: #c65d2e; color: #fff; }
+  .btn-ghost { background: #f0efe9; color: #444; }
+  .btn-good { background: #2f6b3e; color: #fff; }
+  .btn-danger { background: #a33; color: #fff; }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { flex: 1; }
+  .btn:disabled { opacity: 0.5; }
+
+  .status-line { font-size: 12.5px; color: #555; margin-top: 10px; line-height: 1.4; }
+
+  input[type="text"], textarea {
+    width: 100%; font-size: 14px; padding: 10px 12px; border: 1.5px solid #ddd9cf; border-radius: 8px;
+    box-sizing: border-box; font-family: inherit; margin-bottom: 8px;
+  }
+  input[type="file"] { font-size: 13px; margin-bottom: 8px; width: 100%; }
+
+  .review-card {
+    border: 1.5px solid #ddd9cf; border-radius: 10px; padding: 12px; margin-bottom: 10px;
+  }
+  .review-card.flagged { border-color: #d99b1c; background: #fdf6e5; }
+  .review-flag {
+    font-size: 12px; font-weight: 800; color: #a3701c; background: #fbeccc; padding: 6px 9px;
+    border-radius: 6px; margin-bottom: 10px; white-space: pre-wrap; line-height: 1.4;
+  }
+  .review-header { font-weight: 800; font-size: 15px; margin-bottom: 10px; }
+
+  .compare-block { margin-bottom: 10px; }
+  .compare-label {
+    font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em;
+    color: #999; margin-bottom: 4px;
+  }
+  .compare-original {
+    background: #f6f5f1; border-radius: 7px; padding: 8px 10px; font-size: 12.5px; color: #555;
+    margin-bottom: 8px; line-height: 1.5;
+  }
+  .compare-original .item-row { padding: 3px 0; border-bottom: 1px dashed #ddd; }
+  .compare-original .item-row:last-child { border-bottom: none; }
+  .compare-original .item-sku { font-family: monospace; font-weight: 700; color: #1a1d1a; }
+  .compare-converted-textarea {
+    width: 100%; min-height: 54px; font-size: 13.5px; font-family: monospace; padding: 9px;
+    border: 1.5px solid #ccc; border-radius: 7px; box-sizing: border-box; background: #fff;
+  }
+
+  .empty-note { color: #999; font-size: 13px; text-align: center; padding: 24px 10px; }
+
+  .manual-labels-list-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: #f6f5f1; border-radius: 7px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
+  }
+  .manual-labels-list-item button {
+    flex-shrink: 0; padding: 5px 10px; font-size: 12px; font-weight: 700; border-radius: 6px;
+    border: 1.5px solid #a33; background: #fff; color: #a33; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<div id="pin-screen">
+  <div id="pin-box">
+    <h1>Sendcloud Sync<br/>Mega Packaging</h1>
+    <input type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="pin-input" autocomplete="off" />
+    <div id="pin-error"></div>
+    <button id="pin-ok" class="btn btn-good">Unlock</button>
+  </div>
+</div>
+
+<div id="page">
+  <div class="page-title">Sendcloud Sync</div>
+  <p class="page-subtitle">Pull in recent orders from Sendcloud, review exactly how each one converts compared to the original Sendcloud data, then approve to add it as a real slot. Nothing is added automatically.</p>
+
+  <div class="card">
+    <h2>Sync from Sendcloud</h2>
+    <p class="hint">Cross-references against your actual current slots — only orders genuinely not yet in the system are brought in. Safe to run as often as you like.</p>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-sync">Sync from Sendcloud</button>
+    </div>
+    <div class="status-line" id="sync-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>Upload a label manually</h2>
+    <p class="hint">For labels created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available) — upload the PDF here matched to the customer, and staff can use the normal Print button on that slot as usual.</p>
+    <input type="text" id="manual-name" placeholder="Customer name" />
+    <input type="text" id="manual-postcode" placeholder="Postcode (optional but recommended)" />
+    <input type="file" id="manual-file" accept="application/pdf" />
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-upload-manual">Upload Label</button>
+    </div>
+    <div class="status-line" id="manual-status"></div>
+    <div id="manual-labels-list" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card" id="review-card" style="display:none;">
+    <h2>Review queue</h2>
+    <p class="hint">Compare the original Sendcloud data against how it'll display in the system. Edit the converted text if anything needs a tweak, then approve.</p>
+    <div id="review-list"></div>
+    <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
+      <button class="btn btn-good" id="btn-approve-all">Approve All</button>
+      <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAfgBcWvpnZYMWBb_I9b1gX0xkFMgWU99w",
+    authDomain: "mega-packaging-parcels.firebaseapp.com",
+    projectId: "mega-packaging-parcels",
+    storageBucket: "mega-packaging-parcels.firebasestorage.app",
+    messagingSenderId: "792403680019",
+    appId: "1:792403680019:web:474d448da9633ec98118e6"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+  const storageCollection = db.collection('warehouse-storage');
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  async function storageGet(key) {
+    const doc = await storageCollection.doc(key).get();
+    if (!doc.exists) return null;
+    return doc.data().value;
+  }
+
+  // ---------- PIN gate — same multi-user PIN system as the summary page ----------
+  async function checkPin(pin) {
+    const value = await storageGet('summary-pins');
+    if (!value) return { ok: false, reason: 'No PINs have been configured yet — set one up in Back End first.' };
+    let pins;
+    try { pins = JSON.parse(value); } catch (e) { pins = []; }
+    const match = pins.find(p => p.pin === pin && p.active);
+    return match ? { ok: true } : { ok: false, reason: 'Incorrect or inactive PIN.' };
+  }
+
+  const pinInput = document.getElementById('pin-input');
+  const pinError = document.getElementById('pin-error');
+
+  async function submitPin() {
+    const pin = pinInput.value.trim();
+    if (!/^\d{4}$/.test(pin)) { pinError.textContent = 'Enter the 4-digit PIN.'; return; }
+    pinError.textContent = 'Checking…';
+    const result = await checkPin(pin);
+    if (result.ok) {
+      document.getElementById('pin-screen').style.display = 'none';
+      document.getElementById('page').classList.add('active');
+      renderManualLabelsList();
+      renderReviewQueue();
+    } else {
+      pinError.textContent = result.reason;
+      pinInput.value = '';
+    }
+  }
+  document.getElementById('pin-ok').addEventListener('click', submitPin);
+  pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
+  pinInput.addEventListener('input', () => { if (pinInput.value.length === 4) submitPin(); });
+  pinInput.focus();
+
+  // ---------- Add an approved order as a real slot (same format as the main app) ----------
+  function monthKeyFor(ts) {
+    const d = new Date(ts);
+    return 'orders:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+  async function addOrderAsSlot(raw) {
+    const now = Date.now();
+    const key = monthKeyFor(now);
+    const entry = { raw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
+    let existing = [];
+    const res = await storageCollection.doc(key).get();
+    if (res.exists) {
+      try { existing = JSON.parse(res.data().value); } catch (e) { existing = []; }
+    }
+    existing.push(entry);
+    await storageCollection.doc(key).set({ value: JSON.stringify(existing), shared: true, updatedAt: now });
+  }
+
+  // ---------- Sync from Sendcloud ----------
+  document.getElementById('btn-sync').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-sync');
+    const statusEl = document.getElementById('sync-status');
+    btn.disabled = true;
+    statusEl.textContent = 'Requesting sync…';
+    try {
+      const docRef = await db.collection('sync-requests').add({ status: 'pending', requestedAt: Date.now() });
+      statusEl.textContent = 'Waiting for the print-watcher program to fetch orders from Sendcloud…';
+      const startedAt = Date.now();
+      const check = async () => {
+        const doc = await db.collection('sync-requests').doc(docRef.id).get();
+        const data = doc.exists ? doc.data() : null;
+        if (data && data.status === 'done') {
+          statusEl.textContent = `Done — ${data.importedCount != null ? data.importedCount : '?'} order(s) queued below for review (${data.skippedCount != null ? data.skippedCount : 0} already in the system).`;
+          btn.disabled = false;
+          renderReviewQueue();
+          return;
+        }
+        if (data && data.status === 'failed') {
+          statusEl.textContent = 'Sync failed: ' + (data.errorMessage || 'unknown error');
+          btn.disabled = false;
+          return;
+        }
+        if (Date.now() - startedAt > 60000) {
+          statusEl.textContent = 'Timed out waiting for the print-watcher program — is it running on the warehouse computer?';
+          btn.disabled = false;
+          return;
+        }
+        setTimeout(check, 2000);
+      };
+      check();
+    } catch (e) {
+      statusEl.textContent = 'Could not request sync — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- Review queue ----------
+  async function renderReviewQueue() {
+    const reviewCard = document.getElementById('review-card');
+    const listEl = document.getElementById('review-list');
+    const bulkEl = document.getElementById('review-bulk-actions');
+    const snapshot = await db.collection('pending-sync-review').orderBy('createdAt').get();
+
+    if (snapshot.empty) {
+      reviewCard.style.display = 'none';
+      listEl.innerHTML = '';
+      return;
+    }
+    reviewCard.style.display = 'block';
+    bulkEl.style.display = 'flex';
+
+    const cards = [];
+    snapshot.forEach(doc => {
+      const d = doc.data();
+      let originalItems = [];
+      try { originalItems = JSON.parse(d.originalItemsJson || '[]'); } catch (e) {}
+      const headerLine = String(d.raw || '').split('\n')[0];
+
+      const originalHtml = originalItems.length
+        ? originalItems.map(it => `
+            <div class="item-row">
+              <span class="item-sku">${escapeHtml(it.sku || '(no SKU)')}</span> — qty ${escapeHtml(String(it.qty))}<br/>
+              <span style="color:#888;">${escapeHtml(it.description || '')}</span>
+            </div>`).join('')
+        : '<div class="item-row">No original item data available.</div>';
+
+      cards.push(`
+        <div class="review-card${d.needsReview ? ' flagged' : ''}" data-id="${doc.id}">
+          ${d.needsReview ? `<div class="review-flag">⚠️ ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
+          <div class="review-header">${escapeHtml(headerLine)}</div>
+
+          <div class="compare-block">
+            <div class="compare-label">Original (from Sendcloud)</div>
+            <div class="compare-original">${originalHtml}</div>
+          </div>
+
+          <div class="compare-block">
+            <div class="compare-label">Converted for our system (editable)</div>
+            <textarea class="compare-converted-textarea" data-id="${doc.id}">${escapeHtml(d.raw || '')}</textarea>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-good" data-action="approve-one" data-id="${doc.id}">Approve &amp; Add</button>
+            <button class="btn btn-danger" data-action="reject-one" data-id="${doc.id}">Reject</button>
+          </div>
+        </div>`);
+    });
+    listEl.innerHTML = cards.join('');
+  }
+
+  async function approveReviewItem(docId) {
+    const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
+    const raw = textarea ? textarea.value.trim() : '';
+    if (!raw) return;
+    await addOrderAsSlot(raw);
+    await db.collection('pending-sync-review').doc(docId).delete();
+  }
+  async function rejectReviewItem(docId) {
+    // Nothing extra to clear — the sync cross-references real slots directly,
+    // so a rejected order (never added as a slot) simply comes back
+    // naturally on the next sync if it's still relevant.
+    await db.collection('pending-sync-review').doc(docId).delete();
+  }
+
+  document.getElementById('review-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const docId = btn.dataset.id;
+    if (btn.dataset.action === 'approve-one') {
+      await approveReviewItem(docId);
+    } else if (btn.dataset.action === 'reject-one') {
+      if (!confirm('Reject this order? It will not be added as a slot.')) return;
+      await rejectReviewItem(docId);
+    }
+    renderReviewQueue();
+  });
+
+  document.getElementById('btn-approve-all').addEventListener('click', async () => {
+    const cards = document.querySelectorAll('.review-card');
+    if (!confirm(`Approve and add all ${cards.length} order(s) as slots?`)) return;
+    for (const card of cards) await approveReviewItem(card.dataset.id);
+    renderReviewQueue();
+  });
+  document.getElementById('btn-reject-all').addEventListener('click', async () => {
+    const cards = document.querySelectorAll('.review-card');
+    if (!confirm(`Reject all ${cards.length} order(s)? None will be added as slots.`)) return;
+    for (const card of cards) await rejectReviewItem(card.dataset.id);
+    renderReviewQueue();
+  });
+
+  // ---------- Manual label upload ----------
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function renderManualLabelsList() {
+    const listEl = document.getElementById('manual-labels-list');
+    try {
+      const snapshot = await db.collection('manual-labels').where('used', '==', false).get();
+      if (snapshot.empty) { listEl.innerHTML = ''; return; }
+      const rows = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        rows.push(`
+          <div class="manual-labels-list-item" data-id="${doc.id}">
+            <span>${escapeHtml(d.name || 'Unnamed')}${d.postcode ? ' (' + escapeHtml(d.postcode) + ')' : ''}</span>
+            <button data-id="${doc.id}">Delete</button>
+          </div>`);
+      });
+      listEl.innerHTML = rows.join('');
+    } catch (e) {
+      listEl.innerHTML = '';
+    }
+  }
+
+  document.getElementById('btn-upload-manual').addEventListener('click', async () => {
+    const nameInput = document.getElementById('manual-name');
+    const postcodeInput = document.getElementById('manual-postcode');
+    const fileInput = document.getElementById('manual-file');
+    const statusEl = document.getElementById('manual-status');
+    const name = nameInput.value.trim();
+    const postcode = postcodeInput.value.trim();
+    const file = fileInput.files && fileInput.files[0];
+
+    if (!name) { statusEl.textContent = 'Enter the customer name first.'; return; }
+    if (!file) { statusEl.textContent = 'Choose a PDF file first.'; return; }
+    if (file.type !== 'application/pdf') { statusEl.textContent = 'Please choose a PDF file.'; return; }
+    if (file.size > 900000) { statusEl.textContent = 'That PDF is too large — double check it\'s the right file.'; return; }
+
+    statusEl.textContent = 'Uploading…';
+    try {
+      const base64 = await fileToBase64(file);
+      await db.collection('manual-labels').add({ name, postcode, pdfBase64: base64, uploadedAt: Date.now(), used: false });
+      statusEl.textContent = `Uploaded — label for ${name} is ready.`;
+      nameInput.value = ''; postcodeInput.value = ''; fileInput.value = '';
+      renderManualLabelsList();
+    } catch (e) {
+      statusEl.textContent = 'Could not upload — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
+    }
+  });
+
+  document.getElementById('manual-labels-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-id]');
+    if (!btn) return;
+    if (!confirm('Delete this uploaded label?')) return;
+    await db.collection('manual-labels').doc(btn.dataset.id).delete();
+    renderManualLabelsList();
+  });
+</script>
+</body>
+</html>
