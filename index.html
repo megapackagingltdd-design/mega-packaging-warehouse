@@ -657,17 +657,6 @@
             <div class="mp-preview-list" id="preview-list"></div>
           </div>
 
-          <div class="mp-dup-section" id="ncomplete-section">
-            <h4>Not complete orders (from SendCloud)</h4>
-            <p class="mp-pdf-hint">Copy the customer names from the SendCloud labels page and paste them below — one per line (or however they copy; extra spacing is fine). Names are cleaned automatically (titles and reference codes removed) the same way as before.</p>
-            <textarea id="ncomplete-paste-textarea" placeholder="Paste names here, one per line…" style="width:100%; min-height:100px; font-size:14px; padding:10px 12px; border:2px solid var(--line); border-radius:8px; box-sizing:border-box; font-family:inherit; margin-bottom:10px;"></textarea>
-            <div class="mp-add-row">
-              <button class="mp-btn mp-btn-primary" id="btn-process-ncomplete">Process names</button>
-              <button class="mp-btn mp-btn-danger" id="btn-all-sent">All orders sent</button>
-            </div>
-            <div class="mp-status" id="ncomplete-status-line"></div>
-          </div>
-
           <div class="mp-dup-section" id="summary-pins-section">
             <h4>Summary page access</h4>
             <p class="mp-pdf-hint">Manage PINs for the separate summary dashboard (totals + product breakdown), and control who can also access Back End using their own PIN — tick "Backend Access" to allow a user's PIN to open Back End, and "Master" for full Back End content (only one user can be Master; anyone with just Backend Access ticked only gets Search &amp; manage orders + Add slots).</p>
@@ -1728,46 +1717,6 @@ This backup was generated in one click from Back End and contains:
 
     return name;
   }
-
-  async function processPastedNames(rawText) {
-    const statusEl = document.getElementById('ncomplete-status-line');
-    const lines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
-    const cleanNames = lines.map(cleanPastedName).filter(Boolean);
-
-    if (cleanNames.length === 0) {
-      statusEl.textContent = 'Paste some names first — one per line.';
-      return;
-    }
-
-    const oldNames = await getNotCompleteList();
-    const oldSet = new Set(oldNames.map(n => n.toLowerCase()));
-    const newSet = new Set(cleanNames.map(n => n.toLowerCase()));
-    const added = cleanNames.filter(n => !oldSet.has(n.toLowerCase())).length;
-    const removed = oldNames.filter(n => !newSet.has(n.toLowerCase())).length;
-
-    await setNotCompleteList(cleanNames);
-    statusEl.textContent = `Not complete list updated — ${cleanNames.length} order(s) (${added} added, ${removed} removed since last update).`;
-    updateNotCompleteButton();
-  }
-
-  document.getElementById('btn-process-ncomplete').addEventListener('click', async () => {
-    const textarea = document.getElementById('ncomplete-paste-textarea');
-    await processPastedNames(textarea.value);
-    textarea.value = '';
-  });
-
-  document.getElementById('btn-all-sent').addEventListener('click', async () => {
-    const statusEl = document.getElementById('ncomplete-status-line');
-    const confirmed = await customConfirm('Mark all orders as sent? This clears the entire "Not complete orders" list.', 'Yes, clear');
-    if (!confirmed) return;
-    try {
-      await setNotCompleteList([]);
-      statusEl.textContent = 'All orders marked as sent — the not complete list is now empty.';
-      updateNotCompleteButton();
-    } catch (e) {
-      statusEl.textContent = 'Could not clear the list: ' + (e && e.message ? e.message : 'unknown error');
-    }
-  });
 
   // ---------- Custom confirm/alert ----------
   // Native confirm()/alert() are blocked (silently return false / no-op) inside
