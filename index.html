@@ -216,7 +216,14 @@
   .mp-group-cluster-label {
     font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em;
     color: #c0392b; margin-bottom: 7px; padding-left: 2px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
   }
+  .mp-bulk-print-btn {
+    font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: normal;
+    color: #6a2ca3; background: #fff; border: 1.5px solid #6a2ca3; border-radius: 6px;
+    padding: 4px 10px; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-bulk-print-btn:active { background: #6a2ca3; color: #fff; }
   .mp-group-cluster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
   .mp-order-card { padding: 9px 12px; border-radius: 7px; background: var(--panel); border:1px solid var(--line); display:flex; flex-direction:column; cursor: pointer; user-select: none; transition: background .12s ease, border-color .12s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; position: relative; }
   .mp-label-count-badge {
@@ -2059,6 +2066,7 @@ This backup was generated in one click from Back End and contains:
   }
 
   let knownOrderIds = null; // null until the first load, so we never chime on initial page load
+  let lastRenderedClusters = []; // so the bulk Print All button can look up which orders belong to which section
   function checkForNewOrdersAndChime(todayOrders) {
     const currentIds = new Set(todayOrders.map(o => String(o.id)));
     if (knownOrderIds !== null) {
@@ -2125,13 +2133,17 @@ This backup was generated in one click from Back End and contains:
 
     const sorted = sortOrdersByProductGroup(todayOrders);
     const clusters = clusterOrders(sorted);
+    lastRenderedClusters = clusters; // so the bulk-print click handler can look items up by index
 
-    body.innerHTML = clusters.map(cluster => {
+    body.innerHTML = clusters.map((cluster, idx) => {
       const cardsHtml = cluster.items.map(renderOrderCard).join('');
       const clusterClass = cluster.isMixed ? 'mp-group-cluster mp-group-cluster-mixed' : 'mp-group-cluster';
       return `
         <div class="${clusterClass}">
-          <div class="mp-group-cluster-label">${escapeHtml(cluster.label)} — ${cluster.items.length}</div>
+          <div class="mp-group-cluster-label">
+            <span>${escapeHtml(cluster.label)} — ${cluster.items.length}</span>
+            <button class="mp-bulk-print-btn" data-cluster-index="${idx}" title="Print all labels in this section">🖨️ Print All</button>
+          </div>
           <div class="mp-group-cluster-grid">${cardsHtml}</div>
         </div>`;
     }).join('');
@@ -2325,7 +2337,7 @@ This backup was generated in one click from Back End and contains:
           <div class="mp-modal-actions" style="flex-wrap:wrap;">
             <button class="mp-btn mp-btn-ghost" id="sheet-cancel">Cancel</button>
             <button class="mp-btn mp-btn-primary" id="sheet-edit">Edit</button>
-            <button class="mp-btn" id="sheet-print" style="background:#6a2ca3; color:#fff; border:none;">Print?</button>
+            <button class="mp-btn" id="sheet-print" style="background:#6a2ca3; color:#fff; border:none;">Print</button>
             <button class="mp-btn" id="sheet-delete" style="background:#a33; color:#fff; border:none;">Delete</button>
           </div>
         </div>`;
@@ -2398,9 +2410,29 @@ This backup was generated in one click from Back End and contains:
     });
   }
 
-  async function handlePrintRequest(order, id, addedAt) {
+  // Requests a print for one order and waits for the outcome — shared by
+  // both the single long-press "Print" action and the bulk "Print All"
+  // button per section. Updates the slot to purple itself on success.
+  async function requestPrintAndWait(order, id, addedAt) {
     const name = guessCustomerNameFromRaw(order.raw);
     const postcode = guessPostcodeFromRaw(order.raw);
+    if (!name) return { ok: false, name: '(unknown)', reason: 'Could not work out the customer name for this slot' };
+    try {
+      const requestId = await createPrintRequest(name, postcode);
+      const result = await pollPrintRequestStatus(requestId);
+      if (result.ok) {
+        const setOk = await setSlotState(id, addedAt, 'purple');
+        if (setOk) order.state = 'purple';
+        return { ok: true, name };
+      }
+      return { ok: false, name, reason: result.reason };
+    } catch (e) {
+      return { ok: false, name, reason: e && e.message ? e.message : 'unknown error' };
+    }
+  }
+
+  async function handlePrintRequest(order, id, addedAt) {
+    const name = guessCustomerNameFromRaw(order.raw);
     if (!name) {
       await customAlert('Could not work out the customer name for this slot — cannot request a print.');
       return;
@@ -2411,20 +2443,45 @@ This backup was generated in one click from Back End and contains:
     waitOverlay.innerHTML = `<div class="mp-modal-box" style="text-align:center;"><p style="font-weight:700;">Requesting print for ${escapeHtml(name)}…</p><p style="font-size:12px; color:#888;">Waiting for the print-watcher program to find and send the label.</p></div>`;
     root.appendChild(waitOverlay);
 
-    try {
-      const requestId = await createPrintRequest(name, postcode);
-      const result = await pollPrintRequestStatus(requestId);
-      waitOverlay.remove();
-      if (result.ok) {
-        const ok = await setSlotState(id, addedAt, 'purple');
-        if (ok) { order.state = 'purple'; loadAndRenderList(); }
-        await customAlert(`Printed — ${name}'s label was sent to the printer.`);
-      } else {
-        await customAlert(`Could not print ${name}'s label: ${result.reason}`);
-      }
-    } catch (e) {
-      waitOverlay.remove();
-      await customAlert('Could not create the print request — try again. (' + (e && e.message ? e.message : 'unknown error') + ')');
+    const result = await requestPrintAndWait(order, id, addedAt);
+    waitOverlay.remove();
+    if (result.ok) {
+      loadAndRenderList(); // reflect the purple slot immediately — no success popup needed
+    } else {
+      await customAlert(`Could not print ${name}'s label: ${result.reason}`);
+    }
+  }
+
+  // Bulk print — fires a print request for every slot in one cluster/
+  // section (e.g. everything under "MIXED"), one at a time, showing
+  // progress, then a short summary at the end (still useful here, unlike
+  // the single-print case, since printing many at once with zero feedback
+  // until it's all done would be confusing).
+  async function handleBulkPrintSection(clusterLabel, items) {
+    const confirmed = await customConfirm(`Print all ${items.length} label(s) in "${clusterLabel}"?`, `Yes, print ${items.length}`);
+    if (!confirmed) return;
+
+    const progressOverlay = document.createElement('div');
+    progressOverlay.className = 'mp-modal-overlay';
+    progressOverlay.innerHTML = `<div class="mp-modal-box" style="text-align:center;"><p style="font-weight:700;" id="bulk-print-progress-text">Printing 0 of ${items.length}…</p></div>`;
+    root.appendChild(progressOverlay);
+    const progressText = progressOverlay.querySelector('#bulk-print-progress-text');
+
+    const failures = [];
+    for (let i = 0; i < items.length; i++) {
+      const order = items[i];
+      progressText.textContent = `Printing ${i + 1} of ${items.length}… (${guessCustomerNameFromRaw(order.raw)})`;
+      const result = await requestPrintAndWait(order, order.id, order.addedAt);
+      if (!result.ok) failures.push(`${result.name}: ${result.reason}`);
+    }
+
+    progressOverlay.remove();
+    loadAndRenderList();
+
+    if (failures.length === 0) {
+      // all succeeded — no popup needed, the purple slots are visible confirmation
+    } else {
+      await customAlert(`Printed ${items.length - failures.length} of ${items.length}. Failed:\n\n${failures.join('\n')}`);
     }
   }
 
@@ -2467,6 +2524,16 @@ This backup was generated in one click from Back End and contains:
   let pressTimer = null;
   let pressStartX = 0, pressStartY = 0;
   let longPressFired = false;
+
+  whListBody.addEventListener('click', (e) => {
+    const bulkBtn = e.target.closest('.mp-bulk-print-btn');
+    if (!bulkBtn) return;
+    e.stopPropagation();
+    const idx = Number(bulkBtn.dataset.clusterIndex);
+    const cluster = lastRenderedClusters[idx];
+    if (!cluster) return;
+    handleBulkPrintSection(cluster.label, cluster.items);
+  });
 
   whListBody.addEventListener('pointerdown', (e) => {
     const card = e.target.closest('.mp-order-card');
