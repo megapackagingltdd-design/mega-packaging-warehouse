@@ -122,6 +122,16 @@
     border: 1.5px solid #c65d2e; background: #fff; color: #c65d2e; cursor: pointer;
   }
   .skipped-item button:disabled { opacity: 0.5; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center;
+    justify-content: center; z-index: 500; padding: 20px;
+  }
+  .modal-box {
+    background: #fff; border-radius: 14px; padding: 20px; width: min(360px, 100%);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .modal-box p { margin: 0 0 4px; font-size: 14px; font-weight: 700; text-align: center; }
 </style>
 </head>
 <body>
@@ -138,6 +148,12 @@
 <div id="page">
   <div class="page-title">Sendcloud Sync</div>
   <p class="page-subtitle">Pull in recent orders from Sendcloud, review exactly how each one converts compared to the original Sendcloud data, then approve to add it as a real slot. Nothing is added automatically.</p>
+
+  <div class="btn-row" style="margin-bottom:14px;">
+    <button class="btn btn-danger" id="btn-reject-everything">Reject All (queue + duplicates)</button>
+    <button class="btn btn-ghost" id="btn-all-sent">All Orders Sent</button>
+  </div>
+  <div class="status-line" id="top-status" style="margin-top:-6px; margin-bottom:10px;"></div>
 
   <div class="card">
     <h2>Sync from Sendcloud</h2>
@@ -313,6 +329,7 @@
       let originalItems = [];
       try { originalItems = JSON.parse(d.originalItemsJson || '[]'); } catch (e) {}
       const headerLine = String(d.raw || '').split('\n')[0];
+      const nameOnly = headerLine.replace(/\s*\([^)]*\)\s*$/, '').trim();
 
       const originalHtml = originalItems.length
         ? originalItems.map(it => `
@@ -324,7 +341,7 @@
       cards.push(`
         <div class="review-card${d.needsReview ? ' flagged' : ''}" data-id="${doc.id}">
           ${d.needsReview ? `<div class="review-flag">⚠️ ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
-          <div class="review-header">${escapeHtml(headerLine)}</div>
+          <div class="review-header long-press-target" data-name="${escapeHtml(nameOnly)}">${escapeHtml(headerLine)}</div>
 
           <div class="compare-block">
             <div class="compare-label">Original (from Sendcloud)</div>
@@ -385,6 +402,114 @@
     renderReviewQueue();
   });
 
+  // ---------- Not Complete Orders (moved here from Back End's manual paste box) ----------
+  const NOT_COMPLETE_KEY = 'not-complete-list';
+
+  function splitGluedTitle(name) {
+    if (name === name.toUpperCase()) return name;
+    const m = name.match(/^(Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Rev)(?=[A-Z])/);
+    return m ? name.slice(0, m[0].length) + ' ' + name.slice(m[0].length) : name;
+  }
+  function cleanName(raw) {
+    let name = String(raw || '').trim();
+    if (!name) return '';
+    name = name.replace(/\s*\([^)]*\)\S*$/, '').trim();
+    const dashMatch = name.match(/^(.*?)\s+-\s+(\S+)$/);
+    if (dashMatch) {
+      const trailing = dashMatch[2];
+      const looksLikeCode = /\d/.test(trailing) || (trailing === trailing.toUpperCase() && trailing.length >= 6);
+      if (looksLikeCode) name = dashMatch[1].trim();
+    }
+    name = splitGluedTitle(name);
+    name = name.replace(/^(Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Rev)\s+/i, '').trim();
+    return name;
+  }
+
+  async function getNotCompleteList() {
+    try {
+      const res = await storageGet('not-complete-list');
+      if (!res) return [];
+      return JSON.parse(res);
+    } catch (e) { return []; }
+  }
+  async function addToNotCompleteList(rawName) {
+    const cleaned = cleanName(rawName);
+    if (!cleaned) return;
+    const list = await getNotCompleteList();
+    if (!list.some(n => n.toLowerCase() === cleaned.toLowerCase())) list.push(cleaned);
+    await storageCollection.doc(NOT_COMPLETE_KEY).set({ value: JSON.stringify(list), shared: true });
+  }
+
+  document.getElementById('btn-all-sent').addEventListener('click', async () => {
+    const statusEl = document.getElementById('top-status');
+    if (!confirm('Mark all orders as sent? This clears the entire "Not complete orders" list.')) return;
+    try {
+      await storageCollection.doc(NOT_COMPLETE_KEY).set({ value: JSON.stringify([]), shared: true });
+      statusEl.textContent = 'All orders marked as sent — the not complete list is now empty.';
+    } catch (e) {
+      statusEl.textContent = 'Could not clear the list: ' + (e && e.message ? e.message : 'unknown error');
+    }
+  });
+
+  // ---------- Top-level Reject All (queue + duplicates together) ----------
+  document.getElementById('btn-reject-everything').addEventListener('click', async () => {
+    const statusEl = document.getElementById('top-status');
+    const reviewSnap = await db.collection('pending-sync-review').get();
+    const skippedSnap = await db.collection('sync-skipped-duplicates').get();
+    const total = reviewSnap.size + skippedSnap.size;
+    if (total === 0) { statusEl.textContent = 'Nothing to reject — both lists are already empty.'; return; }
+    if (!confirm(`Reject everything? This deletes ${reviewSnap.size} review item(s) and ${skippedSnap.size} skipped-duplicate record(s). Nothing will be added as a slot.`)) return;
+    statusEl.textContent = 'Rejecting…';
+    for (const doc of reviewSnap.docs) await doc.ref.delete();
+    for (const doc of skippedSnap.docs) await doc.ref.delete();
+    statusEl.textContent = `Rejected everything — cleared ${total} item(s).`;
+    renderReviewQueue();
+    renderSkippedList();
+  });
+
+  // ---------- Long-press -> "Mark as Not Complete" action sheet ----------
+  function showActionSheet(name) {
+    return new Promise(resolve => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-box">
+          <p>${escapeHtml(name)}</p>
+          <button class="btn btn-primary" id="sheet-notcomplete">Mark as Not Complete</button>
+          <button class="btn btn-ghost" id="sheet-cancel">Cancel</button>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelector('#sheet-notcomplete').addEventListener('click', () => { overlay.remove(); resolve('notcomplete'); });
+      overlay.querySelector('#sheet-cancel').addEventListener('click', () => { overlay.remove(); resolve(null); });
+    });
+  }
+
+  let pressTimer = null;
+  let pressStartX = 0, pressStartY = 0;
+  document.addEventListener('pointerdown', (e) => {
+    const target = e.target.closest('.long-press-target');
+    if (!target) return;
+    pressStartX = e.clientX; pressStartY = e.clientY;
+    pressTimer = setTimeout(async () => {
+      pressTimer = null;
+      const name = target.dataset.name;
+      if (!name) return;
+      const action = await showActionSheet(name);
+      if (action === 'notcomplete') {
+        await addToNotCompleteList(name);
+        document.getElementById('top-status').textContent = `"${cleanName(name)}" marked as Not Complete.`;
+      }
+    }, 550);
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!pressTimer) return;
+    if (Math.abs(e.clientX - pressStartX) > 10 || Math.abs(e.clientY - pressStartY) > 10) {
+      clearTimeout(pressTimer); pressTimer = null;
+    }
+  });
+  document.addEventListener('pointerup', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+  document.addEventListener('pointercancel', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+
   // ---------- Skipped duplicates ----------
   async function renderSkippedList() {
     const skippedCard = document.getElementById('skipped-card');
@@ -401,8 +526,9 @@
       const d = doc.data();
       rows.push(`
         <div class="skipped-item" data-id="${doc.id}">
-          <div class="skipped-line"><span class="skipped-label">From Sendcloud:</span> <span class="skipped-name">${escapeHtml(d.candidateName || '')}</span> (${escapeHtml(d.candidatePostcode || 'no postcode')})</div>
+          <div class="skipped-line long-press-target" data-name="${escapeHtml(d.candidateName || '')}"><span class="skipped-label">From Sendcloud:</span> <span class="skipped-name">${escapeHtml(d.candidateName || '')}</span> (${escapeHtml(d.candidatePostcode || 'no postcode')})</div>
           <div class="skipped-line"><span class="skipped-label">Matched to:</span> <span class="skipped-name">${escapeHtml(d.matchedName || '')}</span> — ${escapeHtml(d.matchedSource || '')}</div>
+          ${d.productLine ? `<div class="skipped-line"><span class="skipped-label">Products:</span> ${escapeHtml(d.productLine)}</div>` : ''}
           <button data-id="${doc.id}">Not a duplicate — add for review</button>
         </div>`);
     });
