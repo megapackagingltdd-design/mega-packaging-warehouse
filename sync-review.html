@@ -297,8 +297,7 @@
       const originalHtml = originalItems.length
         ? originalItems.map(it => `
             <div class="item-row">
-              <span class="item-sku">${escapeHtml(it.sku || '(no SKU)')}</span> — qty ${escapeHtml(String(it.qty))}<br/>
-              <span style="color:#888;">${escapeHtml(it.description || '')}</span>
+              <span class="item-sku">${escapeHtml(it.sku || '(no SKU)')}</span> — qty ${escapeHtml(String(it.qty))}
             </div>`).join('')
         : '<div class="item-row">No original item data saved for this entry — likely queued by an older sync run. Reject it and run Sync again to get full details.</div>';
 
