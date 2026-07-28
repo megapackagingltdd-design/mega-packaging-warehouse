@@ -2458,19 +2458,33 @@ This backup was generated in one click from Back End and contains:
   // the single-print case, since printing many at once with zero feedback
   // until it's all done would be confusing).
   async function handleBulkPrintSection(clusterLabel, items) {
-    const confirmed = await customConfirm(`Print all ${items.length} label(s) in "${clusterLabel}"?`, `Yes, print ${items.length}`);
+    // Only slots still in their normal state get printed — blue (already
+    // scanned/complete), red (flagged not-done), and purple (already
+    // printed) are all skipped, since reprinting those isn't wanted here.
+    const printable = items.filter(o => !o.state || o.state === 'green');
+    const skippedCount = items.length - printable.length;
+
+    if (printable.length === 0) {
+      await customAlert(`Nothing to print in "${clusterLabel}" — every slot here is already blue, red, or purple.`);
+      return;
+    }
+
+    const confirmMsg = skippedCount > 0
+      ? `Print ${printable.length} label(s) in "${clusterLabel}"? (${skippedCount} already-blue/red/purple slot(s) will be skipped.)`
+      : `Print all ${printable.length} label(s) in "${clusterLabel}"?`;
+    const confirmed = await customConfirm(confirmMsg, `Yes, print ${printable.length}`);
     if (!confirmed) return;
 
     const progressOverlay = document.createElement('div');
     progressOverlay.className = 'mp-modal-overlay';
-    progressOverlay.innerHTML = `<div class="mp-modal-box" style="text-align:center;"><p style="font-weight:700;" id="bulk-print-progress-text">Printing 0 of ${items.length}…</p></div>`;
+    progressOverlay.innerHTML = `<div class="mp-modal-box" style="text-align:center;"><p style="font-weight:700;" id="bulk-print-progress-text">Printing 0 of ${printable.length}…</p></div>`;
     root.appendChild(progressOverlay);
     const progressText = progressOverlay.querySelector('#bulk-print-progress-text');
 
     const failures = [];
-    for (let i = 0; i < items.length; i++) {
-      const order = items[i];
-      progressText.textContent = `Printing ${i + 1} of ${items.length}… (${guessCustomerNameFromRaw(order.raw)})`;
+    for (let i = 0; i < printable.length; i++) {
+      const order = printable[i];
+      progressText.textContent = `Printing ${i + 1} of ${printable.length}… (${guessCustomerNameFromRaw(order.raw)})`;
       const result = await requestPrintAndWait(order, order.id, order.addedAt);
       if (!result.ok) failures.push(`${result.name}: ${result.reason}`);
     }
