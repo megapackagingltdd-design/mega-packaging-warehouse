@@ -48,6 +48,7 @@
   .mp-summary-label { font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; opacity: 0.85; }
   .mp-summary-box.mp-summary-blue { background: #1e6fd9; color: #fff; }
   .mp-summary-box.mp-summary-green { background: var(--good); color: #fff; }
+  .mp-summary-box.mp-summary-purple { background: #6a2ca3; color: #fff; }
   .mp-summary-box.mp-summary-total { background: rgba(255,255,255,0.12); color: #fff; }
   .mp-brand .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); }
   .mp-tabs { display:flex; gap:6px; }
@@ -577,6 +578,10 @@
         <div class="mp-summary-box mp-summary-green">
           <div class="mp-summary-count" id="summary-picked-count">0</div>
           <div class="mp-summary-label" id="summary-picked-label">Remaining</div>
+        </div>
+        <div class="mp-summary-box mp-summary-purple">
+          <div class="mp-summary-count" id="summary-printed-count">0</div>
+          <div class="mp-summary-label" id="summary-printed-label">Remaining</div>
         </div>
         <div class="mp-summary-box mp-summary-total">
           <div class="mp-summary-count" id="summary-total-count">0</div>
@@ -2083,13 +2088,17 @@ This backup was generated in one click from Back End and contains:
     const total = todayOrders.length;
     const blueCount = todayOrders.filter(o => o.state === 'blue').length;
     const greenOrBlueCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue').length;
+    const purpleCount = todayOrders.filter(o => o.state === 'purple').length;
     const blueRemaining = total - blueCount;
-    const greenRemaining = total - greenOrBlueCount;
+    const greenRemaining = total - greenOrBlueCount; // purple never affects this — deliberately unchanged
+    const purpleRemaining = total - purpleCount;
 
     const completeEl = document.getElementById('summary-complete-count');
     const completeLabelEl = document.getElementById('summary-complete-label');
     const pickedEl = document.getElementById('summary-picked-count');
     const pickedLabelEl = document.getElementById('summary-picked-label');
+    const printedEl = document.getElementById('summary-printed-count');
+    const printedLabelEl = document.getElementById('summary-printed-label');
     const totalEl = document.getElementById('summary-total-count');
 
     if (completeEl) {
@@ -2112,6 +2121,17 @@ This backup was generated in one click from Back End and contains:
         pickedEl.textContent = greenRemaining;
         pickedEl.classList.remove('mp-summary-done-text');
         if (pickedLabelEl) pickedLabelEl.textContent = 'Remaining';
+      }
+    }
+    if (printedEl) {
+      if (total > 0 && purpleRemaining === 0) {
+        printedEl.textContent = 'COMPLETE';
+        printedEl.classList.add('mp-summary-done-text');
+        if (printedLabelEl) printedLabelEl.textContent = '';
+      } else {
+        printedEl.textContent = purpleRemaining;
+        printedEl.classList.remove('mp-summary-done-text');
+        if (printedLabelEl) printedLabelEl.textContent = 'Remaining';
       }
     }
     if (totalEl) totalEl.textContent = total;
