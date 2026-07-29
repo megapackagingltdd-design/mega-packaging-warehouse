@@ -256,10 +256,11 @@
     const d = new Date(ts);
     return 'orders:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
-  async function addOrderAsSlot(raw) {
+  async function addOrderAsSlot(raw, sourceOrderNumbers) {
     const now = Date.now();
     const key = monthKeyFor(now);
     const entry = { raw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
+    if (sourceOrderNumbers && sourceOrderNumbers.length) entry.sourceOrderNumbers = sourceOrderNumbers;
     let existing = [];
     const res = await storageCollection.doc(key).get();
     if (res.exists) {
@@ -366,7 +367,9 @@
     const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
     const raw = textarea ? textarea.value.trim() : '';
     if (!raw) return;
-    await addOrderAsSlot(raw);
+    const doc = await db.collection('pending-sync-review').doc(docId).get();
+    const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+    await addOrderAsSlot(raw, orderNumbers);
     await db.collection('pending-sync-review').doc(docId).delete();
   }
   async function rejectReviewItem(docId) {
