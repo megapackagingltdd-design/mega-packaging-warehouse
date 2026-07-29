@@ -2324,10 +2324,13 @@ This backup was generated in one click from Back End and contains:
     // all count as no-longer-remaining. Only red (flagged not-done) and
     // genuinely untouched default slots stay counted as remaining.
     const noLongerDefaultCount = todayOrders.filter(o => o.state === 'green' || o.state === 'blue' || o.state === 'purple').length;
-    const purpleCount = todayOrders.filter(o => o.state === 'purple').length;
+    // Blue (fully scanned/verified) also satisfies "needs printing" — an
+    // order that's already confirmed complete doesn't need separate print
+    // tracking, same logic as blue satisfying the green/picked count.
+    const purpleOrBlueCount = todayOrders.filter(o => o.state === 'purple' || o.state === 'blue').length;
     const blueRemaining = total - blueCount;
     const greenRemaining = total - noLongerDefaultCount;
-    const purpleRemaining = total - purpleCount;
+    const purpleRemaining = total - purpleOrBlueCount;
 
     const completeEl = document.getElementById('summary-complete-count');
     const completeLabelEl = document.getElementById('summary-complete-label');
