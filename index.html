@@ -1584,7 +1584,9 @@ This backup was generated in one click from Back End and contains:
     const textarea = document.querySelector(`.mp-sync-review-textarea[data-id="${docId}"]`);
     const raw = textarea ? textarea.value.trim() : '';
     if (!raw) return;
-    await addOrdersToStorage([{ raw }]);
+    const doc = await _db.collection('pending-sync-review').doc(docId).get();
+    const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+    await addOrdersToStorage([{ raw, sourceOrderNumbers: orderNumbers }]);
     await _db.collection('pending-sync-review').doc(docId).delete();
   }
 
@@ -1828,6 +1830,7 @@ This backup was generated in one click from Back End and contains:
     const stamped = newOrders.map((o, i) => {
       const entry = { raw: o.raw, addedAt: now, id: now + '-' + i };
       if (o.labelCount != null) entry.labelCount = o.labelCount;
+      if (o.sourceOrderNumbers && o.sourceOrderNumbers.length) entry.sourceOrderNumbers = o.sourceOrderNumbers;
       return entry;
     });
     const key = monthKeyFor(now);
