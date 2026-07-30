@@ -273,6 +273,17 @@
   .mp-order-card.state-blue .mp-order-card-main { color: #fff; }
   .mp-order-card.state-blue .mp-order-time { color: rgba(255,255,255,0.8); }
   .mp-order-card.state-purple { background: #6a2ca3 !important; border-color: #6a2ca3 !important; }
+  .mp-order-card.notprocessed {
+    border-width: 4px !important;
+    border-style: solid !important;
+    border-image: repeating-linear-gradient(45deg, #1a1a1a 0, #1a1a1a 8px, #f4c430 8px, #f4c430 16px) 4 !important;
+  }
+  .mp-order-card.notprocessed:not(.state-green):not(.state-blue):not(.state-red):not(.state-purple) {
+    background: #9a9a9a !important;
+  }
+  .mp-order-card.notprocessed:not(.state-green):not(.state-blue):not(.state-red):not(.state-purple) .mp-order-card-main {
+    color: #fff;
+  }
   .mp-order-card.state-purple .mp-order-card-main { color: #fff; }
   .mp-order-card.state-purple .mp-order-time { color: rgba(255,255,255,0.8); }
   .mp-order-card.state-red { background: #cc2b2b !important; border-color: #cc2b2b !important; }
@@ -707,10 +718,6 @@
           <input class="mp-scan-input" id="scan-input" placeholder="🔍  Scan or type a name / order text, then press Enter" autocomplete="off" inputmode="none" />
           <button id="btn-keyboard" title="Open big-key virtual keyboard">⌨️</button>
         </div>
-        <button id="btn-not-complete" style="display:none;">
-          <span class="ncomplete-title">NOT COMPLETE ORDERS</span>
-          <span class="ncomplete-count" id="ncomplete-count">0</span>
-        </button>
         <div class="mp-wh-list">
           <div class="mp-wh-list-wrap">
             <div class="mp-wh-list-body" id="wh-list-body"><div class="mp-wh-list-inner" id="wh-list-inner"><div class="mp-empty">No orders yet — add some in "Back End".</div></div></div>
@@ -1831,6 +1838,7 @@ This backup was generated in one click from Back End and contains:
       const entry = { raw: o.raw, addedAt: now, id: now + '-' + i };
       if (o.labelCount != null) entry.labelCount = o.labelCount;
       if (o.sourceOrderNumbers && o.sourceOrderNumbers.length) entry.sourceOrderNumbers = o.sourceOrderNumbers;
+      if (o.notProcessedType) entry.notProcessedType = true;
       return entry;
     });
     const key = monthKeyFor(now);
@@ -2209,7 +2217,7 @@ This backup was generated in one click from Back End and contains:
     const headerLine = header ? `<div class="mp-card-header-line">${escapeHtml(header)}</div>` : '';
     const productLines = products.map((p, i) => `<div class="mp-card-product-line${notDone.includes(i) ? ' mp-card-product-red' : ''}">${escapeHtml(p)}</div>`).join('');
     return `
-      <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
+      <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
         ${copyWarning}
         <div class="mp-order-card-main">${headerLine}${productLines}</div>
@@ -2555,7 +2563,7 @@ This backup was generated in one click from Back End and contains:
     // deliberately no timer — stays open until OK is tapped
   }
 
-  document.getElementById('btn-not-complete').addEventListener('click', showNotCompleteList);
+  // btn-not-complete removed — replaced by grey "Not Processed" slots directly in the grid
 
   // ---------- SLOTS list: transform-based navigation (no native scroll) ----------
   // The viewport (#wh-list-body) has overflow:hidden and no scroll mechanism
@@ -3108,7 +3116,7 @@ This backup was generated in one click from Back End and contains:
     return out;
   }
 
-  function speakResult(matches, query, alreadyScanned) {
+  function speakResult(matches, query, alreadyScanned, fromPreviousDay) {
     if (!window.speechSynthesis) return;
     window.speechSynthesis.cancel(); // stop anything still being read from a previous scan
 
@@ -3130,7 +3138,8 @@ This backup was generated in one click from Back End and contains:
       }
       const lc = matches[0].labelCount;
       const labelText = lc ? `Order has ${lc} label${lc === 1 ? '' : 's'}. ` : '';
-      text = labelText + productText;
+      const previousDayText = fromPreviousDay ? 'Order is from previous. ' : '';
+      text = previousDayText + labelText + productText;
     } else {
       text = `${matches.length} matches found. Select one order to continue.`;
     }
@@ -3183,10 +3192,10 @@ This backup was generated in one click from Back End and contains:
     }
   }
 
-  function showResult(matches, query, isBarcodeScan, alreadyScanned) {
+  function showResult(matches, query, isBarcodeScan, alreadyScanned, fromPreviousDay) {
     const wrap = document.getElementById('result-wrap');
     clearTimeout(clearTimer);
-    speakResult(matches, query, alreadyScanned);
+    speakResult(matches, query, alreadyScanned, fromPreviousDay);
 
     let cardHtml;
     let duration = 20000;
@@ -3483,7 +3492,11 @@ This backup was generated in one click from Back End and contains:
       // the special "ALREADY SCANNED" treatment instead of the normal popup,
       // and skip re-marking it (it's already done, nothing to update).
       const wasAlreadyScannedToday = matches.length === 1 && matches[0].addedAt && isToday(matches[0].addedAt) && matches[0].state === 'blue';
-      showResult(matches, displayVal, true, wasAlreadyScannedToday);
+      // A single match whose date genuinely isn't today means the barcode
+      // search fell back to full history — worth calling out clearly in
+      // the spoken result so staff aren't confused about which day it's from.
+      const fromPreviousDay = matches.length === 1 && matches[0].addedAt && !isToday(matches[0].addedAt);
+      showResult(matches, displayVal, true, wasAlreadyScannedToday, fromPreviousDay);
       if (!wasAlreadyScannedToday) markMatchesBlueFromScan(matches); // fire-and-forget, doesn't block the popup
       // Clear the box right away (rather than waiting for the popup to time
       // out) so staff can scan the next label immediately.
