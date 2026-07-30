@@ -77,10 +77,12 @@
     border: 1.5px solid #ddd9cf; border-radius: 10px; padding: 12px; margin-bottom: 10px;
   }
   .review-card.flagged { border-color: #d99b1c; background: #fdf6e5; }
+  .review-card.stuck { border-color: #c0392b; background: #fbebe9; }
   .review-flag {
     font-size: 12px; font-weight: 800; color: #a3701c; background: #fbeccc; padding: 6px 9px;
     border-radius: 6px; margin-bottom: 10px; white-space: pre-wrap; line-height: 1.4;
   }
+  .review-flag.stuck { color: #a33; background: #f5d5d1; }
   .review-header { font-weight: 800; font-size: 15px; margin-bottom: 10px; }
 
   .compare-block { margin-bottom: 10px; }
@@ -340,8 +342,8 @@
         : '<div class="item-row">No original item data saved for this entry — likely queued by an older sync run. Reject it and run Sync again to get full details.</div>';
 
       cards.push(`
-        <div class="review-card${d.needsReview ? ' flagged' : ''}" data-id="${doc.id}">
-          ${d.needsReview ? `<div class="review-flag">⚠️ ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
+        <div class="review-card${d.needsReview ? ' flagged' : ''}${d.isStuckOrder ? ' stuck' : ''}" data-id="${doc.id}">
+          ${d.needsReview ? `<div class="review-flag${d.isStuckOrder ? ' stuck' : ''}">${d.isStuckOrder ? '🔴' : '⚠️'} ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
           <div class="review-header long-press-target" data-name="${escapeHtml(nameOnly)}">${escapeHtml(headerLine)}</div>
 
           <div class="compare-block">
@@ -353,6 +355,8 @@
             <div class="compare-label">Converted for our system (editable)</div>
             <textarea class="compare-converted-textarea" data-id="${doc.id}">${escapeHtml(d.raw || '')}</textarea>
           </div>
+
+          ${d.isStuckOrder ? `<div class="btn-row" style="margin-bottom:8px;"><button class="btn btn-ghost" data-action="add-notcomplete" data-name="${escapeHtml(nameOnly)}">Add to Not Complete Orders</button></div>` : ''}
 
           <div class="btn-row">
             <button class="btn btn-good" data-action="approve-one" data-id="${doc.id}">Approve &amp; Add</button>
@@ -388,6 +392,11 @@
     } else if (btn.dataset.action === 'reject-one') {
       if (!confirm('Reject this order? It will not be added as a slot.')) return;
       await rejectReviewItem(docId);
+    } else if (btn.dataset.action === 'add-notcomplete') {
+      await addToNotCompleteList(btn.dataset.name);
+      btn.textContent = 'Added ✓';
+      btn.disabled = true;
+      return; // don't re-render, keep the card visible so the confirmation is seen
     }
     renderReviewQueue();
   });
