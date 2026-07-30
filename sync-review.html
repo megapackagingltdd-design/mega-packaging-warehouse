@@ -356,7 +356,9 @@
             <textarea class="compare-converted-textarea" data-id="${doc.id}">${escapeHtml(d.raw || '')}</textarea>
           </div>
 
-          ${d.isStuckOrder ? `<div class="btn-row" style="margin-bottom:8px;"><button class="btn btn-ghost" data-action="add-notcomplete" data-name="${escapeHtml(nameOnly)}">Add to Not Complete Orders</button></div>` : ''}
+          <div class="btn-row" style="margin-bottom:8px;">
+            <button class="btn btn-ghost" data-action="add-notcomplete" data-name="${escapeHtml(nameOnly)}">Not Processed</button>
+          </div>
 
           <div class="btn-row">
             <button class="btn btn-good" data-action="approve-one" data-id="${doc.id}">Approve &amp; Add</button>
