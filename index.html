@@ -2451,7 +2451,7 @@ This backup was generated in one click from Back End and contains:
       if (match) {
         const stateClass = match.state === 'green' ? ' state-green' : match.state === 'blue' ? ' state-blue' : match.state === 'purple' ? ' state-purple' : match.state === 'red' ? ' state-red' : '';
         const timeColorFinal = stateClass ? 'rgba(255,255,255,0.85)' : '#888';
-        return `<div class="mp-history-item${stateClass}">
+        return `<div class="mp-history-item${stateClass}" data-id="${match.id}" data-added-at="${match.addedAt || ''}">
           <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px;">
             <div class="mp-history-date">${escapeHtml(name)}</div>
             <div style="display:flex; align-items:center; gap:6px; white-space:nowrap;">
@@ -2522,6 +2522,36 @@ This backup was generated in one click from Back End and contains:
       popup.style.paddingBottom = kb.getBoundingClientRect().height + 'px';
       kb.classList.add('mp-kb-blackout');
     }
+
+    // Long-press an entry to print its label — same mechanism as the main
+    // SLOTS grid (hold ~550ms without moving). This coexists fine with the
+    // hand/tick icons above, since a quick tap on those releases well
+    // before the long-press threshold fires.
+    let ncPressTimer = null;
+    let ncPressStartX = 0, ncPressStartY = 0;
+    popup.addEventListener('pointerdown', (e) => {
+      const item = e.target.closest('.mp-history-item[data-id]');
+      if (!item) return;
+      ncPressStartX = e.clientX; ncPressStartY = e.clientY;
+      ncPressTimer = setTimeout(async () => {
+        ncPressTimer = null;
+        const id = item.dataset.id;
+        const addedAt = item.dataset.addedAt;
+        const order = allOrders.find(o => String(o.id) === String(id));
+        if (!order) return;
+        const confirmed = await customConfirm('Print the label for this order?', 'Yes, print');
+        if (confirmed) await handlePrintRequest(order, id, addedAt);
+      }, 550);
+    });
+    popup.addEventListener('pointermove', (e) => {
+      if (!ncPressTimer) return;
+      if (Math.abs(e.clientX - ncPressStartX) > 10 || Math.abs(e.clientY - ncPressStartY) > 10) {
+        clearTimeout(ncPressTimer); ncPressTimer = null;
+      }
+    });
+    popup.addEventListener('pointerup', () => { if (ncPressTimer) { clearTimeout(ncPressTimer); ncPressTimer = null; } });
+    popup.addEventListener('pointercancel', () => { if (ncPressTimer) { clearTimeout(ncPressTimer); ncPressTimer = null; } });
+
     // deliberately no timer — stays open until OK is tapped
   }
 
