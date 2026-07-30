@@ -258,11 +258,12 @@
     const d = new Date(ts);
     return 'orders:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
-  async function addOrderAsSlot(raw, sourceOrderNumbers) {
+  async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType) {
     const now = Date.now();
     const key = monthKeyFor(now);
     const entry = { raw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
     if (sourceOrderNumbers && sourceOrderNumbers.length) entry.sourceOrderNumbers = sourceOrderNumbers;
+    if (notProcessedType) entry.notProcessedType = true;
     let existing = [];
     const res = await storageCollection.doc(key).get();
     if (res.exists) {
@@ -357,7 +358,7 @@
           </div>
 
           <div class="btn-row" style="margin-bottom:8px;">
-            <button class="btn btn-ghost" data-action="add-notcomplete" data-name="${escapeHtml(nameOnly)}">Not Processed</button>
+            <button class="btn btn-ghost" data-action="mark-notprocessed" data-id="${doc.id}">Not Processed</button>
           </div>
 
           <div class="btn-row">
@@ -378,6 +379,20 @@
     await addOrderAsSlot(raw, orderNumbers);
     await db.collection('pending-sync-review').doc(docId).delete();
   }
+  // "Not Processed" — adds the order as a real slot in Warehouse view, same
+  // as approving, but flagged with a persistent hazard-stripe border so
+  // staff can see at a glance it's a courier-processing issue, not a
+  // normal order. It still goes through the full normal pick/scan flow —
+  // only the border marks it as different.
+  async function markNotProcessed(docId) {
+    const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
+    const raw = textarea ? textarea.value.trim() : '';
+    if (!raw) return;
+    const doc = await db.collection('pending-sync-review').doc(docId).get();
+    const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+    await addOrderAsSlot(raw, orderNumbers, true);
+    await db.collection('pending-sync-review').doc(docId).delete();
+  }
   async function rejectReviewItem(docId) {
     // Nothing extra to clear — the sync cross-references real slots directly,
     // so a rejected order (never added as a slot) simply comes back
@@ -394,11 +409,8 @@
     } else if (btn.dataset.action === 'reject-one') {
       if (!confirm('Reject this order? It will not be added as a slot.')) return;
       await rejectReviewItem(docId);
-    } else if (btn.dataset.action === 'add-notcomplete') {
-      await addToNotCompleteList(btn.dataset.name);
-      btn.textContent = 'Added ✓';
-      btn.disabled = true;
-      return; // don't re-render, keep the card visible so the confirmation is seen
+    } else if (btn.dataset.action === 'mark-notprocessed') {
+      await markNotProcessed(docId);
     }
     renderReviewQueue();
   });
