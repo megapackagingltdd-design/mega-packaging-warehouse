@@ -58,6 +58,14 @@
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   #btn-close-browser:active { background: #cc2b2b; color: #fff; }
+  #btn-print-system-status {
+    padding: 7px 12px; border-radius: 7px; border: 1.5px solid #666;
+    background: transparent; color: #ccc; font-weight: 700; font-size: 12px; cursor: pointer;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  #btn-print-system-status.status-ok { border-color: var(--good); color: var(--good); }
+  #btn-print-system-status.status-down { border-color: #cc2b2b; color: #ff8a8a; animation: mp-print-status-pulse 1.5s infinite; }
+  @keyframes mp-print-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   .mp-tab {
     padding: 8px 16px; border-radius: 7px; cursor: pointer; font-weight:700; font-size:13px;
     background: transparent; color: #cfcdc6; border: 1px solid transparent; user-select:none;
@@ -633,6 +641,7 @@
         <div class="mp-clock-date" id="mp-clock-date">-- --- ----</div>
       </div>
       <div class="mp-top-right">
+        <button id="btn-print-system-status" title="Click to restart the print system if it's stuck">🖨️ <span id="print-system-status-text">Checking…</span></button>
         <div class="mp-tabs">
           <div class="mp-tab" data-tab="add">Back End</div>
           <div class="mp-tab active" data-tab="wh">Warehouse</div>
@@ -3978,6 +3987,48 @@ This backup was generated in one click from Back End and contains:
   }
   updateClock();
   setInterval(updateClock, 1000);
+
+  // ---------- Print system status + restart ----------
+  // The heartbeat here is reported by print-watcher every ~4s — if it goes
+  // stale, the print-watcher process has frozen (or isn't running at all).
+  // The Restart button doesn't restart anything directly (a webpage can't
+  // reach into the workstation to do that) — it just sets a flag that a
+  // separate watchdog program (always running on that PC) picks up and
+  // acts on, force-restarting the print system.
+  async function updatePrintSystemStatus() {
+    const btn = document.getElementById('btn-print-system-status');
+    const textEl = document.getElementById('print-system-status-text');
+    if (!btn || !textEl) return;
+    try {
+      const doc = await _db.collection('print-watcher-control').doc('heartbeat').get();
+      const updatedAt = doc.exists ? doc.data().updatedAt : null;
+      const isStale = !updatedAt || (Date.now() - updatedAt) > 30000;
+      if (isStale) {
+        btn.className = 'status-down';
+        textEl.textContent = 'Print system: not responding — tap to restart';
+      } else {
+        btn.className = 'status-ok';
+        textEl.textContent = 'Print system OK';
+      }
+    } catch (e) {
+      btn.className = '';
+      textEl.textContent = 'Print system status unknown';
+    }
+  }
+  updatePrintSystemStatus();
+  setInterval(updatePrintSystemStatus, 15000);
+
+  document.getElementById('btn-print-system-status').addEventListener('click', async () => {
+    const confirmed = await customConfirm('Restart the print system? Use this if printing/syncing seems stuck. It may take up to a minute to come back online.', 'Yes, restart');
+    if (!confirmed) return;
+    try {
+      await _db.collection('print-watcher-control').doc('restart').set({ requested: true });
+      const textEl = document.getElementById('print-system-status-text');
+      if (textEl) textEl.textContent = 'Restart requested…';
+    } catch (e) {
+      await customAlert('Could not request a restart — try again.');
+    }
+  });
 
   // initial load — Warehouse is the default tab, and the search bar is
   // focused immediately so staff can start scanning/typing the instant this
