@@ -241,6 +241,20 @@
   }
   .mp-bulk-print-btn:active { background: #6a2ca3; color: #fff; }
   .mp-group-cluster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+  .mp-report-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .mp-report-stat {
+    flex: 1; min-width: 90px; border-radius: 8px; padding: 8px 10px; text-align: center;
+    font-weight: 800; color: #fff;
+  }
+  .mp-report-stat .num { font-size: 20px; line-height: 1.1; }
+  .mp-report-stat .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; opacity: .9; }
+  .mp-report-stat.total { background: #555; }
+  .mp-report-stat.default { background: #999; }
+  .mp-report-stat.green { background: var(--good); }
+  .mp-report-stat.blue { background: #1e6fd9; }
+  .mp-report-stat.purple { background: #6a2ca3; }
+  .mp-report-stat.red { background: #cc2b2b; }
+  .mp-report-stat.notprocessed { background: #1a1a1a; border: 3px solid; border-image: repeating-linear-gradient(45deg, #1a1a1a 0, #1a1a1a 6px, #f4c430 6px, #f4c430 12px) 3; }
   .mp-order-card { padding: 9px 12px; border-radius: 7px; background: var(--panel); border:1px solid var(--line); display:flex; flex-direction:column; cursor: pointer; user-select: none; transition: background .12s ease, border-color .12s ease; touch-action: manipulation; -webkit-tap-highlight-color: transparent; position: relative; }
   .mp-label-count-badge {
     position: absolute; top: 6px; right: 6px; width: 34px; height: 34px; border-radius: 50%;
@@ -709,6 +723,17 @@
               <button class="mp-btn mp-btn-primary" id="btn-approve-all-sync" style="background:#2f6b3e;">Approve All &amp; Add to SLOTS</button>
               <button class="mp-btn mp-btn-danger" id="btn-reject-all-sync">Reject All</button>
             </div>
+          </div>
+
+          <div class="mp-dup-section" id="reports-section">
+            <h4>Daily report</h4>
+            <p class="mp-pdf-hint">Pick any past day to see exactly what staff did with every order that day — same colours as Warehouse view, so you can spot at a glance whether everything got scanned or if anything was missed.</p>
+            <div class="mp-add-row">
+              <input type="date" id="report-date-input" style="flex:1; min-width:160px; font-size:14px; padding:9px 12px; border:1.5px solid var(--line); border-radius:8px; box-sizing:border-box;" />
+              <button class="mp-btn mp-btn-primary" id="btn-load-report">Load Report</button>
+            </div>
+            <div id="report-summary"></div>
+            <div id="report-grid" class="mp-group-cluster-grid" style="margin-top:10px;"></div>
           </div>
         </div>
       </div>
@@ -1514,6 +1539,70 @@ This backup was generated in one click from Back End and contains:
       statusEl.textContent = 'Could not reset — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
     }
   });
+
+  // ---------- Daily report ----------
+  // Read-only historical view — no tap/long-press interactions attached to
+  // this grid at all, so past days can be reviewed without any risk of
+  // accidentally changing anything.
+  (function setupDailyReport() {
+    const dateInput = document.getElementById('report-date-input');
+    const summaryEl = document.getElementById('report-summary');
+    const gridEl = document.getElementById('report-grid');
+
+    // Default to today, in local time (not UTC, which could be off by a day)
+    const now = new Date();
+    dateInput.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+
+    document.getElementById('btn-load-report').addEventListener('click', async () => {
+      const dateStr = dateInput.value;
+      if (!dateStr) return;
+      summaryEl.innerHTML = '';
+      gridEl.innerHTML = '<div class="mp-empty">Loading…</div>';
+
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const targetDateString = new Date(y, m - 1, d).toDateString();
+      const key = STORAGE_PREFIX + y + '-' + String(m).padStart(2, '0');
+
+      let orders = [];
+      try {
+        const res = await window.storage.get(key, true);
+        if (res && res.value) orders = JSON.parse(res.value);
+      } catch (e) {
+        orders = [];
+      }
+      const dayOrders = orders.filter(o => o.addedAt && new Date(o.addedAt).toDateString() === targetDateString);
+
+      if (dayOrders.length === 0) {
+        gridEl.innerHTML = '<div class="mp-empty">No orders found for this day.</div>';
+        return;
+      }
+
+      const counts = { total: dayOrders.length, default: 0, green: 0, blue: 0, purple: 0, red: 0, notprocessed: 0 };
+      for (const o of dayOrders) {
+        if (o.notProcessedType) counts.notprocessed++;
+        if (o.state === 'green') counts.green++;
+        else if (o.state === 'blue') counts.blue++;
+        else if (o.state === 'purple') counts.purple++;
+        else if (o.state === 'red') counts.red++;
+        else counts.default++;
+      }
+
+      summaryEl.innerHTML = `
+        <div class="mp-report-summary">
+          <div class="mp-report-stat total"><div class="num">${counts.total}</div><div class="lbl">Total</div></div>
+          <div class="mp-report-stat blue"><div class="num">${counts.blue}</div><div class="lbl">Scanned</div></div>
+          <div class="mp-report-stat green"><div class="num">${counts.green}</div><div class="lbl">Picked only</div></div>
+          <div class="mp-report-stat default"><div class="num">${counts.default}</div><div class="lbl">Untouched</div></div>
+          <div class="mp-report-stat red"><div class="num">${counts.red}</div><div class="lbl">Flagged</div></div>
+          <div class="mp-report-stat purple"><div class="num">${counts.purple}</div><div class="lbl">Printed</div></div>
+          <div class="mp-report-stat notprocessed"><div class="num">${counts.notprocessed}</div><div class="lbl">Not Processed</div></div>
+        </div>`;
+
+      // Sort newest first within the day, purely for readability
+      dayOrders.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+      gridEl.innerHTML = dayOrders.map(renderOrderCard).join('');
+    });
+  })();
 
   document.getElementById('btn-sync-sendcloud').addEventListener('click', async () => {
     const btn = document.getElementById('btn-sync-sendcloud');
@@ -2621,7 +2710,12 @@ This backup was generated in one click from Back End and contains:
     document.addEventListener('keydown', (e) => {
       const whView = document.getElementById('view-wh');
       if (!whView || !whView.classList.contains('active')) return;
-      if (document.activeElement === scanInput) return; // typing normally
+      // Exempt ANY focused text input/textarea (search box, the Edit modal's
+      // textarea, etc.) — not just the search box specifically. This is
+      // what was silently blocking the spacebar while editing a slot.
+      const active = document.activeElement;
+      const isTypingContext = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable);
+      if (isTypingContext) return;
       if (scrollKeys.includes(e.key)) e.preventDefault();
     });
   })();
