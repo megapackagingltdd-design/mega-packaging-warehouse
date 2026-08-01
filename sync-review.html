@@ -168,12 +168,13 @@
 
   <div class="card">
     <h2>Upload a label manually</h2>
-    <p class="hint">For labels created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available) — upload the PDF here matched to the customer, and staff can use the normal Print button on that slot as usual.</p>
+    <p class="hint">For labels created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available) — upload the PDF here matched to the customer, along with the products ordered. This creates a proper slot AND makes the label available for the normal Print button.</p>
     <input type="text" id="manual-name" placeholder="Customer name" />
     <input type="text" id="manual-postcode" placeholder="Postcode (optional but recommended)" />
+    <input type="text" id="manual-products" placeholder="Products, e.g. 8ply x1 + wood fork x2" />
     <input type="file" id="manual-file" accept="application/pdf" />
     <div class="btn-row">
-      <button class="btn btn-primary" id="btn-upload-manual">Upload Label</button>
+      <button class="btn btn-primary" id="btn-upload-manual">Upload Label &amp; Add Slot</button>
     </div>
     <div class="status-line" id="manual-status"></div>
     <div id="manual-labels-list" style="margin-top:10px;"></div>
@@ -662,13 +663,16 @@
   document.getElementById('btn-upload-manual').addEventListener('click', async () => {
     const nameInput = document.getElementById('manual-name');
     const postcodeInput = document.getElementById('manual-postcode');
+    const productsInput = document.getElementById('manual-products');
     const fileInput = document.getElementById('manual-file');
     const statusEl = document.getElementById('manual-status');
     const name = nameInput.value.trim();
     const postcode = postcodeInput.value.trim();
+    const products = productsInput.value.trim();
     const file = fileInput.files && fileInput.files[0];
 
     if (!name) { statusEl.textContent = 'Enter the customer name first.'; return; }
+    if (!products) { statusEl.textContent = 'Enter the products ordered first, e.g. "8ply x1 + wood fork x2".'; return; }
     if (!file) { statusEl.textContent = 'Choose a PDF file first.'; return; }
     if (file.type !== 'application/pdf') { statusEl.textContent = 'Please choose a PDF file.'; return; }
     if (file.size > 900000) { statusEl.textContent = 'That PDF is too large — double check it\'s the right file.'; return; }
@@ -677,8 +681,10 @@
     try {
       const base64 = await fileToBase64(file);
       await db.collection('manual-labels').add({ name, postcode, pdfBase64: base64, uploadedAt: Date.now(), used: false });
-      statusEl.textContent = `Uploaded — label for ${name} is ready.`;
-      nameInput.value = ''; postcodeInput.value = ''; fileInput.value = '';
+      const header = postcode ? `${name} (${postcode})` : name;
+      await addOrderAsSlot(header + '\n' + products);
+      statusEl.textContent = `Uploaded and added — ${name}'s slot is ready.`;
+      nameInput.value = ''; postcodeInput.value = ''; productsInput.value = ''; fileInput.value = '';
       renderManualLabelsList();
     } catch (e) {
       statusEl.textContent = 'Could not upload — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
