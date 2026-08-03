@@ -104,6 +104,29 @@
 
   .empty-note { color: #999; font-size: 13px; text-align: center; padding: 24px 10px; }
 
+  /* ---------- Review queue tabs ---------- */
+  .tabs {
+    display: flex; gap: 6px; margin: 0 0 12px;
+    border-bottom: 1.5px solid #e6e3da; padding-bottom: 0;
+  }
+  .tab {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 10px 8px; font-size: 13px; font-weight: 800; font-family: inherit;
+    background: none; border: none; border-bottom: 3px solid transparent;
+    color: #999; cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent; margin-bottom: -1.5px;
+  }
+  .tab.active { color: #1a1d1a; border-bottom-color: #c65d2e; }
+  .tab-count {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; padding: 2px 6px; border-radius: 10px;
+    background: #ece9e1; color: #777; font-size: 11.5px; font-weight: 800;
+  }
+  .tab.active .tab-count { background: #c65d2e; color: #fff; }
+  .tab-empty {
+    color: #999; font-size: 13px; text-align: center; padding: 20px 10px; line-height: 1.5;
+  }
+
   .manual-labels-list-item {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     background: #f6f5f1; border-radius: 7px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
@@ -189,10 +212,27 @@
   <div class="card" id="review-card" style="display:none;">
     <h2>Review queue</h2>
     <p class="hint">Compare the original Sendcloud data against how it'll display in the system. Edit the converted text if anything needs a tweak, then approve.</p>
-    <div id="review-list"></div>
-    <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
-      <button class="btn btn-good" id="btn-approve-all">Approve All</button>
-      <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
+
+    <div class="tabs" id="review-tabs">
+      <button class="tab" data-tab="eightply">8ply x1 <span class="tab-count" id="count-eightply">0</span></button>
+      <button class="tab" data-tab="other">Other orders <span class="tab-count" id="count-other">0</span></button>
+    </div>
+
+    <div id="tab-eightply">
+      <div class="tab-empty" id="eightply-empty" style="display:none;">No 8ply x1 orders in this batch.<br/>Only orders that are a single 8ply at qty 1, with nothing else on them, land here.</div>
+      <div id="eightply-list"></div>
+      <div class="btn-row" id="eightply-bulk-actions" style="display:none; margin-top:6px;">
+        <button class="btn btn-good" id="btn-upload-8ply">Upload All 8ply x1</button>
+      </div>
+    </div>
+
+    <div id="tab-other" style="display:none;">
+      <div class="tab-empty" id="other-empty" style="display:none;">No other orders in this batch.</div>
+      <div id="review-list"></div>
+      <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
+        <button class="btn btn-good" id="btn-approve-all">Approve All</button>
+        <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
+      </div>
     </div>
   </div>
 
@@ -319,6 +359,20 @@
     }
   });
 
+  // ---------- 8ply x1 detection ----------
+  // True ONLY when the whole order is a single 8ply at quantity 1 and nothing
+  // else. Anything with a second product, or an 8ply at any other quantity,
+  // deliberately falls through to the normal "Other orders" tab.
+  // Line 1 of raw is the customer header; everything after it is products.
+  function isEightPlySingle(raw) {
+    const lines = String(raw || '').split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length < 2) return false;
+    const parts = lines.slice(1).join(' + ').split('+').map(s => s.trim()).filter(Boolean);
+    if (parts.length !== 1) return false;          // more than one product line/item
+    const item = parts[0].toLowerCase().replace(/\s+/g, ' ');
+    return /^8\s*ply\s*x\s*1$/.test(item);         // "8ply x1", "8 ply x 1" — but not x2, x10
+  }
+
   // ---------- Review queue ----------
   function buildReviewCardHtml(doc, d) {
     let originalItems = [];
@@ -359,12 +413,30 @@
       </div>`;
   }
 
+  let activeReviewTab = null;   // 'eightply' | 'other' — remembered between renders
+
+  function setReviewTab(tab) {
+    activeReviewTab = tab;
+    document.querySelectorAll('#review-tabs .tab').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    document.getElementById('tab-eightply').style.display = tab === 'eightply' ? 'block' : 'none';
+    document.getElementById('tab-other').style.display    = tab === 'other'    ? 'block' : 'none';
+  }
+
+  document.getElementById('review-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('.tab');
+    if (btn) setReviewTab(btn.dataset.tab);
+  });
+
   async function renderReviewQueue() {
     const attentionCard = document.getElementById('attention-card');
     const attentionListEl = document.getElementById('attention-list');
     const reviewCard = document.getElementById('review-card');
     const listEl = document.getElementById('review-list');
     const bulkEl = document.getElementById('review-bulk-actions');
+    const eightplyListEl = document.getElementById('eightply-list');
+    const eightplyBulkEl = document.getElementById('eightply-bulk-actions');
     const snapshot = await db.collection('pending-sync-review').orderBy('createdAt').get();
 
     if (snapshot.empty) {
@@ -372,15 +444,21 @@
       attentionListEl.innerHTML = '';
       reviewCard.style.display = 'none';
       listEl.innerHTML = '';
+      eightplyListEl.innerHTML = '';
       return;
     }
 
     const attentionCards = [];
+    const eightplyCards = [];
     const normalCards = [];
     snapshot.forEach(doc => {
       const d = doc.data();
       const html = buildReviewCardHtml(doc, d);
-      if (d.needsReview) attentionCards.push(html); else normalCards.push(html);
+      // Flagged orders stay in Needs Attention no matter what they contain —
+      // an 8ply x1 with an unrecognised SKU shouldn't be bulk-uploaded blind.
+      if (d.needsReview) attentionCards.push(html);
+      else if (isEightPlySingle(d.raw)) eightplyCards.push(html);
+      else normalCards.push(html);
     });
 
     if (attentionCards.length > 0) {
@@ -391,13 +469,28 @@
       attentionListEl.innerHTML = '';
     }
 
-    if (normalCards.length > 0) {
+    document.getElementById('count-eightply').textContent = eightplyCards.length;
+    document.getElementById('count-other').textContent = normalCards.length;
+
+    eightplyListEl.innerHTML = eightplyCards.join('');
+    eightplyBulkEl.style.display = eightplyCards.length > 0 ? 'flex' : 'none';
+    document.getElementById('eightply-empty').style.display = eightplyCards.length > 0 ? 'none' : 'block';
+
+    listEl.innerHTML = normalCards.join('');
+    bulkEl.style.display = normalCards.length > 0 ? 'flex' : 'none';
+    document.getElementById('other-empty').style.display = normalCards.length > 0 ? 'none' : 'block';
+
+    if (eightplyCards.length + normalCards.length > 0) {
       reviewCard.style.display = 'block';
-      bulkEl.style.display = 'flex';
-      listEl.innerHTML = normalCards.join('');
+      // On first render, open whichever tab actually has orders (8ply wins a
+      // tie). After that, stay on whatever tab you were last looking at.
+      if (activeReviewTab === null) {
+        setReviewTab(eightplyCards.length > 0 ? 'eightply' : 'other');
+      } else {
+        setReviewTab(activeReviewTab);
+      }
     } else {
       reviewCard.style.display = 'none';
-      listEl.innerHTML = '';
     }
   }
 
@@ -447,17 +540,44 @@
   }
   document.getElementById('review-list').addEventListener('click', handleReviewListClick);
   document.getElementById('attention-list').addEventListener('click', handleReviewListClick);
+  document.getElementById('eightply-list').addEventListener('click', handleReviewListClick);
 
+  // Scoped to '#review-list .review-card' — these two only ever touch the
+  // Other orders tab. They no longer sweep up the 8ply x1 tab or the
+  // Needs Attention cards.
   document.getElementById('btn-approve-all').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('.review-card');
-    if (!confirm(`Approve and add all ${cards.length} order(s) as slots?`)) return;
+    const cards = document.querySelectorAll('#review-list .review-card');
+    if (!cards.length) return;
+    if (!confirm(`Approve and add all ${cards.length} order(s) from Other orders as slots?`)) return;
     for (const card of cards) await approveReviewItem(card.dataset.id);
     renderReviewQueue();
   });
   document.getElementById('btn-reject-all').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('.review-card');
-    if (!confirm(`Reject all ${cards.length} order(s)? None will be added as slots.`)) return;
+    const cards = document.querySelectorAll('#review-list .review-card');
+    if (!cards.length) return;
+    if (!confirm(`Reject all ${cards.length} order(s) from Other orders? None will be added as slots.`)) return;
     for (const card of cards) await rejectReviewItem(card.dataset.id);
+    renderReviewQueue();
+  });
+
+  // ---------- Upload All 8ply x1 ----------
+  document.getElementById('btn-upload-8ply').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-upload-8ply');
+    const statusEl = document.getElementById('top-status');
+    const cards = document.querySelectorAll('#eightply-list .review-card');
+    if (!cards.length) return;
+    if (!confirm(`Upload all ${cards.length} 8ply x1 order(s) as slots? Nothing from the Other orders tab is included.`)) return;
+    btn.disabled = true;
+    btn.textContent = 'Uploading…';
+    let done = 0;
+    try {
+      for (const card of cards) { await approveReviewItem(card.dataset.id); done++; }
+      statusEl.textContent = `Uploaded ${done} 8ply x1 order(s) as slots.`;
+    } catch (e) {
+      statusEl.textContent = `Stopped after ${done} of ${cards.length} — ${(e && e.message) ? e.message : 'unknown error'}. The rest are still in the tab, press upload again.`;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Upload All 8ply x1';
     renderReviewQueue();
   });
 
