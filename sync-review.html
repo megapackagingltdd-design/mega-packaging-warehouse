@@ -320,6 +320,42 @@
     await storageCollection.doc(key).set({ value: JSON.stringify(existing), shared: true, updatedAt: now });
   }
 
+  // Batch version — for bulk uploads. Adding orders one at a time meant a
+  // full read-and-rewrite of the whole month document per order, which is
+  // what made "Upload All" appear to hang on a big batch. This reads the
+  // month once, appends everything, and writes once.
+  async function addOrdersAsSlots(items) {
+    if (!items.length) return;
+    const now = Date.now();
+    const key = monthKeyFor(now);
+    let existing = [];
+    const res = await storageCollection.doc(key).get();
+    if (res.exists) {
+      try { existing = JSON.parse(res.data().value); } catch (e) { existing = []; }
+    }
+    items.forEach((it, i) => {
+      const entry = { raw: it.raw, addedAt: now + i, id: (now + i) + '-' + Math.random().toString(36).slice(2, 8) };
+      if (it.sourceOrderNumbers && it.sourceOrderNumbers.length) entry.sourceOrderNumbers = it.sourceOrderNumbers;
+      if (it.notProcessedType) entry.notProcessedType = true;
+      existing.push(entry);
+    });
+    await storageCollection.doc(key).set({ value: JSON.stringify(existing), shared: true, updatedAt: now });
+  }
+
+  // Runs promises in parallel batches instead of strictly one after another.
+  // Firestore handles concurrent deletes fine, and this turns a queue of
+  // several hundred into seconds rather than minutes. onProgress reports
+  // after each batch so the button can show live progress.
+  async function runInBatches(items, size, fn, onProgress) {
+    let done = 0;
+    for (let i = 0; i < items.length; i += size) {
+      const chunk = items.slice(i, i + size);
+      await Promise.all(chunk.map(fn));
+      done += chunk.length;
+      if (onProgress) onProgress(done, items.length);
+    }
+  }
+
   // ---------- Sync from Sendcloud ----------
   document.getElementById('btn-sync').addEventListener('click', async () => {
     const btn = document.getElementById('btn-sync');
@@ -503,6 +539,33 @@
     await addOrderAsSlot(raw, orderNumbers);
     await db.collection('pending-sync-review').doc(docId).delete();
   }
+
+  // Bulk approve — reads all the review docs in parallel, writes every slot
+  // in a single month-document update, then clears the review docs in
+  // parallel. Approving one at a time meant three round trips per order and
+  // was the reason a large batch looked frozen.
+  // Returns the number actually added.
+  async function approveReviewItems(docIds, onProgress) {
+    const items = [];
+    let read = 0;
+    await runInBatches(docIds, 25, async (docId) => {
+      const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
+      const raw = textarea ? textarea.value.trim() : '';
+      if (!raw) return;
+      const doc = await db.collection('pending-sync-review').doc(docId).get();
+      const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+      items.push({ docId, raw, sourceOrderNumbers: orderNumbers });
+    }, (done, all) => { read = done; if (onProgress) onProgress(done, all, 'Reading'); });
+
+    if (!items.length) return 0;
+    if (onProgress) onProgress(items.length, items.length, 'Saving');
+    await addOrdersAsSlots(items);
+
+    await runInBatches(items.map(i => i.docId), 25,
+      id => db.collection('pending-sync-review').doc(id).delete(),
+      (done, all) => { if (onProgress) onProgress(done, all, 'Clearing'); });
+    return items.length;
+  }
   // "Not Processed" — adds the order as a real slot in Warehouse view, same
   // as approving, but flagged with a persistent hazard-stripe border so
   // staff can see at a glance it's a courier-processing issue, not a
@@ -546,17 +609,41 @@
   // Other orders tab. They no longer sweep up the 8ply x1 tab or the
   // Needs Attention cards.
   document.getElementById('btn-approve-all').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('#review-list .review-card');
-    if (!cards.length) return;
-    if (!confirm(`Approve and add all ${cards.length} order(s) from Other orders as slots?`)) return;
-    for (const card of cards) await approveReviewItem(card.dataset.id);
+    const btn = document.getElementById('btn-approve-all');
+    const statusEl = document.getElementById('top-status');
+    const ids = [...document.querySelectorAll('#review-list .review-card')].map(c => c.dataset.id);
+    if (!ids.length) return;
+    if (!confirm(`Approve and add all ${ids.length} order(s) from Other orders as slots?`)) return;
+    btn.disabled = true;
+    try {
+      const added = await approveReviewItems(ids, (done, all, phase) => {
+        btn.textContent = `${phase}… ${done}/${all}`;
+      });
+      statusEl.textContent = `Added ${added} order(s) from Other orders as slots.`;
+    } catch (e) {
+      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Anything left is still in the tab.`;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Approve All';
     renderReviewQueue();
   });
   document.getElementById('btn-reject-all').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('#review-list .review-card');
-    if (!cards.length) return;
-    if (!confirm(`Reject all ${cards.length} order(s) from Other orders? None will be added as slots.`)) return;
-    for (const card of cards) await rejectReviewItem(card.dataset.id);
+    const btn = document.getElementById('btn-reject-all');
+    const statusEl = document.getElementById('top-status');
+    const ids = [...document.querySelectorAll('#review-list .review-card')].map(c => c.dataset.id);
+    if (!ids.length) return;
+    if (!confirm(`Reject all ${ids.length} order(s) from Other orders? None will be added as slots.`)) return;
+    btn.disabled = true;
+    try {
+      await runInBatches(ids, 25, id => rejectReviewItem(id), (done, all) => {
+        btn.textContent = `Rejecting… ${done}/${all}`;
+      });
+      statusEl.textContent = `Rejected ${ids.length} order(s) from Other orders.`;
+    } catch (e) {
+      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Press again to clear the rest.`;
+    }
+    btn.disabled = false;
+    btn.textContent = 'Reject All';
     renderReviewQueue();
   });
 
@@ -564,17 +651,17 @@
   document.getElementById('btn-upload-8ply').addEventListener('click', async () => {
     const btn = document.getElementById('btn-upload-8ply');
     const statusEl = document.getElementById('top-status');
-    const cards = document.querySelectorAll('#eightply-list .review-card');
-    if (!cards.length) return;
-    if (!confirm(`Upload all ${cards.length} 8ply x1 order(s) as slots? Nothing from the Other orders tab is included.`)) return;
+    const ids = [...document.querySelectorAll('#eightply-list .review-card')].map(c => c.dataset.id);
+    if (!ids.length) return;
+    if (!confirm(`Upload all ${ids.length} 8ply x1 order(s) as slots? Nothing from the Other orders tab is included.`)) return;
     btn.disabled = true;
-    btn.textContent = 'Uploading…';
-    let done = 0;
     try {
-      for (const card of cards) { await approveReviewItem(card.dataset.id); done++; }
-      statusEl.textContent = `Uploaded ${done} 8ply x1 order(s) as slots.`;
+      const added = await approveReviewItems(ids, (done, all, phase) => {
+        btn.textContent = `${phase}… ${done}/${all}`;
+      });
+      statusEl.textContent = `Uploaded ${added} 8ply x1 order(s) as slots.`;
     } catch (e) {
-      statusEl.textContent = `Stopped after ${done} of ${cards.length} — ${(e && e.message) ? e.message : 'unknown error'}. The rest are still in the tab, press upload again.`;
+      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Anything left is still in the tab, press upload again.`;
     }
     btn.disabled = false;
     btn.textContent = 'Upload All 8ply x1';
@@ -632,16 +719,28 @@
 
   // ---------- Top-level Reject All (queue + duplicates together) ----------
   document.getElementById('btn-reject-everything').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-reject-everything');
     const statusEl = document.getElementById('top-status');
+    statusEl.textContent = 'Checking…';
     const reviewSnap = await db.collection('pending-sync-review').get();
     const skippedSnap = await db.collection('sync-skipped-duplicates').get();
     const total = reviewSnap.size + skippedSnap.size;
     if (total === 0) { statusEl.textContent = 'Nothing to reject — both lists are already empty.'; return; }
-    if (!confirm(`Reject everything? This deletes ${reviewSnap.size} review item(s) and ${skippedSnap.size} skipped-duplicate record(s). Nothing will be added as a slot.`)) return;
-    statusEl.textContent = 'Rejecting…';
-    for (const doc of reviewSnap.docs) await doc.ref.delete();
-    for (const doc of skippedSnap.docs) await doc.ref.delete();
-    statusEl.textContent = `Rejected everything — cleared ${total} item(s).`;
+    if (!confirm(`Reject everything? This deletes ${reviewSnap.size} review item(s) and ${skippedSnap.size} skipped-duplicate record(s). Nothing will be added as a slot.`)) {
+      statusEl.textContent = '';
+      return;
+    }
+    btn.disabled = true;
+    const allDocs = [...reviewSnap.docs, ...skippedSnap.docs];
+    try {
+      await runInBatches(allDocs, 25, d => d.ref.delete(), (done, all) => {
+        statusEl.textContent = `Rejecting… ${done} of ${all}`;
+      });
+      statusEl.textContent = `Rejected everything — cleared ${total} item(s).`;
+    } catch (e) {
+      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Press again to clear the rest.`;
+    }
+    btn.disabled = false;
     renderReviewQueue();
     renderSkippedList();
   });
