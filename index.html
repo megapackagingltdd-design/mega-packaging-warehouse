@@ -106,21 +106,6 @@
   .mp-pin-toggle input[type="checkbox"] { width:16px; height:16px; cursor:pointer; }
   .mp-dup-ok { font-size: 12px; color: var(--good); font-weight:700; padding: 4px 0; }
   .mp-dup-error-item { font-size: 12px; color: #a33; padding: 5px 9px; background: #fbeeea; border: 1px solid #e3b3a8; border-radius: 6px; margin-bottom: 5px; white-space:pre-wrap; }
-  .mp-sync-review-card {
-    border: 1.5px solid var(--line); border-radius: 8px; padding: 10px; margin-bottom: 8px; background: var(--panel);
-  }
-  .mp-sync-review-card.flagged { border-color: #d99b1c; background: #fdf6e5; }
-  .mp-sync-review-flag { font-size: 11px; font-weight: 800; color: #a3701c; margin-bottom: 6px; white-space: pre-wrap; }
-  .mp-sync-review-textarea {
-    width: 100%; min-height: 60px; font-size: 13px; font-family: monospace; padding: 8px;
-    border: 1px solid var(--line); border-radius: 6px; box-sizing: border-box; margin-bottom: 6px;
-  }
-  .mp-sync-review-actions { display: flex; gap: 8px; }
-  .mp-sync-approve-btn, .mp-sync-reject-btn {
-    flex: 1; padding: 6px 0; font-size: 12px; font-weight: 800; border-radius: 6px; cursor: pointer;
-  }
-  .mp-sync-approve-btn { border: 1.5px solid var(--good); background: #fff; color: var(--good); }
-  .mp-sync-reject-btn { border: 1.5px solid #a33; background: #fff; color: #a33; }
   .mp-dup-item { border: 1px solid var(--warn); background: #fdf7ea; border-radius: 7px; padding: 8px; margin-bottom: 6px; }
   .mp-dup-item .dup-label { font-size: 10px; text-transform:uppercase; letter-spacing:.05em; color: var(--warn); font-weight:800; margin-bottom: 4px; }
   .mp-dup-item .dup-existing, .mp-dup-item .dup-new { font-size: 12px; white-space:pre-wrap; padding: 5px 7px; border-radius: 6px; background: #fff; margin-bottom: 3px; }
@@ -721,22 +706,6 @@
             <div class="mp-status" id="manual-label-status"></div>
           </div>
 
-          <div class="mp-dup-section" id="sendcloud-sync-section">
-            <h4>Sync orders from Sendcloud</h4>
-            <p class="mp-pdf-hint">Pulls in recent orders from Sendcloud (all connected integrations), formatted using the exact same rules as manual packing slip processing (SKU lookup, bundling, name formatting). Nothing becomes a real slot automatically — every order lands below for you to review and approve first. Already-imported orders are never queued twice.</p>
-            <div class="mp-add-row">
-              <button class="mp-btn mp-btn-primary" id="btn-sync-sendcloud">Sync from Sendcloud</button>
-              <button class="mp-btn mp-btn-ghost" id="btn-reset-sync-tracking">Reset sync tracking</button>
-            </div>
-            <div class="mp-status" id="sendcloud-sync-status"></div>
-
-            <div id="sync-review-list" style="margin-top:12px;"></div>
-            <div class="mp-add-row" id="sync-review-actions" style="display:none; margin-top:8px;">
-              <button class="mp-btn mp-btn-primary" id="btn-approve-all-sync" style="background:#2f6b3e;">Approve All &amp; Add to SLOTS</button>
-              <button class="mp-btn mp-btn-danger" id="btn-reject-all-sync">Reject All</button>
-            </div>
-          </div>
-
           <div class="mp-dup-section" id="reports-section">
             <h4>Daily report</h4>
             <p class="mp-pdf-hint">Pick any past day to see exactly what staff did with every order that day — same colours as Warehouse view, so you can spot at a glance whether everything got scanned or if anything was missed.</p>
@@ -807,7 +776,7 @@
 
   function applyBackendAccessLevel(level) {
     currentBackendAccessLevel = level;
-    const restrictedIds = ['ncomplete-section', 'summary-pins-section', 'manual-label-section', 'sendcloud-sync-section', 'backend-extra-actions-row', 'restore-row'];
+    const restrictedIds = ['ncomplete-section', 'summary-pins-section', 'manual-label-section', 'backend-extra-actions-row', 'restore-row'];
     restrictedIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = level === 'restricted' ? 'none' : '';
@@ -1540,25 +1509,6 @@ This backup was generated in one click from Back End and contains:
     renderManualLabelsList();
   });
 
-  // ---------- Sync orders from Sendcloud ----------
-  document.getElementById('btn-reset-sync-tracking').addEventListener('click', async () => {
-    const statusEl = document.getElementById('sendcloud-sync-status');
-    const confirmed = await customConfirm('Reset ALL Sendcloud sync tracking? Every order will be treated as brand new on the next sync — including ones already added as slots (they\'d be queued again, so only do this if you\'re sure).', 'Yes, reset everything');
-    if (!confirmed) return;
-    statusEl.textContent = 'Resetting…';
-    try {
-      const snapshot = await _db.collection('synced-order-numbers').get();
-      let count = 0;
-      for (const doc of snapshot.docs) {
-        await doc.ref.delete();
-        count++;
-      }
-      statusEl.textContent = `Reset complete — cleared ${count} tracking marker(s). Every order will be treated as new on the next sync.`;
-    } catch (e) {
-      statusEl.textContent = 'Could not reset — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
-    }
-  });
-
   // ---------- Daily report ----------
   // Read-only historical view — no tap/long-press interactions attached to
   // this grid at all, so past days can be reviewed without any risk of
@@ -1622,152 +1572,6 @@ This backup was generated in one click from Back End and contains:
       gridEl.innerHTML = dayOrders.map(renderOrderCard).join('');
     });
   })();
-
-  document.getElementById('btn-sync-sendcloud').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-sync-sendcloud');
-    const statusEl = document.getElementById('sendcloud-sync-status');
-    btn.disabled = true;
-    statusEl.textContent = 'Requesting sync…';
-    try {
-      const docRef = await _db.collection('sync-requests').add({
-        status: 'pending',
-        requestedAt: Date.now()
-      });
-      statusEl.textContent = 'Waiting for the print-watcher program to fetch orders from Sendcloud…';
-
-      const startedAt = Date.now();
-      const check = async () => {
-        const doc = await _db.collection('sync-requests').doc(docRef.id).get();
-        const data = doc.exists ? doc.data() : null;
-        if (data && data.status === 'done') {
-          statusEl.textContent = `Done — ${data.importedCount != null ? data.importedCount : '?'} order(s) queued below for your review (${data.skippedCount != null ? data.skippedCount : 0} already existed).`;
-          btn.disabled = false;
-          renderSyncReviewList();
-          return;
-        }
-        if (data && data.status === 'failed') {
-          statusEl.textContent = 'Sync failed: ' + (data.errorMessage || 'unknown error');
-          btn.disabled = false;
-          return;
-        }
-        if (Date.now() - startedAt > 60000) {
-          statusEl.textContent = 'Timed out waiting for the print-watcher program — is it running on the warehouse computer?';
-          btn.disabled = false;
-          return;
-        }
-        setTimeout(check, 2000);
-      };
-      check();
-    } catch (e) {
-      statusEl.textContent = 'Could not request sync — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
-      btn.disabled = false;
-    }
-  });
-
-  // ---------- Sendcloud sync review queue ----------
-  // Nothing from a sync ever becomes a real slot until approved here —
-  // this is the confirmation step, matching how packing slip processing
-  // always presents a Check List for approval before anything is finalised.
-  async function renderSyncReviewList() {
-    const listEl = document.getElementById('sync-review-list');
-    const actionsEl = document.getElementById('sync-review-actions');
-    const snapshot = await _db.collection('pending-sync-review').orderBy('createdAt').get();
-    if (snapshot.empty) {
-      listEl.innerHTML = '';
-      actionsEl.style.display = 'none';
-      return;
-    }
-    actionsEl.style.display = 'flex';
-    const cards = [];
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      cards.push(`
-        <div class="mp-sync-review-card${d.needsReview ? ' flagged' : ''}" data-id="${doc.id}">
-          ${d.needsReview ? `<div class="mp-sync-review-flag">⚠️ ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
-          <textarea class="mp-sync-review-textarea" data-id="${doc.id}">${escapeHtml(d.raw || '')}</textarea>
-          <div class="mp-sync-review-actions">
-            <button class="mp-sync-approve-btn" data-action="approve-one" data-id="${doc.id}">Approve &amp; Add</button>
-            <button class="mp-sync-reject-btn" data-action="reject-one" data-id="${doc.id}">Reject</button>
-          </div>
-        </div>`);
-    });
-    listEl.innerHTML = cards.join('');
-  }
-  renderSyncReviewList();
-
-  async function approveSyncReviewItem(docId) {
-    const textarea = document.querySelector(`.mp-sync-review-textarea[data-id="${docId}"]`);
-    const raw = textarea ? textarea.value.trim() : '';
-    if (!raw) return;
-    const doc = await _db.collection('pending-sync-review').doc(docId).get();
-    const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
-    await addOrdersToStorage([{ raw, sourceOrderNumbers: orderNumbers }]);
-    await _db.collection('pending-sync-review').doc(docId).delete();
-  }
-
-  // Rejecting also clears the "already synced" tracking marker(s) for this
-  // order — otherwise a future sync would just skip it forever, thinking
-  // it had already been handled, when really nothing was ever added.
-  async function rejectSyncReviewItem(docId) {
-    const doc = await _db.collection('pending-sync-review').doc(docId).get();
-    let orderNumbers = [];
-    if (doc.exists) {
-      orderNumbers = (doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
-      console.log('[reject]', docId, '-> clearing tracking for order numbers:', orderNumbers);
-      for (const num of orderNumbers) {
-        try {
-          await _db.collection('synced-order-numbers').doc(num).delete();
-          console.log('[reject]   cleared:', num);
-        } catch (e) {
-          console.error('[reject]   FAILED to clear:', num, e);
-        }
-      }
-    } else {
-      console.log('[reject]', docId, '-> review doc did not exist when read');
-    }
-    await _db.collection('pending-sync-review').doc(docId).delete();
-    return orderNumbers;
-  }
-
-  document.getElementById('sync-review-list').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const docId = btn.dataset.id;
-    if (btn.dataset.action === 'approve-one') {
-      await approveSyncReviewItem(docId);
-    } else if (btn.dataset.action === 'reject-one') {
-      const confirmed = await customConfirm('Reject this order? It will not be added to SLOTS, and it can be picked up again next sync.', 'Yes, reject');
-      if (!confirmed) return;
-      await rejectSyncReviewItem(docId);
-    }
-    renderSyncReviewList();
-    loadAndRenderList();
-  });
-
-  document.getElementById('btn-approve-all-sync').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('.mp-sync-review-card');
-    const confirmed = await customConfirm(`Approve and add all ${cards.length} order(s) to SLOTS?`, `Yes, add ${cards.length}`);
-    if (!confirmed) return;
-    for (const card of cards) {
-      await approveSyncReviewItem(card.dataset.id);
-    }
-    renderSyncReviewList();
-    loadAndRenderList();
-  });
-
-  document.getElementById('btn-reject-all-sync').addEventListener('click', async () => {
-    const cards = document.querySelectorAll('.mp-sync-review-card');
-    const confirmed = await customConfirm(`Reject all ${cards.length} order(s)? None will be added to SLOTS, and they can be picked up again next sync.`, `Yes, reject ${cards.length}`);
-    if (!confirmed) return;
-    const statusEl = document.getElementById('sendcloud-sync-status');
-    let totalCleared = 0;
-    for (const card of cards) {
-      const nums = await rejectSyncReviewItem(card.dataset.id);
-      totalCleared += nums.length;
-    }
-    statusEl.textContent = `Rejected ${cards.length} order(s) — cleared ${totalCleared} tracking marker(s), so they'll come back on the next sync.`;
-    renderSyncReviewList();
-  });
 
   document.getElementById('btn-close-browser').addEventListener('click', async () => {
     const confirmed = await customConfirm('Are you sure you want to close this browser tab?', 'Yes, close');
