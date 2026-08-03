@@ -465,6 +465,8 @@
     if (btn) setReviewTab(btn.dataset.tab);
   });
 
+  const REVIEW_DISPLAY_LIMIT = 300;
+
   async function renderReviewQueue() {
     const attentionCard = document.getElementById('attention-card');
     const attentionListEl = document.getElementById('attention-list');
@@ -473,7 +475,10 @@
     const bulkEl = document.getElementById('review-bulk-actions');
     const eightplyListEl = document.getElementById('eightply-list');
     const eightplyBulkEl = document.getElementById('eightply-bulk-actions');
-    const snapshot = await db.collection('pending-sync-review').orderBy('createdAt').get();
+    // Capped so a large backlog can't lock up the browser — every card is a
+    // live textarea, and thousands of them will freeze the page. Work
+    // through it in passes; the next batch appears after each upload.
+    const snapshot = await db.collection('pending-sync-review').orderBy('createdAt').limit(REVIEW_DISPLAY_LIMIT).get();
 
     if (snapshot.empty) {
       attentionCard.style.display = 'none';
@@ -508,11 +513,15 @@
     document.getElementById('count-eightply').textContent = eightplyCards.length;
     document.getElementById('count-other').textContent = normalCards.length;
 
-    eightplyListEl.innerHTML = eightplyCards.join('');
+    const cappedNote = snapshot.size >= REVIEW_DISPLAY_LIMIT
+      ? `<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the oldest ${REVIEW_DISPLAY_LIMIT} of a larger queue. Clear these and the next batch loads.</div>`
+      : '';
+
+    eightplyListEl.innerHTML = cappedNote + eightplyCards.join('');
     eightplyBulkEl.style.display = eightplyCards.length > 0 ? 'flex' : 'none';
     document.getElementById('eightply-empty').style.display = eightplyCards.length > 0 ? 'none' : 'block';
 
-    listEl.innerHTML = normalCards.join('');
+    listEl.innerHTML = cappedNote + normalCards.join('');
     bulkEl.style.display = normalCards.length > 0 ? 'flex' : 'none';
     document.getElementById('other-empty').style.display = normalCards.length > 0 ? 'none' : 'block';
 
@@ -717,28 +726,46 @@
     }
   });
 
+  // Deletes a whole collection in small pages. Critically, it never asks
+  // Firestore for the entire collection at once — sync-skipped-duplicates
+  // stores a full copy of the Sendcloud shipment data in each record, so a
+  // collection-wide .get() can mean downloading hundreds of megabytes and
+  // simply never returning. Each pass pulls a small page, deletes it, and
+  // moves on, so progress is visible and memory stays flat.
+  async function deleteCollectionInPages(collName, onProgress, pageSize = 200) {
+    let total = 0;
+    while (true) {
+      const snap = await db.collection(collName).limit(pageSize).get();
+      if (snap.empty) break;
+      const docs = snap.docs;
+      await runInBatches(docs, 25, d => d.ref.delete(), (done) => {
+        if (onProgress) onProgress(total + done);
+      });
+      total += docs.length;
+      if (docs.length < pageSize) break;
+    }
+    return total;
+  }
+
   // ---------- Top-level Reject All (queue + duplicates together) ----------
   document.getElementById('btn-reject-everything').addEventListener('click', async () => {
     const btn = document.getElementById('btn-reject-everything');
     const statusEl = document.getElementById('top-status');
-    statusEl.textContent = 'Checking…';
-    const reviewSnap = await db.collection('pending-sync-review').get();
-    const skippedSnap = await db.collection('sync-skipped-duplicates').get();
-    const total = reviewSnap.size + skippedSnap.size;
-    if (total === 0) { statusEl.textContent = 'Nothing to reject — both lists are already empty.'; return; }
-    if (!confirm(`Reject everything? This deletes ${reviewSnap.size} review item(s) and ${skippedSnap.size} skipped-duplicate record(s). Nothing will be added as a slot.`)) {
-      statusEl.textContent = '';
-      return;
-    }
+    if (!confirm('Reject everything? This clears the whole review queue and every skipped-duplicate record. Nothing will be added as a slot.')) return;
     btn.disabled = true;
-    const allDocs = [...reviewSnap.docs, ...skippedSnap.docs];
+    statusEl.textContent = 'Clearing review queue…';
+    let reviewCleared = 0, skippedCleared = 0;
     try {
-      await runInBatches(allDocs, 25, d => d.ref.delete(), (done, all) => {
-        statusEl.textContent = `Rejecting… ${done} of ${all}`;
+      reviewCleared = await deleteCollectionInPages('pending-sync-review', n => {
+        statusEl.textContent = `Clearing review queue… ${n} deleted`;
       });
-      statusEl.textContent = `Rejected everything — cleared ${total} item(s).`;
+      statusEl.textContent = 'Clearing skipped duplicates…';
+      skippedCleared = await deleteCollectionInPages('sync-skipped-duplicates', n => {
+        statusEl.textContent = `Clearing skipped duplicates… ${n} deleted`;
+      });
+      statusEl.textContent = `Cleared ${reviewCleared} review item(s) and ${skippedCleared} skipped-duplicate record(s).`;
     } catch (e) {
-      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Press again to clear the rest.`;
+      statusEl.textContent = `Stopped after ${reviewCleared + skippedCleared} — ${(e && e.message) ? e.message : 'unknown error'}. Press again to carry on from where it stopped.`;
     }
     btn.disabled = false;
     renderReviewQueue();
@@ -789,10 +816,13 @@
   document.addEventListener('pointercancel', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
 
   // ---------- Skipped duplicates ----------
+  const SKIPPED_DISPLAY_LIMIT = 50;
   async function renderSkippedList() {
     const skippedCard = document.getElementById('skipped-card');
     const listEl = document.getElementById('skipped-list');
-    const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt').get();
+    // Limited on purpose. Each record carries a full copy of the Sendcloud
+    // shipment data, so fetching the whole collection can stall the page.
+    const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt', 'desc').limit(SKIPPED_DISPLAY_LIMIT).get();
     if (snapshot.empty) {
       skippedCard.style.display = 'none';
       listEl.innerHTML = '';
@@ -800,6 +830,9 @@
     }
     skippedCard.style.display = 'block';
     const rows = [];
+    if (snapshot.size >= SKIPPED_DISPLAY_LIMIT) {
+      rows.push(`<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the ${SKIPPED_DISPLAY_LIMIT} most recent. Use "Reject All (queue + duplicates)" to clear the backlog.</div>`);
+    }
     snapshot.forEach(doc => {
       const d = doc.data();
       rows.push(`
