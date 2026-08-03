@@ -737,7 +737,7 @@
   //
   //  - runQuery with a __name__ select mask returns document IDs ONLY, so
   //    no record contents come down the wire at all.
-  //  - batchWrite deletes up to 500 documents in a single request.
+  //  - the SDK's batch commits up to 500 deletions in one round trip.
   //
   // Net effect: roughly one request per 500 deletions instead of 500, with
   // almost nothing downloaded.
@@ -796,23 +796,49 @@
     }
   }
 
+  // Lists document IDs without downloading any field data — important here
+  // because skipped-duplicate records carry a large groupJson blob. If the
+  // REST endpoint refuses the call for any reason, it falls back to the
+  // SDK, which works but does download the full records.
   async function fetchDocumentNames(collName, limit) {
-    const res = await firestoreFetch(`${FIRESTORE_REST}:runQuery`, {
-      structuredQuery: {
-        from: [{ collectionId: collName }],
-        select: { fields: [{ fieldPath: '__name__' }] },
-        limit
-      }
-    });
-    const data = await res.json();
-    if (!Array.isArray(data)) return [];
-    return data.filter(d => d.document).map(d => d.document.name);
+    try {
+      const res = await firestoreFetch(`${FIRESTORE_REST}:runQuery`, {
+        structuredQuery: {
+          from: [{ collectionId: collName }],
+          select: { fields: [{ fieldPath: '__name__' }] },
+          limit
+        }
+      });
+      const data = await res.json();
+      if (!Array.isArray(data)) return [];
+      return data.filter(d => d.document).map(d => d.document.name);
+    } catch (e) {
+      const snap = await db.collection(collName).limit(limit).get();
+      return snap.docs.map(d => `/documents/${collName}/${d.id}`);
+    }
   }
 
+  // Deletes via the Firebase SDK's own batch, NOT the REST :batchWrite
+  // endpoint. :batchWrite authenticates through Google Cloud IAM rather
+  // than Firestore security rules, so an unauthenticated browser call to it
+  // is refused with PERMISSION_DENIED however open the rules are. The SDK
+  // batch goes through the normal rules path, and still commits up to 500
+  // deletions in a single round trip.
+  //
+  // Document names come back from runQuery as a full path:
+  //   projects/<id>/databases/(default)/documents/<collection>/<docId>
+  // so only the part after "/documents/" is needed.
   async function batchDeleteNames(names) {
-    await firestoreFetch(`${FIRESTORE_REST}:batchWrite`, {
-      writes: names.map(name => ({ delete: name }))
-    });
+    const batch = db.batch();
+    for (const name of names) {
+      const relative = name.split('/documents/')[1];
+      if (!relative) continue;
+      const slash = relative.indexOf('/');
+      const coll = relative.slice(0, slash);
+      const docId = relative.slice(slash + 1);
+      batch.delete(db.collection(coll).doc(docId));
+    }
+    await batch.commit();
   }
 
   async function deleteCollectionInPages(collName, onProgress, pageSize = 300) {
@@ -824,7 +850,7 @@
       total += names.length;
       if (onProgress) onProgress(total);
       if (names.length < pageSize) break;
-      await new Promise(r => setTimeout(r, 250)); // breathing room, avoids tripping the limiter
+      await new Promise(r => setTimeout(r, 150));
     }
     return total;
   }
