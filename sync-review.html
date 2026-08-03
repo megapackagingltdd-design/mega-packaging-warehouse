@@ -381,7 +381,10 @@
           btn.disabled = false;
           return;
         }
-        if (Date.now() - startedAt > 60000) {
+        // print-watcher checks for sync requests every ~30s (kept low to stay
+        // inside Firestore's daily free-tier quota), so allow generous time
+        // for pickup plus the sync itself before declaring it dead.
+        if (Date.now() - startedAt > 150000) {
           statusEl.textContent = 'Timed out waiting for the print-watcher program — is it running on the warehouse computer?';
           btn.disabled = false;
           return;
@@ -972,7 +975,7 @@
           btn.textContent = 'Failed — try again (' + (data.errorMessage || 'unknown error') + ')';
           return;
         }
-        if (Date.now() - startedAt > 30000) {
+        if (Date.now() - startedAt > 120000) {
           btn.disabled = false;
           btn.textContent = 'Timed out — is print-watcher running?';
           return;
