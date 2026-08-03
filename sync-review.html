@@ -726,23 +726,74 @@
     }
   });
 
-  // Deletes a whole collection in small pages. Critically, it never asks
-  // Firestore for the entire collection at once — sync-skipped-duplicates
-  // stores a full copy of the Sendcloud shipment data in each record, so a
-  // collection-wide .get() can mean downloading hundreds of megabytes and
-  // simply never returning. Each pass pulls a small page, deletes it, and
-  // moves on, so progress is visible and memory stays flat.
-  async function deleteCollectionInPages(collName, onProgress, pageSize = 200) {
+  // ---------- Fast bulk delete via the Firestore REST API ----------
+  // The SDK approach was slow for two compounding reasons: fetching a page
+  // downloaded every field of every record (including the big groupJson
+  // blob) just to throw it away, and each delete was its own HTTP round
+  // trip. This does neither.
+  //
+  //  - runQuery with a __name__ select mask returns document IDs ONLY, so
+  //    no record contents come down the wire at all.
+  //  - batchWrite deletes up to 500 documents in a single request.
+  //
+  // Net effect: roughly one request per 500 deletions instead of 500, with
+  // almost nothing downloaded.
+  const FIRESTORE_REST = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
+
+  async function countCollection(collName) {
+    const res = await fetch(`${FIRESTORE_REST}:runAggregationQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        structuredAggregationQuery: {
+          structuredQuery: { from: [{ collectionId: collName }] },
+          aggregations: [{ alias: 'n', count: {} }]
+        }
+      })
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const row = Array.isArray(data) ? data.find(d => d.result) : null;
+    const v = row && row.result && row.result.aggregateFields && row.result.aggregateFields.n;
+    return v ? Number(v.integerValue) : null;
+  }
+
+  async function fetchDocumentNames(collName, limit) {
+    const res = await fetch(`${FIRESTORE_REST}:runQuery`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: collName }],
+          select: { fields: [{ fieldPath: '__name__' }] },
+          limit
+        }
+      })
+    });
+    if (!res.ok) throw new Error(`Could not list ${collName} (${res.status})`);
+    const data = await res.json();
+    if (!Array.isArray(data)) return [];
+    return data.filter(d => d.document).map(d => d.document.name);
+  }
+
+  async function batchDeleteNames(names) {
+    const res = await fetch(`${FIRESTORE_REST}:batchWrite`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ writes: names.map(name => ({ delete: name })) })
+    });
+    if (!res.ok) throw new Error(`Batch delete failed (${res.status})`);
+  }
+
+  async function deleteCollectionInPages(collName, onProgress, pageSize = 500) {
     let total = 0;
     while (true) {
-      const snap = await db.collection(collName).limit(pageSize).get();
-      if (snap.empty) break;
-      const docs = snap.docs;
-      await runInBatches(docs, 25, d => d.ref.delete(), (done) => {
-        if (onProgress) onProgress(total + done);
-      });
-      total += docs.length;
-      if (docs.length < pageSize) break;
+      const names = await fetchDocumentNames(collName, pageSize);
+      if (!names.length) break;
+      await batchDeleteNames(names);
+      total += names.length;
+      if (onProgress) onProgress(total);
+      if (names.length < pageSize) break;
     }
     return total;
   }
@@ -751,17 +802,37 @@
   document.getElementById('btn-reject-everything').addEventListener('click', async () => {
     const btn = document.getElementById('btn-reject-everything');
     const statusEl = document.getElementById('top-status');
-    if (!confirm('Reject everything? This clears the whole review queue and every skipped-duplicate record. Nothing will be added as a slot.')) return;
     btn.disabled = true;
-    statusEl.textContent = 'Clearing review queue…';
+    statusEl.textContent = 'Counting…';
+
+    let reviewTotal = null, skippedTotal = null;
+    try {
+      reviewTotal = await countCollection('pending-sync-review');
+      skippedTotal = await countCollection('sync-skipped-duplicates');
+    } catch (e) { /* counting is a nicety — carry on without it */ }
+
+    const known = reviewTotal !== null && skippedTotal !== null;
+    if (known && reviewTotal + skippedTotal === 0) {
+      statusEl.textContent = 'Nothing to reject — both lists are already empty.';
+      btn.disabled = false;
+      return;
+    }
+    const detail = known
+      ? `This deletes ${reviewTotal} review item(s) and ${skippedTotal} skipped-duplicate record(s).`
+      : 'This clears the whole review queue and every skipped-duplicate record.';
+    if (!confirm(`Reject everything? ${detail} Nothing will be added as a slot.`)) {
+      statusEl.textContent = '';
+      btn.disabled = false;
+      return;
+    }
+
     let reviewCleared = 0, skippedCleared = 0;
     try {
       reviewCleared = await deleteCollectionInPages('pending-sync-review', n => {
-        statusEl.textContent = `Clearing review queue… ${n} deleted`;
+        statusEl.textContent = `Clearing review queue… ${n}${reviewTotal ? ' of ' + reviewTotal : ''}`;
       });
-      statusEl.textContent = 'Clearing skipped duplicates…';
       skippedCleared = await deleteCollectionInPages('sync-skipped-duplicates', n => {
-        statusEl.textContent = `Clearing skipped duplicates… ${n} deleted`;
+        statusEl.textContent = `Clearing skipped duplicates… ${n}${skippedTotal ? ' of ' + skippedTotal : ''}`;
       });
       statusEl.textContent = `Cleared ${reviewCleared} review item(s) and ${skippedCleared} skipped-duplicate record(s).`;
     } catch (e) {
