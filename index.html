@@ -688,24 +688,6 @@
             <div class="mp-status" id="summary-pins-status-line"></div>
           </div>
 
-          <div class="mp-dup-section" id="manual-label-section">
-            <h4>Upload a label manually (e.g. Amazon-direct)</h4>
-            <p class="mp-pdf-hint">If a label was created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available), it won't be findable by search. Upload the PDF here matched to the customer, along with the products ordered — this creates a proper slot AND makes the label available for the normal Print button, which will use this file automatically instead of searching Sendcloud.</p>
-            <div id="manual-labels-list"></div>
-            <div class="mp-add-row">
-              <input type="text" id="manual-label-name-input" placeholder="Customer name" style="flex:1; min-width:140px; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; box-sizing:border-box;" />
-              <input type="text" id="manual-label-postcode-input" placeholder="Postcode (optional but recommended)" style="flex:1; min-width:140px; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; box-sizing:border-box;" />
-            </div>
-            <div class="mp-add-row">
-              <input type="text" id="manual-label-products-input" placeholder="Products, e.g. 8ply x1 + wood fork x2" style="flex:1; min-width:200px; font-size:13px; padding:8px 10px; border:1px solid var(--line); border-radius:7px; box-sizing:border-box;" />
-            </div>
-            <div class="mp-add-row">
-              <input type="file" id="manual-label-file-input" accept="application/pdf" style="font-size:13px;" />
-              <button class="mp-btn mp-btn-primary" id="btn-upload-manual-label">Upload Label &amp; Add Slot</button>
-            </div>
-            <div class="mp-status" id="manual-label-status"></div>
-          </div>
-
           <div class="mp-dup-section" id="reports-section">
             <h4>Daily report</h4>
             <p class="mp-pdf-hint">Pick any past day to see exactly what staff did with every order that day — same colours as Warehouse view, so you can spot at a glance whether everything got scanned or if anything was missed.</p>
@@ -776,7 +758,7 @@
 
   function applyBackendAccessLevel(level) {
     currentBackendAccessLevel = level;
-    const restrictedIds = ['ncomplete-section', 'summary-pins-section', 'manual-label-section', 'backend-extra-actions-row', 'restore-row'];
+    const restrictedIds = ['ncomplete-section', 'summary-pins-section', 'backend-extra-actions-row', 'restore-row'];
     restrictedIds.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.style.display = level === 'restricted' ? 'none' : '';
@@ -1427,87 +1409,6 @@ This backup was generated in one click from Back End and contains:
   });
 
   renderSummaryPinsList();
-
-  // ---------- Manual label upload (Amazon-direct orders) ----------
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]); // strip the "data:application/pdf;base64," prefix
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
-
-  async function renderManualLabelsList() {
-    const listEl = document.getElementById('manual-labels-list');
-    try {
-      const snapshot = await _db.collection('manual-labels').where('used', '==', false).get();
-      if (snapshot.empty) {
-        listEl.innerHTML = '<div class="mp-empty">No manually-uploaded labels waiting to be used.</div>';
-        return;
-      }
-      const rows = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        rows.push(`
-          <div class="mp-pin-row" data-id="${doc.id}">
-            <span class="pin-label">${escapeHtml(d.name || 'Unnamed')}${d.postcode ? ' (' + escapeHtml(d.postcode) + ')' : ''}</span>
-            <button class="mp-search-delete-btn" data-action="delete-manual-label" data-id="${doc.id}" style="flex:none; padding:5px 10px;">Delete</button>
-          </div>`);
-      });
-      listEl.innerHTML = rows.join('');
-    } catch (e) {
-      listEl.innerHTML = '<div class="mp-empty">Could not load the list — try again.</div>';
-    }
-  }
-  renderManualLabelsList();
-
-  document.getElementById('btn-upload-manual-label').addEventListener('click', async () => {
-    const nameInput = document.getElementById('manual-label-name-input');
-    const postcodeInput = document.getElementById('manual-label-postcode-input');
-    const productsInput = document.getElementById('manual-label-products-input');
-    const fileInput = document.getElementById('manual-label-file-input');
-    const statusEl = document.getElementById('manual-label-status');
-
-    const name = nameInput.value.trim();
-    const postcode = postcodeInput.value.trim();
-    const products = productsInput.value.trim();
-    const file = fileInput.files && fileInput.files[0];
-
-    if (!name) { statusEl.textContent = 'Enter the customer name first.'; return; }
-    if (!products) { statusEl.textContent = 'Enter the products ordered first, e.g. "8ply x1 + wood fork x2".'; return; }
-    if (!file) { statusEl.textContent = 'Choose a PDF file first.'; return; }
-    if (file.type !== 'application/pdf') { statusEl.textContent = 'Please choose a PDF file.'; return; }
-    if (file.size > 900000) { statusEl.textContent = 'That PDF is too large (over ~900KB) — labels are normally much smaller than this, so double check it\'s the right file.'; return; }
-
-    statusEl.textContent = 'Uploading…';
-    try {
-      const base64 = await fileToBase64(file);
-      await _db.collection('manual-labels').add({
-        name, postcode, pdfBase64: base64, uploadedAt: Date.now(), used: false
-      });
-      const header = postcode ? `${name} (${postcode})` : name;
-      await addOrdersToStorage([{ raw: header + '\n' + products }]);
-      statusEl.textContent = `Uploaded and added — ${name}'s slot is ready, and staff can use the normal Print button on it.`;
-      nameInput.value = '';
-      postcodeInput.value = '';
-      productsInput.value = '';
-      fileInput.value = '';
-      renderManualLabelsList();
-      loadAndRenderList();
-    } catch (e) {
-      statusEl.textContent = 'Could not upload — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
-    }
-  });
-
-  document.getElementById('manual-labels-list').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action="delete-manual-label"]');
-    if (!btn) return;
-    const confirmed = await customConfirm('Delete this uploaded label?', 'Yes, delete');
-    if (!confirmed) return;
-    await _db.collection('manual-labels').doc(btn.dataset.id).delete();
-    renderManualLabelsList();
-  });
 
   // ---------- Daily report ----------
   // Read-only historical view — no tap/long-press interactions attached to
