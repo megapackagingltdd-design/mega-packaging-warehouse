@@ -123,6 +123,19 @@
     background: #ece9e1; color: #777; font-size: 11.5px; font-weight: 800;
   }
   .tab.active .tab-count { background: #c65d2e; color: #fff; }
+  .other-type-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #f4f1e9; border: 1.5px solid #e6e3da; border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 10px; cursor: pointer;
+  }
+  .other-type-row input[type="checkbox"] {
+    width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 auto; accent-color: #c65d2e; cursor: pointer;
+  }
+  .other-type-row span { font-size: 13px; line-height: 1.45; color: #1a1d1a; }
+  .other-type-row small { display: block; color: #777; font-size: 12px; margin-top: 3px; }
+  .other-type-row.active { border-color: #c65d2e; background: #fbf1ea; }
+  .field-hidden { display: none !important; }
+
   .tab-empty {
     color: #999; font-size: 13px; text-align: center; padding: 20px 10px; line-height: 1.5;
   }
@@ -192,10 +205,19 @@
   <div class="card">
     <h2>Upload a label manually</h2>
     <p class="hint">For labels created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available) — upload the PDF here matched to the customer, along with the products ordered. This creates a proper slot AND makes the label available for the normal Print button.</p>
+
+    <label class="other-type-row">
+      <input type="checkbox" id="manual-other-type" />
+      <span>
+        <strong>Other file type</strong> — general print, not a scannable label
+        <small>For name prints and similar. Accepts JPEG, PNG, BMP or PDF. Only the name is needed, and the slot turns blue automatically once printed, since there's nothing to scan.</small>
+      </span>
+    </label>
+
     <input type="text" id="manual-name" placeholder="Customer name" />
     <input type="text" id="manual-postcode" placeholder="Postcode (optional but recommended)" />
     <input type="text" id="manual-products" placeholder="Products, e.g. 8ply x1 + wood fork x2" />
-    <input type="file" id="manual-file" accept="application/pdf" />
+    <input type="file" id="manual-file" accept="application/pdf,image/jpeg,image/png,image/bmp,.pdf,.jpg,.jpeg,.png,.bmp" />
     <div class="btn-row">
       <button class="btn btn-primary" id="btn-upload-manual">Upload Label &amp; Add Slot</button>
     </div>
@@ -305,12 +327,15 @@
     const d = new Date(ts);
     return 'orders:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
-  async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType) {
+  async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType, nonScannable) {
     const now = Date.now();
     const key = monthKeyFor(now);
     const entry = { raw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
     if (sourceOrderNumbers && sourceOrderNumbers.length) entry.sourceOrderNumbers = sourceOrderNumbers;
     if (notProcessedType) entry.notProcessedType = true;
+    // General prints (name prints etc.) have no barcode, so the Warehouse
+    // app turns these blue on print rather than purple-then-scan.
+    if (nonScannable) entry.nonScannable = true;
     let existing = [];
     const res = await storageCollection.doc(key).get();
     if (res.exists) {
@@ -1045,35 +1070,153 @@
     }
   }
 
+  // ---------- "Other file type" toggle ----------
+  // Ticking it means this is a general print (name prints and the like)
+  // rather than a scannable shipping label, so only the name is needed.
+  const otherTypeBox = document.getElementById('manual-other-type');
+  function applyOtherTypeMode() {
+    const on = otherTypeBox.checked;
+    document.querySelector('.other-type-row').classList.toggle('active', on);
+    document.getElementById('manual-postcode').classList.toggle('field-hidden', on);
+    document.getElementById('manual-products').classList.toggle('field-hidden', on);
+    document.getElementById('btn-upload-manual').textContent = on ? 'Upload File & Add Slot' : 'Upload Label & Add Slot';
+  }
+  otherTypeBox.addEventListener('change', applyOtherTypeMode);
+  applyOtherTypeMode();
+
+  // ---------- Image -> PDF ----------
+  // The printer is driven through Sendcloud's Print Client, which takes
+  // PDFs. Rather than teach every downstream step about image files, any
+  // image is wrapped into a single-page PDF here at upload time, so what
+  // gets stored and printed is always a PDF exactly as before.
+  //
+  // The image is drawn to a canvas first, which means the browser handles
+  // decoding — so BMP, PNG, GIF and WEBP all work, not just JPEG — and the
+  // canvas re-encodes to JPEG for a compact result.
+  function loadImage(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('That image could not be read — try saving it as a JPEG or PNG.')); };
+      img.src = url;
+    });
+  }
+
+  function buildPdfFromJpeg(jpegBytes, pxW, pxH) {
+    const maxW = 297, maxH = 420; // A6 in points, a sensible label size
+    const scale = Math.min(maxW / pxW, maxH / pxH, 1);
+    const drawW = Math.round(pxW * scale);
+    const drawH = Math.round(pxH * scale);
+    const enc = (s) => Array.from(s, c => c.charCodeAt(0) & 0xff);
+    const parts = [];
+    const offsets = [0];
+    let pos = 0;
+    const push = (v) => {
+      const b = typeof v === 'string' ? enc(v) : Array.from(v);
+      parts.push(b); pos += b.length;
+    };
+    push('%PDF-1.4\n');
+    offsets[1] = pos; push('1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+    offsets[2] = pos; push('2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n');
+    offsets[3] = pos; push(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${drawW} ${drawH}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
+    offsets[4] = pos;
+    push(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pxW} /Height ${pxH} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpegBytes.length} >>\nstream\n`);
+    push(jpegBytes);
+    push('\nendstream\nendobj\n');
+    const content = `q ${drawW} 0 0 ${drawH} 0 0 cm /Im0 Do Q`;
+    offsets[5] = pos; push(`5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+    const xrefPos = pos;
+    let xref = 'xref\n0 6\n0000000000 65535 f \n';
+    for (let i = 1; i <= 5; i++) xref += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+    push(xref);
+    push(`trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF\n`);
+    const total = parts.reduce((n, p) => n + p.length, 0);
+    const out = new Uint8Array(total);
+    let o = 0;
+    for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+
+  async function imageFileToPdfBase64(file) {
+    const img = await loadImage(file);
+    // Cap the pixel size so a phone photo doesn't produce a huge document.
+    const MAX_PX = 1600;
+    const scale = Math.min(MAX_PX / img.naturalWidth, MAX_PX / img.naturalHeight, 1);
+    const w = Math.max(1, Math.round(img.naturalWidth * scale));
+    const h = Math.max(1, Math.round(img.naturalHeight * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';   // flatten any transparency, otherwise PNGs print black
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+    const b64 = dataUrl.split(',')[1];
+    const bin = atob(b64);
+    const jpegBytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) jpegBytes[i] = bin.charCodeAt(i);
+    const pdfBytes = buildPdfFromJpeg(jpegBytes, w, h);
+    let s = '';
+    const CHUNK = 8192; // avoid blowing the argument limit on big files
+    for (let i = 0; i < pdfBytes.length; i += CHUNK) {
+      s += String.fromCharCode.apply(null, pdfBytes.subarray(i, i + CHUNK));
+    }
+    return btoa(s);
+  }
+
   document.getElementById('btn-upload-manual').addEventListener('click', async () => {
     const nameInput = document.getElementById('manual-name');
     const postcodeInput = document.getElementById('manual-postcode');
     const productsInput = document.getElementById('manual-products');
     const fileInput = document.getElementById('manual-file');
     const statusEl = document.getElementById('manual-status');
+    const btn = document.getElementById('btn-upload-manual');
+    const otherType = otherTypeBox.checked;
     const name = nameInput.value.trim();
-    const postcode = postcodeInput.value.trim();
-    const products = productsInput.value.trim();
+    const postcode = otherType ? '' : postcodeInput.value.trim();
+    const products = otherType ? '' : productsInput.value.trim();
     const file = fileInput.files && fileInput.files[0];
 
-    if (!name) { statusEl.textContent = 'Enter the customer name first.'; return; }
-    if (!products) { statusEl.textContent = 'Enter the products ordered first, e.g. "8ply x1 + wood fork x2".'; return; }
-    if (!file) { statusEl.textContent = 'Choose a PDF file first.'; return; }
-    if (file.type !== 'application/pdf') { statusEl.textContent = 'Please choose a PDF file.'; return; }
-    if (file.size > 900000) { statusEl.textContent = 'That PDF is too large — double check it\'s the right file.'; return; }
+    if (!name) { statusEl.textContent = 'Enter the name first.'; return; }
+    if (!otherType && !products) { statusEl.textContent = 'Enter the products ordered first, e.g. "8ply x1 + wood fork x2".'; return; }
+    if (!file) { statusEl.textContent = 'Choose a file first.'; return; }
 
-    statusEl.textContent = 'Uploading…';
+    const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+    const isImage = /^image\//.test(file.type) || /\.(jpe?g|png|bmp|gif|webp)$/i.test(file.name);
+    if (!isPdf && !isImage) {
+      statusEl.textContent = 'Please choose a PDF, JPEG, PNG or BMP file.';
+      return;
+    }
+    if (isPdf && file.size > 900000) { statusEl.textContent = 'That PDF is too large — double check it\'s the right file.'; return; }
+    if (isImage && file.size > 12000000) { statusEl.textContent = 'That image is very large — try a smaller one.'; return; }
+
+    btn.disabled = true;
+    statusEl.textContent = isImage ? 'Converting image…' : 'Uploading…';
     try {
-      const base64 = await fileToBase64(file);
+      const base64 = isImage ? await imageFileToPdfBase64(file) : await fileToBase64(file);
+      // Firestore caps a document at 1 MB, and base64 adds about a third.
+      if (base64.length > 950000) {
+        throw new Error('the converted file is still too big to store — try a smaller or lower-resolution image');
+      }
+      statusEl.textContent = 'Uploading…';
       await db.collection('manual-labels').add({ name, postcode, pdfBase64: base64, uploadedAt: Date.now(), used: false });
+
       const header = postcode ? `${name} (${postcode})` : name;
-      await addOrderAsSlot(header + '\n' + products);
-      statusEl.textContent = `Uploaded and added — ${name}'s slot is ready.`;
+      // nonScannable tells the Warehouse app to turn this slot blue as soon
+      // as it prints, instead of purple — there is no barcode to scan.
+      const raw = otherType ? header : header + '\n' + products;
+      await addOrderAsSlot(raw, null, false, otherType);
+
+      statusEl.textContent = otherType
+        ? `Added — ${name}'s print is ready. It'll turn blue once printed.`
+        : `Uploaded and added — ${name}'s slot is ready.`;
       nameInput.value = ''; postcodeInput.value = ''; productsInput.value = ''; fileInput.value = '';
       renderManualLabelsList();
     } catch (e) {
-      statusEl.textContent = 'Could not upload — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
+      statusEl.textContent = 'Could not upload — ' + (e && e.message ? e.message : 'try again') + '.';
     }
+    btn.disabled = false;
   });
 
   document.getElementById('manual-labels-list').addEventListener('click', async (e) => {
