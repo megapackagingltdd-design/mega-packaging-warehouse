@@ -2539,8 +2539,14 @@ This backup was generated in one click from Back End and contains:
       const requestId = await createPrintRequest(name, postcode);
       const result = await pollPrintRequestStatus(requestId);
       if (result.ok) {
-        const setOk = await setSlotState(id, addedAt, 'purple');
-        if (setOk) order.state = 'purple';
+        // General prints (name prints and the like, uploaded with "Other
+        // file type" ticked) carry no barcode, so nobody will ever scan
+        // them. Printing IS the completion for those, so they go straight
+        // to blue rather than sitting purple waiting on a scan that will
+        // never come.
+        const finalState = order.nonScannable ? 'blue' : 'purple';
+        const setOk = await setSlotState(id, addedAt, finalState);
+        if (setOk) order.state = finalState;
         return { ok: true, name };
       }
       return { ok: false, name, reason: result.reason };
