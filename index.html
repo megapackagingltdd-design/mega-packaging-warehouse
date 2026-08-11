@@ -453,6 +453,23 @@
   .mp-history-list::-webkit-scrollbar-thumb:hover { background: #a34a22; }
   .mp-history-list::-webkit-scrollbar-thumb:active { background: #8a3d1c; }
   .mp-history-item { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+  .mp-detail-chips {
+    display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 2px;
+  }
+  .mp-detail-chip {
+    font-size: 11.5px; line-height: 1.35; padding: 3px 8px; border-radius: 5px;
+    background: #f0eee8; color: #555; border: 1px solid #e2ded4;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+  }
+  .mp-detail-chip b {
+    font-family: inherit; font-weight: 800; color: #333;
+    text-transform: uppercase; font-size: 10px; letter-spacing: .05em; margin-right: 3px;
+  }
+  .mp-detail-chip.state-blue { background: #e8f1fc; border-color: #b9d2f0; color: #1e5fa8; }
+  .mp-detail-chip.state-purple { background: #f0eafa; border-color: #d6c6ee; color: #6b3fa8; }
+  .mp-detail-chip.warn { background: #fdf3e4; border-color: #edd8ae; color: #8a6412; }
+
   #backend-search-results { max-height: 320px; overflow-y: auto; }
   .mp-search-result-item {
     border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; background: var(--panel); margin-bottom: 6px;
@@ -3567,8 +3584,14 @@ This backup was generated in one click from Back End and contains:
       if (input && extractedName) input.value = extractedName;
     } else {
       const qNorm = normalize(q);
+      // Order and tracking numbers aren't part of o.raw, so they're appended
+      // to the searchable text — otherwise they'd be visible in the results
+      // but not findable, which is the more frustrating half of the problem.
+      const searchableText = (o) => normalize(
+        [o.raw, ...(o.sourceOrderNumbers || []), ...(o.trackingNumbers || [])].join(' ')
+      );
       matches = all
-        .filter(o => fuzzyMatch(normalize(o.raw), qNorm))
+        .filter(o => fuzzyMatch(searchableText(o), qNorm))
         .sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
     }
     backendSearchResultsCache = matches;
@@ -3578,9 +3601,28 @@ This backup was generated in one click from Back End and contains:
       return;
     }
 
+    // Detail chips under each result. Order and tracking numbers are the
+    // ones worth having to hand when chasing a parcel or checking which of
+    // two similarly-named orders this actually is.
+    const detailChips = (o) => {
+      const chips = [];
+      const orders = (o.sourceOrderNumbers || []).filter(Boolean);
+      const tracking = (o.trackingNumbers || []).filter(Boolean);
+      if (orders.length) chips.push(`<span class="mp-detail-chip"><b>Order</b> ${escapeHtml(orders.join(', '))}</span>`);
+      if (tracking.length) chips.push(`<span class="mp-detail-chip"><b>Tracking</b> ${escapeHtml(tracking.join(', '))}</span>`);
+      if (o.labelCount) chips.push(`<span class="mp-detail-chip"><b>Labels</b> ${o.labelCount}</span>`);
+      if (o.scanCount) chips.push(`<span class="mp-detail-chip"><b>Scanned</b> ${o.scanCount}${o.labelCount ? ' of ' + o.labelCount : ''}</span>`);
+      const stateLabel = o.state === 'blue' ? 'Completed' : o.state === 'purple' ? 'Printed' : 'Not printed';
+      chips.push(`<span class="mp-detail-chip state-${o.state || 'default'}">${stateLabel}</span>`);
+      if (o.nonScannable) chips.push('<span class="mp-detail-chip">General print</span>');
+      if (!orders.length) chips.push('<span class="mp-detail-chip warn">No order number recorded</span>');
+      return `<div class="mp-detail-chips">${chips.join('')}</div>`;
+    };
+
     resultsEl.innerHTML = matches.map(o => `
       <div class="mp-search-result-item" data-id="${o.id}" data-added-at="${o.addedAt || ''}">
         ${renderProductLinesHtml(o, 'backend')}
+        ${detailChips(o)}
         <div class="mp-search-result-meta">${o.addedAt ? formatTimestamp(o.addedAt) : 'Date unknown'}</div>
         <div class="mp-search-result-actions">
           <button class="mp-search-edit-btn" data-id="${o.id}" data-added-at="${o.addedAt || ''}">Edit</button>
