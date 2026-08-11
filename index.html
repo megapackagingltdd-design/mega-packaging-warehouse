@@ -2496,10 +2496,14 @@ This backup was generated in one click from Back End and contains:
   // The helper program (running on the warehouse computer) picks it up,
   // finds the matching Sendcloud label, and sends it to the local printer —
   // then flips this same document's status, which is what we poll for here.
-  async function createPrintRequest(name, postcode) {
+  async function createPrintRequest(name, postcode, orderNumbers) {
     const docRef = await _db.collection('print-requests').add({
       name: name,
       postcode: postcode,
+      // The order number is what makes the label lookup exact. Without it
+      // the helper has to match on name, and two customers sharing a first
+      // name on the same day can produce the wrong label.
+      orderNumbers: (orderNumbers && orderNumbers.length) ? orderNumbers.join(', ') : '',
       status: 'pending',
       requestedAt: Date.now()
     });
@@ -2536,7 +2540,7 @@ This backup was generated in one click from Back End and contains:
     const postcode = guessPostcodeFromRaw(order.raw);
     if (!name) return { ok: false, name: '(unknown)', reason: 'Could not work out the customer name for this slot' };
     try {
-      const requestId = await createPrintRequest(name, postcode);
+      const requestId = await createPrintRequest(name, postcode, order.sourceOrderNumbers);
       const result = await pollPrintRequestStatus(requestId);
       if (result.ok) {
         // General prints (name prints and the like, uploaded with "Other
