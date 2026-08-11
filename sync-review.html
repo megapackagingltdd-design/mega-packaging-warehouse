@@ -348,13 +348,14 @@
     return { raw: lines.join('\n'), labelCount: parseInt(m[1], 10) };
   }
 
-  async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType, nonScannable) {
+  async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType, nonScannable, trackingNumbers) {
     const now = Date.now();
     const key = monthKeyFor(now);
     const { raw: cleanRaw, labelCount } = extractLabelCount(raw);
     const entry = { raw: cleanRaw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
     if (labelCount != null) entry.labelCount = labelCount;
     if (sourceOrderNumbers && sourceOrderNumbers.length) entry.sourceOrderNumbers = sourceOrderNumbers;
+    if (trackingNumbers && trackingNumbers.length) entry.trackingNumbers = trackingNumbers;
     if (notProcessedType) entry.notProcessedType = true;
     // General prints (name prints etc.) have no barcode, so the Warehouse
     // app turns these blue on print rather than purple-then-scan.
@@ -386,6 +387,7 @@
       const entry = { raw: cleanRaw, addedAt: now + i, id: (now + i) + '-' + Math.random().toString(36).slice(2, 8) };
       if (labelCount != null) entry.labelCount = labelCount;
       if (it.sourceOrderNumbers && it.sourceOrderNumbers.length) entry.sourceOrderNumbers = it.sourceOrderNumbers;
+      if (it.trackingNumbers && it.trackingNumbers.length) entry.trackingNumbers = it.trackingNumbers;
       if (it.notProcessedType) entry.notProcessedType = true;
       existing.push(entry);
     });
@@ -598,7 +600,8 @@
     if (!raw) return;
     const doc = await db.collection('pending-sync-review').doc(docId).get();
     const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
-    await addOrderAsSlot(raw, orderNumbers);
+    const trackingNumbers = doc.exists ? String(doc.data().trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+    await addOrderAsSlot(raw, orderNumbers, false, false, trackingNumbers);
     await db.collection('pending-sync-review').doc(docId).delete();
   }
 
@@ -616,7 +619,8 @@
       if (!raw) return;
       const doc = await db.collection('pending-sync-review').doc(docId).get();
       const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
-      items.push({ docId, raw, sourceOrderNumbers: orderNumbers });
+      const trackingNumbers = doc.exists ? String(doc.data().trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+      items.push({ docId, raw, sourceOrderNumbers: orderNumbers, trackingNumbers });
     }, (done, all) => { read = done; if (onProgress) onProgress(done, all, 'Reading'); });
 
     if (!items.length) return 0;
