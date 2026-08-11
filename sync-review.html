@@ -327,10 +327,33 @@
     const d = new Date(ts);
     return 'orders:' + d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
   }
+  // A name line can end with a bare "(N)" — e.g. "Emil Kajsik (2)" or
+  // "Sarah Baxter (BD17 5PH) (4)" — meaning that order was built from N
+  // physical labels. The Warehouse app strips this out and records it as a
+  // labelCount so the card shows a badge and the scan process expects N
+  // barcodes instead of one.
+  //
+  // The app only did that when pasting orders in or when editing and saving
+  // a slot, which is why typing "(2)" on the sync page appeared to do
+  // nothing until the slot was edited and re-saved. It now happens here too,
+  // so it works straight from approval.
+  //
+  // Only a TRAILING parenthetical of digits ONLY is matched, so a postcode
+  // like "(BD17 5PH)" earlier in the line is never mistaken for a count.
+  function extractLabelCount(raw) {
+    const lines = String(raw || '').split('\n');
+    const m = lines[0].match(/\s*\((\d+)\)\s*$/);
+    if (!m) return { raw, labelCount: null };
+    lines[0] = lines[0].slice(0, m.index).trimEnd();
+    return { raw: lines.join('\n'), labelCount: parseInt(m[1], 10) };
+  }
+
   async function addOrderAsSlot(raw, sourceOrderNumbers, notProcessedType, nonScannable) {
     const now = Date.now();
     const key = monthKeyFor(now);
-    const entry = { raw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
+    const { raw: cleanRaw, labelCount } = extractLabelCount(raw);
+    const entry = { raw: cleanRaw, addedAt: now, id: now + '-' + Math.random().toString(36).slice(2, 8) };
+    if (labelCount != null) entry.labelCount = labelCount;
     if (sourceOrderNumbers && sourceOrderNumbers.length) entry.sourceOrderNumbers = sourceOrderNumbers;
     if (notProcessedType) entry.notProcessedType = true;
     // General prints (name prints etc.) have no barcode, so the Warehouse
@@ -359,7 +382,9 @@
       try { existing = JSON.parse(res.data().value); } catch (e) { existing = []; }
     }
     items.forEach((it, i) => {
-      const entry = { raw: it.raw, addedAt: now + i, id: (now + i) + '-' + Math.random().toString(36).slice(2, 8) };
+      const { raw: cleanRaw, labelCount } = extractLabelCount(it.raw);
+      const entry = { raw: cleanRaw, addedAt: now + i, id: (now + i) + '-' + Math.random().toString(36).slice(2, 8) };
+      if (labelCount != null) entry.labelCount = labelCount;
       if (it.sourceOrderNumbers && it.sourceOrderNumbers.length) entry.sourceOrderNumbers = it.sourceOrderNumbers;
       if (it.notProcessedType) entry.notProcessedType = true;
       existing.push(entry);
