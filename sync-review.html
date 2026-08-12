@@ -136,6 +136,18 @@
   .other-type-row.active { border-color: #c65d2e; background: #fbf1ea; }
   .field-hidden { display: none !important; }
 
+  .learned-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 0; border-bottom: 1px solid #ece9e1;
+  }
+  .learned-row:last-child { border-bottom: none; }
+  .learned-sku {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; font-weight: 800; color: #1a1d1a;
+  }
+  .learned-rule { font-size: 12.5px; color: #777; margin-top: 2px; }
+  .learned-remove { padding: 6px 12px; font-size: 12px; flex: 0 0 auto; }
+
   .tab-empty {
     color: #999; font-size: 13px; text-align: center; padding: 20px 10px; line-height: 1.5;
   }
@@ -258,6 +270,12 @@
     </div>
   </div>
 
+  <div class="card" id="learned-card" style="display:none;">
+    <h2>Learned products</h2>
+    <p class="hint">SKUs you've corrected by hand. These are applied automatically on future syncs, so the same SKU doesn't come back for review. Remove one if it's ever wrong.</p>
+    <div id="learned-list"></div>
+  </div>
+
   <div class="card" id="skipped-card" style="display:none;">
     <h2>Skipped as duplicate</h2>
     <p class="hint">These were excluded automatically because they matched an existing order. Worth a quick check — if a match looks wrong (e.g. two different people who happen to share a postcode), you can add it for review anyway.</p>
@@ -312,6 +330,7 @@
       renderManualLabelsList();
       renderReviewQueue();
       renderSkippedList();
+      renderLearnedList();
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -642,15 +661,168 @@
     }
   }
 
+  // ---------- Teaching the system a SKU ----------
+  // When a flagged item is corrected by hand, work out which SKU the
+  // correction belongs to and offer to remember it, so the same SKU converts
+  // itself next time.
+  //
+  // The product line is split on "+" and compared part by part. Only the
+  // parts that actually changed are considered, so correcting one item in a
+  // multi-item order doesn't get confused by the items left alone.
+  function splitParts(raw) {
+    const lines = String(raw || '').split('\n');
+    return lines.slice(1).join(' + ').split('+').map(s => s.trim()).filter(Boolean);
+  }
+
+  // "[UNRECOGNISED SKU: RND03] x1"      -> { sku: 'RND03', qty: 1 }
+  // "[NEEDS REVIEW: 2ply-1000 qty 3]"   -> { sku: '2ply-1000', qty: 3 }
+  function parseFlaggedPart(part) {
+    let m = part.match(/^\[UNRECOGNISED SKU:\s*(.+?)\]\s*x\s*(\d+)\s*$/i);
+    if (m) return { sku: m[1].trim(), qty: parseInt(m[2], 10) };
+    m = part.match(/^\[NEEDS REVIEW:\s*(.+?)\s+qty\s+(\d+)\]\s*$/i);
+    if (m) return { sku: m[1].trim(), qty: parseInt(m[2], 10) };
+    return null;
+  }
+
+  // "9ply x24" -> { label: '9ply', count: 24 }
+  function parseCorrectedPart(text) {
+    const m = String(text).match(/^(.*?)\s*x\s*(\d+)\s*$/i);
+    if (m && m[1].trim()) return { label: m[1].trim(), count: parseInt(m[2], 10) };
+    return { label: String(text).trim(), count: null };
+  }
+
+  function diffCorrection(originalRaw, correctedRaw) {
+    const before = splitParts(originalRaw);
+    const after = splitParts(correctedRaw);
+    // Drop the parts that are identical in both, matching them up one for one.
+    const remainingAfter = after.slice();
+    const changedBefore = [];
+    for (const p of before) {
+      const i = remainingAfter.indexOf(p);
+      if (i >= 0) remainingAfter.splice(i, 1);
+      else changedBefore.push(p);
+    }
+    if (changedBefore.length !== 1) return null;   // ambiguous — don't guess
+    const flagged = parseFlaggedPart(changedBefore[0]);
+    if (!flagged) return null;                      // only learn from flagged items
+    if (remainingAfter.length === 0) return null;   // item was removed, nothing to learn
+    const corrected = parseCorrectedPart(remainingAfter.join(' + '));
+    const per = (corrected.count != null && flagged.qty > 0 && corrected.count % flagged.qty === 0)
+      ? corrected.count / flagged.qty
+      : null;
+    return {
+      sku: flagged.sku,
+      qty: flagged.qty,
+      correctedText: remainingAfter.join(' + '),
+      label: corrected.label,
+      count: corrected.count,
+      unitsPerItem: per
+    };
+  }
+
+  async function offerToLearn(originalRaw, correctedRaw) {
+    const d = diffCorrection(originalRaw, correctedRaw);
+    if (!d) return;
+    // Already known? Don't nag about a SKU that's been taught.
+    try {
+      const existing = await db.collection('sku-corrections').where('sku', '==', d.sku).limit(1).get();
+      if (!existing.empty) return;
+    } catch (e) { /* if the check fails, still offer */ }
+
+    const scales = d.unitsPerItem != null;
+    const detail = scales
+      ? `Remember this for next time?\n\nSKU: ${d.sku}\nProduct: ${d.label}\nQuantity: ${d.unitsPerItem} per item\n\nSo qty ${d.qty} becomes "${d.label} x${d.count}", and qty 5 would become "${d.label} x${d.unitsPerItem * 5}".`
+      : `Remember this for next time?\n\nSKU: ${d.sku}\nAlways write: ${d.correctedText}\n\nThis exact text will be used whatever the quantity.`;
+    if (!confirm(detail)) return;
+
+    let unitsPerItem = d.unitsPerItem != null ? d.unitsPerItem : 1;
+    let mode = scales ? 'scale' : 'fixed';
+    if (scales) {
+      const answer = prompt(`How many "${d.label}" is ONE ${d.sku}?\n\nLeave as ${d.unitsPerItem} if that's right. Enter 0 to always write "${d.correctedText}" exactly, whatever the quantity.`, String(d.unitsPerItem));
+      if (answer === null) return;
+      const n = parseInt(answer, 10);
+      if (isNaN(n)) return;
+      if (n === 0) { mode = 'fixed'; unitsPerItem = 1; }
+      else unitsPerItem = n;
+    }
+
+    try {
+      await db.collection('sku-corrections').add({
+        sku: d.sku,
+        label: mode === 'fixed' ? d.correctedText : d.label,
+        unitsPerItem,
+        mode,
+        override: false,
+        exampleFrom: `qty ${d.qty}`,
+        exampleTo: d.correctedText,
+        createdAt: Date.now()
+      });
+      document.getElementById('top-status').textContent = `Saved — ${d.sku} will convert automatically from now on.`;
+      renderLearnedList();
+    } catch (e) {
+      document.getElementById('top-status').textContent = 'Could not save that correction — ' + ((e && e.message) || 'try again') + '.';
+    }
+  }
+
+  // ---------- Learned products list ----------
+  async function renderLearnedList() {
+    try { await renderLearnedListInner(); } catch (e) { showRenderError('the learned products list', e); }
+  }
+
+  async function renderLearnedListInner() {
+    const card = document.getElementById('learned-card');
+    const listEl = document.getElementById('learned-list');
+    const snap = await db.collection('sku-corrections').get();
+    if (snap.empty) {
+      card.style.display = 'none';
+      listEl.innerHTML = '';
+      return;
+    }
+    card.style.display = 'block';
+    const rows = snap.docs.map(doc => {
+      const d = doc.data();
+      const rule = d.mode === 'fixed'
+        ? `always "${escapeHtml(d.label || '')}"`
+        : `${escapeHtml(d.label || '')} — ${d.unitsPerItem || 1} per item`;
+      return `
+        <div class="learned-row">
+          <div>
+            <div class="learned-sku">${escapeHtml(d.sku || '')}</div>
+            <div class="learned-rule">${rule}</div>
+          </div>
+          <button class="btn btn-danger learned-remove" data-id="${doc.id}" data-sku="${escapeHtml(d.sku || '')}">Remove</button>
+        </div>`;
+    });
+    listEl.innerHTML = rows.join('');
+  }
+
+  document.getElementById('learned-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.learned-remove');
+    if (!btn) return;
+    if (!confirm(`Forget the correction for ${btn.dataset.sku}? It'll come back for review on the next sync.`)) return;
+    try {
+      await db.collection('sku-corrections').doc(btn.dataset.id).delete();
+      renderLearnedList();
+    } catch (err) {
+      showRenderError('the learned products list', err);
+    }
+  });
+
   async function approveReviewItem(docId) {
     const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
     const raw = textarea ? textarea.value.trim() : '';
     if (!raw) return;
     const doc = await db.collection('pending-sync-review').doc(docId).get();
+    const originalRaw = doc.exists ? String(doc.data().raw || '') : '';
     const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
     const trackingNumbers = doc.exists ? String(doc.data().trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
     await addOrderAsSlot(raw, orderNumbers, false, false, trackingNumbers);
     await db.collection('pending-sync-review').doc(docId).delete();
+    // Offered after the slot is safely saved, so declining to teach — or the
+    // prompt failing — can never cost the order itself.
+    if (originalRaw && raw !== originalRaw) {
+      await offerToLearn(originalRaw, raw);
+    }
   }
 
   // Bulk approve — reads all the review docs in parallel, writes every slot
