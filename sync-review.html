@@ -522,7 +522,41 @@
 
   const REVIEW_DISPLAY_LIMIT = 300;
 
+  // Shows a failure on the page instead of letting it vanish. These render
+  // functions are called without a .catch(), so anything that throws used to
+  // leave the card hidden with no message at all — the queue simply appeared
+  // empty when it wasn't.
+  function showRenderError(where, e) {
+    const statusEl = document.getElementById('top-status');
+    const msg = (e && e.message) ? e.message : String(e);
+    if (statusEl) statusEl.textContent = `Could not load ${where}: ${msg}`;
+    console.error(`[${where}]`, e);
+  }
+
+  async function fetchReviewDocs() {
+    // Firestore omits documents that don't have the field being ordered on.
+    // If anything wrote a queue item without createdAt, an ordered query
+    // returns nothing and the queue looks empty even though items exist.
+    // So: try ordered first, and if that comes back empty, check again
+    // without the ordering before believing it.
+    const ordered = await db.collection('pending-sync-review').orderBy('createdAt').limit(REVIEW_DISPLAY_LIMIT).get();
+    if (!ordered.empty) return ordered.docs;
+    const unordered = await db.collection('pending-sync-review').limit(REVIEW_DISPLAY_LIMIT).get();
+    if (!unordered.empty) {
+      console.warn('Review items exist but have no createdAt — showing them unordered.');
+    }
+    return unordered.docs;
+  }
+
   async function renderReviewQueue() {
+    try {
+      await renderReviewQueueInner();
+    } catch (e) {
+      showRenderError('the review queue', e);
+    }
+  }
+
+  async function renderReviewQueueInner() {
     const attentionCard = document.getElementById('attention-card');
     const attentionListEl = document.getElementById('attention-list');
     const reviewCard = document.getElementById('review-card');
@@ -533,9 +567,9 @@
     // Capped so a large backlog can't lock up the browser — every card is a
     // live textarea, and thousands of them will freeze the page. Work
     // through it in passes; the next batch appears after each upload.
-    const snapshot = await db.collection('pending-sync-review').orderBy('createdAt').limit(REVIEW_DISPLAY_LIMIT).get();
+    const docs = await fetchReviewDocs();
 
-    if (snapshot.empty) {
+    if (docs.length === 0) {
       attentionCard.style.display = 'none';
       attentionListEl.innerHTML = '';
       reviewCard.style.display = 'none';
@@ -547,14 +581,21 @@
     const attentionCards = [];
     const eightplyCards = [];
     const normalCards = [];
-    snapshot.forEach(doc => {
-      const d = doc.data();
-      const html = buildReviewCardHtml(doc, d);
-      // Flagged orders stay in Needs Attention no matter what they contain —
-      // an 8ply x1 with an unrecognised SKU shouldn't be bulk-uploaded blind.
-      if (d.needsReview) attentionCards.push(html);
-      else if (isEightPlySingle(d.raw)) eightplyCards.push(html);
-      else normalCards.push(html);
+    let broken = 0;
+    docs.forEach(doc => {
+      // One malformed entry shouldn't take the whole queue down with it.
+      try {
+        const d = doc.data();
+        const html = buildReviewCardHtml(doc, d);
+        // Flagged orders stay in Needs Attention no matter what they contain —
+        // an 8ply x1 with an unrecognised SKU shouldn't be bulk-uploaded blind.
+        if (d.needsReview) attentionCards.push(html);
+        else if (isEightPlySingle(d.raw)) eightplyCards.push(html);
+        else normalCards.push(html);
+      } catch (e) {
+        broken++;
+        console.error('Could not render review item', doc.id, e);
+      }
     });
 
     if (attentionCards.length > 0) {
@@ -568,8 +609,15 @@
     document.getElementById('count-eightply').textContent = eightplyCards.length;
     document.getElementById('count-other').textContent = normalCards.length;
 
-    const cappedNote = snapshot.size >= REVIEW_DISPLAY_LIMIT
-      ? `<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the oldest ${REVIEW_DISPLAY_LIMIT} of a larger queue. Clear these and the next batch loads.</div>`
+    const notes = [];
+    if (docs.length >= REVIEW_DISPLAY_LIMIT) {
+      notes.push(`Showing the oldest ${REVIEW_DISPLAY_LIMIT} of a larger queue. Clear these and the next batch loads.`);
+    }
+    if (broken) {
+      notes.push(`${broken} item(s) could not be displayed and were skipped — use Reject All to clear them.`);
+    }
+    const cappedNote = notes.length
+      ? `<div class="tab-empty" style="text-align:left; padding:8px 0;">${notes.join('<br/>')}</div>`
       : '';
 
     eightplyListEl.innerHTML = cappedNote + eightplyCards.join('');
@@ -1005,6 +1053,10 @@
   // ---------- Skipped duplicates ----------
   const SKIPPED_DISPLAY_LIMIT = 50;
   async function renderSkippedList() {
+    try { await renderSkippedListInner(); } catch (e) { showRenderError('the skipped-duplicates list', e); }
+  }
+
+  async function renderSkippedListInner() {
     const skippedCard = document.getElementById('skipped-card');
     const listEl = document.getElementById('skipped-list');
     // Limited on purpose. Each record carries a full copy of the Sendcloud
@@ -1080,6 +1132,10 @@
   }
 
   async function renderManualLabelsList() {
+    try { await renderManualLabelsListInner(); } catch (e) { showRenderError('the uploaded-labels list', e); }
+  }
+
+  async function renderManualLabelsListInner() {
     const listEl = document.getElementById('manual-labels-list');
     try {
       const snapshot = await db.collection('manual-labels').where('used', '==', false).get();
