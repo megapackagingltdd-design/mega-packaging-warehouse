@@ -136,17 +136,31 @@
   .other-type-row.active { border-color: #c65d2e; background: #fbf1ea; }
   .field-hidden { display: none !important; }
 
-  .learned-row {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 9px 0; border-bottom: 1px solid #ece9e1;
-  }
+  .learned-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
   .learned-row:last-child { border-bottom: none; }
   .learned-sku {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12.5px; font-weight: 800; color: #1a1d1a;
+    font-size: 12.5px; font-weight: 800; color: #1a1d1a; word-break: break-all;
   }
-  .learned-rule { font-size: 12.5px; color: #777; margin-top: 2px; }
-  .learned-remove { padding: 6px 12px; font-size: 12px; flex: 0 0 auto; }
+  .learned-rule { font-size: 13px; color: #555; margin-top: 3px; line-height: 1.45; }
+  .learned-rule .learned-per { color: #999; }
+  /* Own sizing rather than .btn, which is width:100% and would fill the row. */
+  .learned-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .learned-btn {
+    width: auto; padding: 6px 14px; border-radius: 7px; font-size: 12.5px; font-weight: 800;
+    font-family: inherit; cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent; border: 1.5px solid;
+  }
+  .learned-btn.edit { border-color: #c9c5b9; background: #fff; color: #444; }
+  .learned-btn.remove { border-color: #b03636; background: #fff; color: #b03636; }
+  .learned-btn.save { border-color: #2f6b3e; background: #2f6b3e; color: #fff; }
+  .learned-btn.cancel { border-color: #c9c5b9; background: #fff; color: #444; }
+  .learned-edit-form { margin-top: 8px; }
+  .learned-edit-form input[type="text"],
+  .learned-edit-form input[type="number"] { margin-bottom: 6px; }
+  .learned-field-label { font-size: 11.5px; font-weight: 800; color: #777; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
+  .learned-fixed-row { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 8px; font-size: 12.5px; color: #555; line-height: 1.4; }
+  .learned-fixed-row input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #c65d2e; }
 
   .tab-empty {
     color: #999; font-size: 13px; text-align: center; padding: 20px 10px; line-height: 1.5;
@@ -765,6 +779,8 @@
   }
 
   // ---------- Learned products list ----------
+  let editingLearnedId = null;   // which row is open for editing
+
   async function renderLearnedList() {
     try { await renderLearnedListInner(); } catch (e) { showRenderError('the learned products list', e); }
   }
@@ -779,33 +795,107 @@
       return;
     }
     card.style.display = 'block';
-    const rows = snap.docs.map(doc => {
-      const d = doc.data();
-      const rule = d.mode === 'fixed'
-        ? `always "${escapeHtml(d.label || '')}"`
-        : `${escapeHtml(d.label || '')} — ${d.unitsPerItem || 1} per item`;
-      return `
-        <div class="learned-row">
-          <div>
-            <div class="learned-sku">${escapeHtml(d.sku || '')}</div>
-            <div class="learned-rule">${rule}</div>
-          </div>
-          <button class="btn btn-danger learned-remove" data-id="${doc.id}" data-sku="${escapeHtml(d.sku || '')}">Remove</button>
-        </div>`;
-    });
+    const rows = snap.docs
+      .slice()
+      .sort((a, b) => String(a.data().sku || '').localeCompare(String(b.data().sku || '')))
+      .map(doc => {
+        const d = doc.data();
+        const sku = escapeHtml(d.sku || '');
+        const label = escapeHtml(d.label || '');
+        const per = d.unitsPerItem || 1;
+        const fixed = d.mode === 'fixed';
+
+        if (editingLearnedId === doc.id) {
+          return `
+            <div class="learned-row" data-id="${doc.id}">
+              <div class="learned-sku">${sku}</div>
+              <div class="learned-edit-form">
+                <div class="learned-field-label">Product text</div>
+                <input type="text" class="learned-input-label" data-id="${doc.id}" value="${label}" />
+                <div class="learned-field-label">How many per item</div>
+                <input type="number" class="learned-input-per" data-id="${doc.id}" value="${per}" min="1" ${fixed ? 'disabled' : ''} />
+                <label class="learned-fixed-row">
+                  <input type="checkbox" class="learned-input-fixed" data-id="${doc.id}" ${fixed ? 'checked' : ''} />
+                  <span>Always write this exact text, whatever the quantity</span>
+                </label>
+                <div class="learned-actions">
+                  <button class="learned-btn save" data-action="save-learned" data-id="${doc.id}">Save</button>
+                  <button class="learned-btn cancel" data-action="cancel-learned">Cancel</button>
+                </div>
+              </div>
+            </div>`;
+        }
+
+        const ruleText = fixed
+          ? `always &ldquo;${label}&rdquo;`
+          : `${label} <span class="learned-per">&mdash; ${per} per item</span>`;
+        const example = fixed ? '' : `<div class="learned-rule learned-per">qty 2 &rarr; ${label} x${per * 2}</div>`;
+        return `
+          <div class="learned-row" data-id="${doc.id}">
+            <div class="learned-sku">${sku}</div>
+            <div class="learned-rule">${ruleText}</div>
+            ${example}
+            <div class="learned-actions">
+              <button class="learned-btn edit" data-action="edit-learned" data-id="${doc.id}">Edit</button>
+              <button class="learned-btn remove" data-action="remove-learned" data-id="${doc.id}" data-sku="${sku}">Remove</button>
+            </div>
+          </div>`;
+      });
     listEl.innerHTML = rows.join('');
   }
 
   document.getElementById('learned-list').addEventListener('click', async (e) => {
-    const btn = e.target.closest('.learned-remove');
+    const btn = e.target.closest('button[data-action]');
     if (!btn) return;
-    if (!confirm(`Forget the correction for ${btn.dataset.sku}? It'll come back for review on the next sync.`)) return;
-    try {
-      await db.collection('sku-corrections').doc(btn.dataset.id).delete();
+    const action = btn.dataset.action;
+
+    if (action === 'edit-learned') {
+      editingLearnedId = btn.dataset.id;
       renderLearnedList();
-    } catch (err) {
-      showRenderError('the learned products list', err);
+      return;
     }
+    if (action === 'cancel-learned') {
+      editingLearnedId = null;
+      renderLearnedList();
+      return;
+    }
+    if (action === 'remove-learned') {
+      if (!confirm(`Forget the correction for ${btn.dataset.sku}? It'll come back for review on the next sync.`)) return;
+      try {
+        await db.collection('sku-corrections').doc(btn.dataset.id).delete();
+        editingLearnedId = null;
+        renderLearnedList();
+      } catch (err) { showRenderError('the learned products list', err); }
+      return;
+    }
+    if (action === 'save-learned') {
+      const id = btn.dataset.id;
+      const label = document.querySelector(`.learned-input-label[data-id="${id}"]`).value.trim();
+      const fixed = document.querySelector(`.learned-input-fixed[data-id="${id}"]`).checked;
+      const perRaw = parseInt(document.querySelector(`.learned-input-per[data-id="${id}"]`).value, 10);
+      if (!label) { alert('Enter the product text.'); return; }
+      if (!fixed && (isNaN(perRaw) || perRaw < 1)) { alert('How many per item must be 1 or more.'); return; }
+      try {
+        await db.collection('sku-corrections').doc(id).update({
+          label,
+          unitsPerItem: fixed ? 1 : perRaw,
+          mode: fixed ? 'fixed' : 'scale',
+          updatedAt: Date.now()
+        });
+        editingLearnedId = null;
+        renderLearnedList();
+        document.getElementById('top-status').textContent = 'Correction updated — it applies from the next sync.';
+      } catch (err) { showRenderError('the learned products list', err); }
+    }
+  });
+
+  // Greys out the "per item" box while "always this exact text" is ticked,
+  // so the two settings can't visibly contradict each other.
+  document.getElementById('learned-list').addEventListener('change', (e) => {
+    const box = e.target.closest('.learned-input-fixed');
+    if (!box) return;
+    const per = document.querySelector(`.learned-input-per[data-id="${box.dataset.id}"]`);
+    if (per) per.disabled = box.checked;
   });
 
   async function approveReviewItem(docId) {
