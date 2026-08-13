@@ -1313,7 +1313,7 @@
   document.addEventListener('pointercancel', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
 
   // ---------- Skipped duplicates ----------
-  const SKIPPED_DISPLAY_LIMIT = 50;
+  const SKIPPED_DISPLAY_LIMIT = 250;
   async function renderSkippedList() {
     try { await renderSkippedListInner(); } catch (e) { showRenderError('the skipped-duplicates list', e); }
   }
@@ -1321,8 +1321,9 @@
   async function renderSkippedListInner() {
     const skippedCard = document.getElementById('skipped-card');
     const listEl = document.getElementById('skipped-list');
-    // Limited on purpose. Each record carries a full copy of the Sendcloud
-    // shipment data, so fetching the whole collection can stall the page.
+    // Records are now one per order number and updated in place rather than
+    // appended, so this list stays a manageable size and can show the whole
+    // day's skips. Still limited as a safety net.
     const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt', 'desc').limit(SKIPPED_DISPLAY_LIMIT).get();
     if (snapshot.empty) {
       skippedCard.style.display = 'none';
@@ -1332,7 +1333,7 @@
     skippedCard.style.display = 'block';
     const rows = [];
     if (snapshot.size >= SKIPPED_DISPLAY_LIMIT) {
-      rows.push(`<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the ${SKIPPED_DISPLAY_LIMIT} most recent. Use "Reject All (queue + duplicates)" to clear the backlog.</div>`);
+      rows.push(`<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the ${SKIPPED_DISPLAY_LIMIT} most recent.</div>`);
     }
     snapshot.forEach(doc => {
       const d = doc.data();
