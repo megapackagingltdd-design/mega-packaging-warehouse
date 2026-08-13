@@ -105,17 +105,31 @@
   .empty-note { color: #999; font-size: 13px; text-align: center; padding: 24px 10px; }
 
   /* ---------- Review queue tabs ---------- */
+  /* Horizontally scrollable so six tabs fit a phone without shrinking to
+     nothing. */
   .tabs {
-    display: flex; gap: 6px; margin: 0 0 12px;
-    border-bottom: 1.5px solid #e6e3da; padding-bottom: 0;
+    display: flex; gap: 4px; margin: 0 0 12px;
+    border-bottom: 1.5px solid #e6e3da;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  .tabs::-webkit-scrollbar { display: none; }
   .tab {
-    flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 10px 8px; font-size: 13px; font-weight: 800; font-family: inherit;
+    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 10px 12px; font-size: 13px; font-weight: 800; font-family: inherit;
+    white-space: nowrap;
     background: none; border: none; border-bottom: 3px solid transparent;
     color: #999; cursor: pointer; touch-action: manipulation;
     -webkit-tap-highlight-color: transparent; margin-bottom: -1.5px;
   }
+  .tab.attention { color: #a33; }
+  .tab.attention.active { border-bottom-color: #c0392b; }
+  .tab.attention .tab-count { background: #f3dcd8; color: #a33; }
+  .tab.attention.active .tab-count { background: #c0392b; color: #fff; }
+  .tab.warn { color: #a3701c; }
+  .tab.warn.active { border-bottom-color: #d99b1c; }
+  .tab.warn .tab-count { background: #f7ecd6; color: #a3701c; }
+  .tab.warn.active .tab-count { background: #d99b1c; color: #fff; }
   .tab.active { color: #1a1d1a; border-bottom-color: #c65d2e; }
   .tab-count {
     display: inline-flex; align-items: center; justify-content: center;
@@ -135,6 +149,19 @@
   .other-type-row small { display: block; color: #777; font-size: 12px; margin-top: 3px; }
   .other-type-row.active { border-color: #c65d2e; background: #fbf1ea; }
   .field-hidden { display: none !important; }
+
+  .ns-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
+  .ns-row:last-child { border-bottom: none; }
+  .ns-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .ns-name { font-weight: 800; font-size: 14px; color: #1a1d1a; }
+  .ns-age {
+    font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
+    border: 1px solid #edd8ae; border-radius: 5px; padding: 2px 7px; white-space: nowrap;
+  }
+  .ns-meta {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; color: #777; margin-top: 4px; line-height: 1.6; word-break: break-all;
+  }
 
   .learned-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
   .learned-row:last-child { border-bottom: none; }
@@ -211,35 +238,66 @@
 
 <div id="page">
   <div class="page-title">Sendcloud Sync</div>
-  <p class="page-subtitle">Pull in recent orders from Sendcloud, review exactly how each one converts compared to the original Sendcloud data, then approve to add it as a real slot. Nothing is added automatically.</p>
-
-  <div class="btn-row" style="margin-bottom:14px;">
-    <button class="btn btn-danger" id="btn-reject-everything">Reject All (queue + duplicates)</button>
-    <button class="btn btn-ghost" id="btn-all-sent">All Orders Sent</button>
-  </div>
-  <div class="status-line" id="top-status" style="margin-top:-6px; margin-bottom:10px;"></div>
 
   <div class="card">
-    <h2>Sync from Sendcloud</h2>
-    <p class="hint">Cross-references against your actual current slots — only orders genuinely not yet in the system are brought in. Safe to run as often as you like.</p>
     <div class="btn-row">
       <button class="btn btn-primary" id="btn-sync">Sync from Sendcloud</button>
     </div>
     <div class="status-line" id="sync-status"></div>
+    <div class="status-line" id="top-status"></div>
   </div>
 
-  <div class="card">
-    <h2>Upload a label manually</h2>
-    <p class="hint">For labels created directly through Amazon rather than Sendcloud (e.g. when Sendcloud's rates aren't available) — upload the PDF here matched to the customer, along with the products ordered. This creates a proper slot AND makes the label available for the normal Print button.</p>
+  <!-- One tab strip for everything, so nothing needs a heading or a
+       description taking up room above it. Counts appear only when there is
+       something in that tab. -->
+  <div class="tabs" id="main-tabs">
+    <button class="tab attention" data-tab="attention" style="display:none;">Attention <span class="tab-count" id="count-attention">0</span></button>
+    <button class="tab" data-tab="eightply">8ply x1 <span class="tab-count" id="count-eightply">0</span></button>
+    <button class="tab" data-tab="other">Other <span class="tab-count" id="count-other">0</span></button>
+    <button class="tab" data-tab="skipped">Duplicates <span class="tab-count" id="count-skipped">0</span></button>
+    <button class="tab warn" data-tab="notscanned" style="display:none;">Not scanned <span class="tab-count" id="count-notscanned">0</span></button>
+    <button class="tab" data-tab="upload">Upload</button>
+    <button class="tab" data-tab="learned">Learned</button>
+  </div>
 
+  <div class="card tab-panel" id="panel-attention" style="display:none;">
+    <div id="attention-list"></div>
+  </div>
+
+  <div class="card tab-panel" id="panel-eightply" style="display:none;">
+    <div class="tab-empty" id="eightply-empty" style="display:none;">No 8ply x1 orders.</div>
+    <div id="eightply-list"></div>
+    <div class="btn-row" id="eightply-bulk-actions" style="display:none; margin-top:6px;">
+      <button class="btn btn-good" id="btn-upload-8ply">Upload All 8ply x1</button>
+    </div>
+  </div>
+
+  <div class="card tab-panel" id="panel-other" style="display:none;">
+    <div class="tab-empty" id="other-empty" style="display:none;">No other orders.</div>
+    <div id="review-list"></div>
+    <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
+      <button class="btn btn-good" id="btn-approve-all">Approve All</button>
+      <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
+    </div>
+  </div>
+
+  <div class="card tab-panel" id="panel-skipped" style="display:none;">
+    <div class="tab-empty" id="skipped-empty" style="display:none;">Nothing skipped that needs a look.</div>
+    <div id="skipped-list"></div>
+    <div class="btn-row" style="margin-top:6px;">
+      <button class="btn btn-danger" id="btn-reject-everything">Clear All (queue + duplicates)</button>
+    </div>
+  </div>
+
+  <div class="card tab-panel" id="panel-notscanned" style="display:none; border:2px solid #d99b1c;">
+    <div id="notscanned-list"></div>
+  </div>
+
+  <div class="card tab-panel" id="panel-upload" style="display:none;">
     <label class="other-type-row">
       <input type="checkbox" id="manual-other-type" />
-      <span>
-        <strong>Other file type</strong> — general print, not a scannable label
-        <small>For name prints and similar. Accepts JPEG, PNG, BMP or PDF. Only the name is needed, and the slot turns blue automatically once printed, since there's nothing to scan.</small>
-      </span>
+      <span><strong>Other file type</strong> — general print, not a scannable label</span>
     </label>
-
     <input type="text" id="manual-name" placeholder="Customer name" />
     <input type="text" id="manual-postcode" placeholder="Postcode (optional but recommended)" />
     <input type="text" id="manual-products" placeholder="Products, e.g. 8ply x1 + wood fork x2" />
@@ -251,49 +309,9 @@
     <div id="manual-labels-list" style="margin-top:10px;"></div>
   </div>
 
-  <div class="card" id="attention-card" style="display:none; border: 2px solid #c0392b;">
-    <h2 style="color:#a33;">⚠️ Needs Attention</h2>
-    <p class="hint">Anything flagged with a problem — unrecognised SKU, stuck order, possible copy — collected here so nothing gets missed among the normal orders below.</p>
-    <div id="attention-list"></div>
-  </div>
-
-  <div class="card" id="review-card" style="display:none;">
-    <h2>Review queue</h2>
-    <p class="hint">Compare the original Sendcloud data against how it'll display in the system. Edit the converted text if anything needs a tweak, then approve.</p>
-
-    <div class="tabs" id="review-tabs">
-      <button class="tab" data-tab="eightply">8ply x1 <span class="tab-count" id="count-eightply">0</span></button>
-      <button class="tab" data-tab="other">Other orders <span class="tab-count" id="count-other">0</span></button>
-    </div>
-
-    <div id="tab-eightply">
-      <div class="tab-empty" id="eightply-empty" style="display:none;">No 8ply x1 orders in this batch.<br/>Only orders that are a single 8ply at qty 1, with nothing else on them, land here.</div>
-      <div id="eightply-list"></div>
-      <div class="btn-row" id="eightply-bulk-actions" style="display:none; margin-top:6px;">
-        <button class="btn btn-good" id="btn-upload-8ply">Upload All 8ply x1</button>
-      </div>
-    </div>
-
-    <div id="tab-other" style="display:none;">
-      <div class="tab-empty" id="other-empty" style="display:none;">No other orders in this batch.</div>
-      <div id="review-list"></div>
-      <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
-        <button class="btn btn-good" id="btn-approve-all">Approve All</button>
-        <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="card" id="learned-card" style="display:none;">
-    <h2>Learned products</h2>
-    <p class="hint">SKUs you've corrected by hand. These are applied automatically on future syncs, so the same SKU doesn't come back for review. Remove one if it's ever wrong.</p>
+  <div class="card tab-panel" id="panel-learned" style="display:none;">
+    <div class="tab-empty" id="learned-empty" style="display:none;">Nothing learned yet. Correct a flagged order and you'll be asked to save it.</div>
     <div id="learned-list"></div>
-  </div>
-
-  <div class="card" id="skipped-card" style="display:none;">
-    <h2>Skipped as duplicate</h2>
-    <p class="hint">These were excluded automatically because they matched an existing order. Worth a quick check — if a match looks wrong (e.g. two different people who happen to share a postcode), you can add it for review anyway.</p>
-    <div id="skipped-list"></div>
   </div>
 </div>
 
@@ -345,6 +363,7 @@
       renderReviewQueue();
       renderSkippedList();
       renderLearnedList();
+      renderNotScanned();
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -459,6 +478,7 @@
           btn.disabled = false;
           renderReviewQueue();
           renderSkippedList();
+          renderNotScanned();
           return;
         }
         if (data && data.status === 'failed') {
@@ -537,20 +557,54 @@
       </div>`;
   }
 
-  let activeReviewTab = null;   // 'eightply' | 'other' — remembered between renders
+  // ---------- Tabs ----------
+  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned'];
+  let activeTab = null;
+  let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
-  function setReviewTab(tab) {
-    activeReviewTab = tab;
-    document.querySelectorAll('#review-tabs .tab').forEach(btn => {
+  function setTab(tab, byUser) {
+    if (!ALL_TABS.includes(tab)) return;
+    activeTab = tab;
+    if (byUser) userPickedTab = true;
+    document.querySelectorAll('#main-tabs .tab').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.tab === tab);
     });
-    document.getElementById('tab-eightply').style.display = tab === 'eightply' ? 'block' : 'none';
-    document.getElementById('tab-other').style.display    = tab === 'other'    ? 'block' : 'none';
+    for (const t of ALL_TABS) {
+      const panel = document.getElementById('panel-' + t);
+      if (panel) panel.style.display = t === tab ? 'block' : 'none';
+    }
   }
 
-  document.getElementById('review-tabs').addEventListener('click', (e) => {
+  // Counts double as visibility: a tab with nothing in it and nothing to do
+  // is hidden rather than shown empty.
+  function setTabCount(tab, n, hideWhenEmpty) {
+    const countEl = document.getElementById('count-' + tab);
+    const btn = document.querySelector(`#main-tabs .tab[data-tab="${tab}"]`);
+    if (countEl) countEl.textContent = n;
+    if (!btn) return;
+    if (hideWhenEmpty) {
+      btn.style.display = n > 0 ? '' : 'none';
+      // Don't leave the user staring at a panel that just emptied itself.
+      if (n === 0 && activeTab === tab) { userPickedTab = false; chooseDefaultTab(); }
+    }
+    if (countEl) countEl.style.display = n > 0 ? '' : 'none';
+  }
+
+  // Most urgent thing first: flagged orders, then the queue, then duplicates.
+  function chooseDefaultTab() {
+    if (userPickedTab && activeTab) { setTab(activeTab); return; }
+    const n = (id) => parseInt(document.getElementById('count-' + id).textContent, 10) || 0;
+    if (n('attention') > 0) return setTab('attention');
+    if (n('eightply') > 0) return setTab('eightply');
+    if (n('other') > 0) return setTab('other');
+    if (n('skipped') > 0) return setTab('skipped');
+    if (n('notscanned') > 0) return setTab('notscanned');
+    setTab('upload');
+  }
+
+  document.getElementById('main-tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
-    if (btn) setReviewTab(btn.dataset.tab);
+    if (btn) setTab(btn.dataset.tab, true);
   });
 
   const REVIEW_DISPLAY_LIMIT = 300;
@@ -590,9 +644,7 @@
   }
 
   async function renderReviewQueueInner() {
-    const attentionCard = document.getElementById('attention-card');
     const attentionListEl = document.getElementById('attention-list');
-    const reviewCard = document.getElementById('review-card');
     const listEl = document.getElementById('review-list');
     const bulkEl = document.getElementById('review-bulk-actions');
     const eightplyListEl = document.getElementById('eightply-list');
@@ -603,11 +655,17 @@
     const docs = await fetchReviewDocs();
 
     if (docs.length === 0) {
-      attentionCard.style.display = 'none';
       attentionListEl.innerHTML = '';
-      reviewCard.style.display = 'none';
       listEl.innerHTML = '';
       eightplyListEl.innerHTML = '';
+      setTabCount('attention', 0, true);
+      setTabCount('eightply', 0, false);
+      setTabCount('other', 0, false);
+      document.getElementById('eightply-empty').style.display = 'block';
+      document.getElementById('other-empty').style.display = 'block';
+      document.getElementById('eightply-bulk-actions').style.display = 'none';
+      document.getElementById('review-bulk-actions').style.display = 'none';
+      chooseDefaultTab();
       return;
     }
 
@@ -631,16 +689,10 @@
       }
     });
 
-    if (attentionCards.length > 0) {
-      attentionCard.style.display = 'block';
-      attentionListEl.innerHTML = attentionCards.join('');
-    } else {
-      attentionCard.style.display = 'none';
-      attentionListEl.innerHTML = '';
-    }
-
-    document.getElementById('count-eightply').textContent = eightplyCards.length;
-    document.getElementById('count-other').textContent = normalCards.length;
+    attentionListEl.innerHTML = attentionCards.join('');
+    setTabCount('attention', attentionCards.length, true);
+    setTabCount('eightply', eightplyCards.length, false);
+    setTabCount('other', normalCards.length, false);
 
     const notes = [];
     if (docs.length >= REVIEW_DISPLAY_LIMIT) {
@@ -661,18 +713,7 @@
     bulkEl.style.display = normalCards.length > 0 ? 'flex' : 'none';
     document.getElementById('other-empty').style.display = normalCards.length > 0 ? 'none' : 'block';
 
-    if (eightplyCards.length + normalCards.length > 0) {
-      reviewCard.style.display = 'block';
-      // On first render, open whichever tab actually has orders (8ply wins a
-      // tie). After that, stay on whatever tab you were last looking at.
-      if (activeReviewTab === null) {
-        setReviewTab(eightplyCards.length > 0 ? 'eightply' : 'other');
-      } else {
-        setReviewTab(activeReviewTab);
-      }
-    } else {
-      reviewCard.style.display = 'none';
-    }
+    chooseDefaultTab();
   }
 
   // ---------- Teaching the system a SKU ----------
@@ -778,6 +819,108 @@
     }
   }
 
+  // ---------- Not scanned ----------
+  // Same list the Warehouse header shows, but with actions here: reprint the
+  // label, add it back as a slot for re-doing, or dismiss it once chased.
+  let notScannedItems = [];
+  let dismissedNotScanned = new Set();
+
+  async function renderNotScanned() {
+    try { await renderNotScannedInner(); } catch (e) { showRenderError('the not-scanned list', e); }
+  }
+
+  async function renderNotScannedInner() {
+    const listEl = document.getElementById('notscanned-list');
+    const doc = await db.collection('print-watcher-control').doc('not-scanned').get();
+    notScannedItems = doc.exists ? JSON.parse(doc.data().itemsJson || '[]') : [];
+    const visible = notScannedItems.filter(i => !dismissedNotScanned.has(i.trackingNumber || i.shipmentId));
+    setTabCount('notscanned', visible.length, true);
+    if (visible.length === 0) {
+      listEl.innerHTML = '';
+      return;
+    }
+    listEl.innerHTML = visible.map((i, idx) => {
+      const key = i.trackingNumber || i.shipmentId;
+      return `
+      <div class="ns-row" data-key="${escapeHtml(key)}">
+        <div class="ns-top">
+          <span class="ns-name">${escapeHtml(i.name || '')}${i.postcode ? ' (' + escapeHtml(i.postcode) + ')' : ''}</span>
+          <span class="ns-age">${i.daysOld} day${i.daysOld === 1 ? '' : 's'}</span>
+        </div>
+        <div class="ns-meta">
+          ${i.orderNumber ? 'Order ' + escapeHtml(i.orderNumber) + '<br/>' : 'No order number<br/>'}
+          ${i.trackingNumber ? 'Tracking ' + escapeHtml(i.trackingNumber) + '<br/>' : ''}
+          ${i.shippingMethod ? escapeHtml(i.shippingMethod) + '<br/>' : ''}
+          Label made ${i.labelCreatedAt ? new Date(i.labelCreatedAt).toLocaleString('en-GB') : 'unknown'}
+        </div>
+        <div class="learned-actions">
+          <button class="learned-btn edit" data-action="ns-print" data-idx="${idx}">Print label</button>
+          <button class="learned-btn edit" data-action="ns-slot" data-idx="${idx}">Add as slot</button>
+          <button class="learned-btn remove" data-action="ns-dismiss" data-idx="${idx}">Dismiss</button>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('notscanned-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const visible = notScannedItems.filter(i => !dismissedNotScanned.has(i.trackingNumber || i.shipmentId));
+    const item = visible[parseInt(btn.dataset.idx, 10)];
+    if (!item) return;
+    const statusEl = document.getElementById('top-status');
+
+    if (btn.dataset.action === 'ns-dismiss') {
+      // Hidden on this device only — it stays in Sendcloud, and comes back on
+      // the next check if it's still sitting in Created Labels tomorrow.
+      dismissedNotScanned.add(item.trackingNumber || item.shipmentId);
+      renderNotScanned();
+      return;
+    }
+
+    if (btn.dataset.action === 'ns-slot') {
+      const header = item.postcode ? `${item.name} (${item.postcode})` : item.name;
+      if (!confirm(`Add ${item.name} back as a slot to be re-done today?`)) return;
+      try {
+        await addOrderAsSlot(header, item.orderNumber ? [item.orderNumber] : (item.shipmentId ? [item.shipmentId] : null),
+                             false, false, item.trackingNumber ? [item.trackingNumber] : null);
+        statusEl.textContent = `${item.name} added as a slot — edit the products on the warehouse list.`;
+      } catch (err) {
+        statusEl.textContent = 'Could not add that slot — ' + ((err && err.message) || 'try again') + '.';
+      }
+      return;
+    }
+
+    if (btn.dataset.action === 'ns-print') {
+      btn.disabled = true;
+      btn.textContent = 'Printing…';
+      try {
+        const ref = await db.collection('print-requests').add({
+          name: item.name,
+          postcode: item.postcode || '',
+          orderNumbers: item.orderNumber || item.shipmentId || '',
+          status: 'pending',
+          requestedAt: Date.now()
+        });
+        const startedAt = Date.now();
+        const check = async () => {
+          const d = await db.collection('print-requests').doc(ref.id).get();
+          const data = d.exists ? d.data() : null;
+          if (data && data.status === 'printed') { statusEl.textContent = `Printed ${item.name}'s label.`; btn.disabled = false; btn.textContent = 'Print label'; return; }
+          if (data && data.status === 'failed') { statusEl.textContent = `Could not print: ${data.errorMessage || 'unknown error'}`; btn.disabled = false; btn.textContent = 'Print label'; return; }
+          if (Date.now() - startedAt > 120000) { statusEl.textContent = 'Timed out — is print-watcher running on the warehouse computer?'; btn.disabled = false; btn.textContent = 'Print label'; return; }
+          setTimeout(check, 2000);
+        };
+        statusEl.textContent = 'Sent to the printer…';
+        check();
+      } catch (err) {
+        statusEl.textContent = 'Could not send that to the printer — ' + ((err && err.message) || 'try again') + '.';
+        btn.disabled = false;
+        btn.textContent = 'Print label';
+      }
+    }
+  });
+
   // ---------- Learned products list ----------
   let editingLearnedId = null;   // which row is open for editing
 
@@ -786,15 +929,14 @@
   }
 
   async function renderLearnedListInner() {
-    const card = document.getElementById('learned-card');
     const listEl = document.getElementById('learned-list');
     const snap = await db.collection('sku-corrections').get();
     if (snap.empty) {
-      card.style.display = 'none';
       listEl.innerHTML = '';
+      document.getElementById('learned-empty').style.display = 'block';
       return;
     }
-    card.style.display = 'block';
+    document.getElementById('learned-empty').style.display = 'none';
     const rows = snap.docs
       .slice()
       .sort((a, b) => String(a.data().sku || '').localeCompare(String(b.data().sku || '')))
@@ -963,17 +1105,49 @@
     await db.collection('pending-sync-review').doc(docId).delete();
   }
 
+  // Guards against the same order being processed twice. A tap that doesn't
+  // visibly change anything invites a second tap, and two approvals in flight
+  // at once can add the slot twice — so the button is disabled and relabelled
+  // the moment it's pressed, and the id is held until the work finishes.
+  const busyReviewIds = new Set();
+
   async function handleReviewListClick(e) {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
     const docId = btn.dataset.id;
-    if (btn.dataset.action === 'approve-one') {
-      await approveReviewItem(docId);
-    } else if (btn.dataset.action === 'reject-one') {
-      if (!confirm('Reject this order? It will not be added as a slot.')) return;
-      await rejectReviewItem(docId);
-    } else if (btn.dataset.action === 'mark-notprocessed') {
-      await markNotProcessed(docId);
+    const action = btn.dataset.action;
+    if (busyReviewIds.has(docId)) return;   // already working on this one
+
+    if (action === 'reject-one' && !confirm('Reject this order? It will not be added as a slot.')) return;
+
+    busyReviewIds.add(docId);
+    // Every button on this card goes dead, not just the one pressed, so an
+    // approve can't be followed by a reject on the same order mid-flight.
+    const card = btn.closest('.review-card');
+    const cardButtons = card ? [...card.querySelectorAll('button')] : [btn];
+    const originalText = btn.textContent;
+    cardButtons.forEach(b => { b.disabled = true; });
+    btn.textContent = action === 'approve-one' ? 'Adding…'
+                    : action === 'reject-one' ? 'Rejecting…'
+                    : 'Saving…';
+    if (card) card.style.opacity = '0.6';
+
+    try {
+      if (action === 'approve-one') {
+        await approveReviewItem(docId);
+      } else if (action === 'reject-one') {
+        await rejectReviewItem(docId);
+      } else if (action === 'mark-notprocessed') {
+        await markNotProcessed(docId);
+      }
+    } catch (err) {
+      document.getElementById('top-status').textContent =
+        'Could not finish that — ' + ((err && err.message) || 'try again') + '.';
+      cardButtons.forEach(b => { b.disabled = false; });
+      btn.textContent = originalText;
+      if (card) card.style.opacity = '';
+    } finally {
+      busyReviewIds.delete(docId);
     }
     renderReviewQueue();
   }
@@ -1081,17 +1255,6 @@
     if (!list.some(n => n.toLowerCase() === cleaned.toLowerCase())) list.push(cleaned);
     await storageCollection.doc(NOT_COMPLETE_KEY).set({ value: JSON.stringify(list), shared: true });
   }
-
-  document.getElementById('btn-all-sent').addEventListener('click', async () => {
-    const statusEl = document.getElementById('top-status');
-    if (!confirm('Mark all orders as sent? This clears the entire "Not complete orders" list.')) return;
-    try {
-      await storageCollection.doc(NOT_COMPLETE_KEY).set({ value: JSON.stringify([]), shared: true });
-      statusEl.textContent = 'All orders marked as sent — the not complete list is now empty.';
-    } catch (e) {
-      statusEl.textContent = 'Could not clear the list: ' + (e && e.message ? e.message : 'unknown error');
-    }
-  });
 
   // ---------- Fast bulk delete via the Firestore REST API ----------
   // The SDK approach was slow for two compounding reasons: fetching a page
@@ -1319,18 +1482,19 @@
   }
 
   async function renderSkippedListInner() {
-    const skippedCard = document.getElementById('skipped-card');
     const listEl = document.getElementById('skipped-list');
     // Records are now one per order number and updated in place rather than
     // appended, so this list stays a manageable size and can show the whole
     // day's skips. Still limited as a safety net.
     const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt', 'desc').limit(SKIPPED_DISPLAY_LIMIT).get();
     if (snapshot.empty) {
-      skippedCard.style.display = 'none';
       listEl.innerHTML = '';
+      setTabCount('skipped', 0, false);
+      document.getElementById('skipped-empty').style.display = 'block';
       return;
     }
-    skippedCard.style.display = 'block';
+    setTabCount('skipped', snapshot.size, false);
+    document.getElementById('skipped-empty').style.display = 'none';
     const rows = [];
     if (snapshot.size >= SKIPPED_DISPLAY_LIMIT) {
       rows.push(`<div class="tab-empty" style="text-align:left; padding:8px 0;">Showing the ${SKIPPED_DISPLAY_LIMIT} most recent.</div>`);
