@@ -65,32 +65,23 @@
     padding: 14px; width: 100%; max-width: 620px; color: #e8e6e0;
   }
 
-  .mp-hist-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-  .mp-hist-quick-btn {
-    flex: 1 1 0; min-width: 100px; padding: 11px 8px; border-radius: 9px;
-    background: #242824; border: 1.5px solid #454b45; color: #e8e6e0;
-    font-family: inherit; cursor: pointer; text-align: center;
-  }
-  .mp-hist-quick-btn:active { background: #2f352f; }
-  .mp-hist-quick-day { font-size: 14px; font-weight: 800; }
-  .mp-hist-quick-date { font-size: 11px; color: #9a978f; margin-top: 2px; }
-  .mp-hist-quick-btn.good { border-color: #3d8a50; }
-  .mp-hist-quick-btn.bad  { border-color: #b03636; }
-
   /* Five columns — weekdays only, no Saturday or Sunday. */
   .mp-hist-cal { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
   .mp-hist-dow { text-align: center; font-size: 10.5px; font-weight: 800; color: #7d827d; padding-bottom: 3px; }
   .mp-hist-day {
-    aspect-ratio: 1.15; display: flex; align-items: center; justify-content: center;
-    border-radius: 8px; font-size: 14px; font-weight: 800; font-family: inherit;
+    aspect-ratio: 1.15; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; border-radius: 8px; font-family: inherit;
     background: #242824; border: 1.5px solid transparent; color: #6f746f;
   }
+  .mp-hist-day .dnum { font-size: 15px; font-weight: 800; line-height: 1.1; }
+  .mp-hist-day .dmon { font-size: 9.5px; font-weight: 700; opacity: .8; line-height: 1.1; }
   .mp-hist-day.blank { background: none; border: none; }
   .mp-hist-day.has-data { cursor: pointer; color: #fff; }
   .mp-hist-day.good { background: #2f6b3e; border-color: #3d8a50; }
   .mp-hist-day.bad  { background: #8f2c2c; border-color: #b03636; }
   .mp-hist-day.today {
-    background: #c65d2e; border-color: #e07a45; color: #fff; font-size: 11px; letter-spacing: .04em;
+    background: #e6b422; border-color: #f0c94a; color: #2a2408;
+    font-size: 11.5px; font-weight: 900; letter-spacing: .05em;
   }
   .mp-hist-key { display: flex; gap: 14px; font-size: 11px; color: #9a978f; margin: 12px 0 0; flex-wrap: wrap; }
   .mp-hist-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
@@ -3889,23 +3880,6 @@ This backup was generated in one click from Back End and contains:
     return out;
   }
 
-  // The weekdays of this week before today — Monday to Friday only, most
-  // recent first. On a Monday there's nothing to show, so the calendar
-  // carries it.
-  function recentWeekdayButtons() {
-    const out = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dow = today.getDay();               // 0 Sun … 6 Sat
-    if (dow === 0 || dow === 6) return out;   // weekend: no "earlier this week"
-    for (let back = 1; back < dow; back++) {  // stops at Monday
-      const d = new Date(today);
-      d.setDate(d.getDate() - back);
-      out.push(d);
-    }
-    return out;
-  }
-
   const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const WEEKDAY_COLS = [1, 2, 3, 4, 5];   // Monday to Friday — weekends aren't shown at all
 
@@ -3937,12 +3911,15 @@ This backup was generated in one click from Back End and contains:
       const k = dayKey(d.getTime());
       const stat = dayStats.get(k);
       const isToday = d.getTime() === today.getTime();
+      // Month shown on every cell — the 30-day window straddles two months,
+      // so a bare number is ambiguous.
+      const month = d.toLocaleDateString('en-GB', { month: 'long' });
       if (isToday) {
         cells += `<div class="mp-hist-day today">TODAY</div>`;
       } else if (!stat) {
-        cells += `<div class="mp-hist-day">${d.getDate()}</div>`;
+        cells += `<div class="mp-hist-day"><span class="dnum">${d.getDate()}</span><span class="dmon">${month}</span></div>`;
       } else {
-        cells += `<button class="mp-hist-day has-data ${stat.allDone ? 'good' : 'bad'}" data-day="${k}" title="${stat.blue} of ${stat.total} completed">${d.getDate()}</button>`;
+        cells += `<button class="mp-hist-day has-data ${stat.allDone ? 'good' : 'bad'}" data-day="${k}" title="${stat.blue} of ${stat.total} completed"><span class="dnum">${d.getDate()}</span><span class="dmon">${month}</span></button>`;
       }
     }
     return cells;
@@ -3952,21 +3929,10 @@ This backup was generated in one click from Back End and contains:
     const orders = await getAllOrders();
     const dayStats = summariseDays(orders);
 
-    const quick = recentWeekdayButtons().map(d => {
-      const k = dayKey(d.getTime());
-      const stat = dayStats.get(k);
-      const cls = !stat ? '' : (stat.allDone ? ' good' : ' bad');
-      return `<button class="mp-hist-quick-btn${cls}" data-day="${k}">
-                <div class="mp-hist-quick-day">${DOW_LONG[d.getDay()]}</div>
-                <div class="mp-hist-quick-date">${shortDate(d)}</div>
-              </button>`;
-    }).join('');
-
     const overlay = document.createElement('div');
     overlay.className = 'mp-hist-overlay';
     overlay.innerHTML = `
       <div class="mp-hist-box">
-        ${quick ? `<div class="mp-hist-quick">${quick}</div>` : ''}
         <div class="mp-hist-cal">${buildHistoryCalendar(dayStats)}</div>
         <div class="mp-hist-key">
           <span><i style="background:#2f6b3e"></i>All completed</span>
