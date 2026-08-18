@@ -49,6 +49,80 @@
   .mp-summary-box.mp-summary-blue { background: #1e6fd9; color: #fff; }
   .mp-summary-box.mp-summary-green { background: var(--good); color: #fff; }
   .mp-summary-box.mp-summary-purple { background: #6a2ca3; color: #fff; }
+  .mp-summary-box.mp-summary-history {
+    background: #2b302b; color: #d8d5cd; border: 1.5px solid #454b45;
+    cursor: pointer; font-family: inherit;
+  }
+  .mp-summary-box.mp-summary-history:active { background: #363b36; }
+
+  /* ---------- History ---------- */
+  .mp-hist-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 900;
+    display: flex; align-items: flex-start; justify-content: center; padding: 18px 12px; overflow-y: auto;
+  }
+  .mp-hist-box {
+    background: #1a1d1a; border: 1.5px solid #454b45; border-radius: 14px;
+    padding: 16px; width: 100%; max-width: 560px; color: #e8e6e0;
+  }
+  .mp-hist-title { font-size: 17px; font-weight: 900; margin: 0 0 4px; }
+  .mp-hist-sub { font-size: 12px; color: #9a978f; margin: 0 0 14px; line-height: 1.45; }
+
+  .mp-hist-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .mp-hist-quick-btn {
+    flex: 1 1 0; min-width: 92px; padding: 10px 8px; border-radius: 9px;
+    background: #242824; border: 1.5px solid #454b45; color: #e8e6e0;
+    font-family: inherit; cursor: pointer; text-align: center;
+  }
+  .mp-hist-quick-btn:active { background: #2f352f; }
+  .mp-hist-quick-day { font-size: 14px; font-weight: 800; }
+  .mp-hist-quick-date { font-size: 10.5px; color: #9a978f; margin-top: 2px; }
+  .mp-hist-quick-btn.good { border-color: #2f6b3e; }
+  .mp-hist-quick-btn.bad  { border-color: #b03636; }
+
+  .mp-hist-cal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12.5px; font-weight: 800; color: #9a978f; margin-bottom: 8px;
+  }
+  .mp-hist-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+  .mp-hist-dow { text-align: center; font-size: 10px; font-weight: 800; color: #6f746f; padding-bottom: 2px; }
+  .mp-hist-day {
+    aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    border-radius: 7px; font-size: 13px; font-weight: 800; font-family: inherit;
+    background: #242824; border: 1.5px solid transparent; color: #6f746f; cursor: default;
+  }
+  .mp-hist-day.has-data { cursor: pointer; color: #fff; }
+  .mp-hist-day.good { background: #2f6b3e; border-color: #3d8a50; }
+  .mp-hist-day.bad  { background: #8f2c2c; border-color: #b03636; }
+  .mp-hist-day.outside { opacity: .25; }
+  .mp-hist-day.today { outline: 2px solid #c65d2e; outline-offset: 1px; }
+  .mp-hist-day .n { font-size: 9.5px; font-weight: 700; opacity: .85; margin-top: 1px; }
+  .mp-hist-key { display: flex; gap: 12px; font-size: 11px; color: #9a978f; margin: 10px 0 0; flex-wrap: wrap; }
+  .mp-hist-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+
+  /* Read-only day view */
+  .mp-hist-view { position: fixed; inset: 0; background: var(--bg); z-index: 890; overflow-y: auto; display: none; }
+  .mp-hist-view.active { display: block; }
+  .mp-hist-bar {
+    position: sticky; top: 0; z-index: 5; background: #1a1d1a; border-bottom: 1.5px solid #454b45;
+    padding: 10px 12px; display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  }
+  .mp-hist-bar-title { font-size: 15px; font-weight: 900; color: #e8e6e0; }
+  .mp-hist-bar-sub { font-size: 11.5px; color: #9a978f; }
+  .mp-hist-readonly {
+    background: #3a2410; border: 1px solid #d99b1c; color: #f0b840;
+    font-size: 11px; font-weight: 800; border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+  }
+  /* Nothing in the history view responds to taps — it is a record, not a
+     working list. Pointer events are killed on the cards themselves so a
+     stray press can't change a past day. */
+  .mp-hist-body .mp-order-card { pointer-events: none; }
+  .mp-hist-body .mp-bulk-print-btn { display: none; }
+  .mp-hist-filters { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px 0; }
+  .mp-hist-filter {
+    padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; font-family: inherit;
+    background: #242824; border: 1.5px solid #454b45; color: #b8b5ad; cursor: pointer;
+  }
+  .mp-hist-filter.active { background: #c65d2e; border-color: #c65d2e; color: #fff; }
   .mp-summary-box.mp-summary-total { background: rgba(255,255,255,0.12); color: #fff; }
   .mp-brand .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); }
   .mp-tabs { display:flex; gap:6px; }
@@ -652,6 +726,10 @@
           <div class="mp-summary-count" id="summary-total-count">0</div>
           <div class="mp-summary-label">Total</div>
         </div>
+        <button class="mp-summary-box mp-summary-history" id="btn-history" title="View a previous day's report">
+          <div class="mp-summary-count">📅</div>
+          <div class="mp-summary-label">History</div>
+        </button>
       </div>
       <div class="mp-clock" id="mp-clock">
         <div class="mp-clock-time" id="mp-clock-time">--:--:--</div>
@@ -3768,6 +3846,207 @@ This backup was generated in one click from Back End and contains:
   // reach into the workstation to do that) — it just sets a flag that a
   // separate watchdog program (always running on that PC) picks up and
   // acts on, force-restarting the print system.
+  // ---------- HISTORY ----------
+  // A read-only record of previous days. Uses exactly the same grouping and
+  // card rendering as the live warehouse list, so a past day looks like the
+  // day it was, but nothing on it can be tapped or changed.
+  const HIST_DAYS_BACK = 30;
+
+  function dayKey(ts) {
+    const d = new Date(ts);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
+  // Green only when every slot that day finished blue. Anything else — a
+  // leftover, a red, an unprinted — makes the day red, so a day that needs
+  // looking at can't hide behind a mostly-good count.
+  function summariseDays(orders) {
+    const byDay = new Map();
+    for (const o of orders) {
+      if (!o.addedAt) continue;
+      const k = dayKey(o.addedAt);
+      if (!byDay.has(k)) byDay.set(k, { total: 0, blue: 0 });
+      const d = byDay.get(k);
+      d.total++;
+      if (o.state === 'blue') d.blue++;
+    }
+    const out = new Map();
+    for (const [k, d] of byDay) {
+      out.set(k, { total: d.total, blue: d.blue, allDone: d.total > 0 && d.blue === d.total });
+    }
+    return out;
+  }
+
+  // The weekdays of this week before today — Monday to Friday only, most
+  // recent first. On a Monday there's nothing to show, so the calendar
+  // carries it.
+  function recentWeekdayButtons() {
+    const out = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dow = today.getDay();               // 0 Sun … 6 Sat
+    if (dow === 0 || dow === 6) return out;   // weekend: no "earlier this week"
+    for (let back = 1; back < dow; back++) {  // stops at Monday
+      const d = new Date(today);
+      d.setDate(d.getDate() - back);
+      out.push(d);
+    }
+    return out;
+  }
+
+  const DOW_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+  function buildHistoryCalendar(dayStats) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = new Date(today);
+    start.setDate(start.getDate() - (HIST_DAYS_BACK - 1));
+    // Pad to a whole week so the columns line up under the day letters.
+    const gridStart = new Date(start);
+    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
+
+    let cells = DOW_SHORT.map(d => `<div class="mp-hist-dow">${d}</div>`).join('');
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart);
+      d.setDate(d.getDate() + i);
+      if (d > today) break;
+      const k = dayKey(d.getTime());
+      const stat = dayStats.get(k);
+      const outside = d < start ? ' outside' : '';
+      const isToday = d.getTime() === today.getTime() ? ' today' : '';
+      if (!stat) {
+        cells += `<div class="mp-hist-day${outside}${isToday}">${d.getDate()}</div>`;
+      } else {
+        const cls = stat.allDone ? 'good' : 'bad';
+        cells += `<button class="mp-hist-day has-data ${cls}${outside}${isToday}" data-day="${k}" title="${stat.blue} of ${stat.total} completed">${d.getDate()}<span class="n">${stat.total}</span></button>`;
+      }
+    }
+    return cells;
+  }
+
+  async function showHistoryPicker() {
+    const orders = await getAllOrders();
+    const dayStats = summariseDays(orders);
+
+    const quick = recentWeekdayButtons().map(d => {
+      const k = dayKey(d.getTime());
+      const stat = dayStats.get(k);
+      const cls = !stat ? '' : (stat.allDone ? ' good' : ' bad');
+      const dateLabel = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+      return `<button class="mp-hist-quick-btn${cls}" data-day="${k}">
+                <div class="mp-hist-quick-day">${DOW_LONG[d.getDay()]}</div>
+                <div class="mp-hist-quick-date">${dateLabel}${stat ? ' · ' + stat.total : ''}</div>
+              </button>`;
+    }).join('');
+
+    const overlay = document.createElement('div');
+    overlay.className = 'mp-hist-overlay';
+    overlay.innerHTML = `
+      <div class="mp-hist-box">
+        <div class="mp-hist-title">History</div>
+        <p class="mp-hist-sub">Pick a day to see its report. View only — past days can't be changed.</p>
+        ${quick ? `<div class="mp-hist-quick">${quick}</div>` : ''}
+        <div class="mp-hist-cal-head"><span>Last ${HIST_DAYS_BACK} days</span></div>
+        <div class="mp-hist-cal">${buildHistoryCalendar(dayStats)}</div>
+        <div class="mp-hist-key">
+          <span><i style="background:#2f6b3e"></i>All completed</span>
+          <span><i style="background:#8f2c2c"></i>Something left over</span>
+          <span><i style="background:#242824;border:1px solid #454b45"></i>No slots</span>
+        </div>
+        <div class="mp-modal-actions" style="margin-top:14px;">
+          <button class="mp-btn mp-btn-ghost" id="hist-close">Close</button>
+        </div>
+      </div>`;
+    root.appendChild(overlay);
+    overlay.querySelector('#hist-close').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) { overlay.remove(); return; }
+      const btn = e.target.closest('[data-day]');
+      if (!btn) return;
+      overlay.remove();
+      showHistoryDay(btn.dataset.day, orders);
+    });
+  }
+
+  let histFilter = 'all';
+  let histDayKey = null;
+  let histOrders = [];
+
+  function renderHistoryBody() {
+    const body = document.getElementById('hist-body');
+    if (!body) return;
+    let items = histOrders;
+    if (histFilter === 'blue') items = items.filter(o => o.state === 'blue');
+    else if (histFilter === 'purple') items = items.filter(o => o.state === 'purple');
+    else if (histFilter === 'green') items = items.filter(o => o.state === 'green');
+    else if (histFilter === 'outstanding') items = items.filter(o => o.state !== 'blue');
+
+    if (items.length === 0) {
+      body.innerHTML = '<div class="mp-empty">Nothing matches that filter for this day.</div>';
+      return;
+    }
+    // Same sorting, clustering and cards as the live list, so a past day is
+    // laid out exactly as staff saw it.
+    const sorted = sortOrdersByProductGroup(items);
+    const clusters = clusterOrders(sorted);
+    body.innerHTML = clusters.map(cluster => `
+      <div class="${cluster.isMixed ? 'mp-group-cluster mp-group-cluster-mixed' : 'mp-group-cluster'}">
+        <div class="mp-group-cluster-label"><span>${escapeHtml(cluster.label)} — ${cluster.items.length}</span></div>
+        <div class="mp-group-cluster-grid">${cluster.items.map(renderOrderCard).join('')}</div>
+      </div>`).join('');
+  }
+
+  function showHistoryDay(key, allOrdersCache) {
+    histDayKey = key;
+    histFilter = 'all';
+    histOrders = (allOrdersCache || []).filter(o => o.addedAt && dayKey(o.addedAt) === key);
+    const d = new Date(key + 'T12:00:00');
+    const counts = {
+      total: histOrders.length,
+      blue: histOrders.filter(o => o.state === 'blue').length,
+      purple: histOrders.filter(o => o.state === 'purple').length,
+      green: histOrders.filter(o => o.state === 'green').length
+    };
+    counts.outstanding = counts.total - counts.blue;
+
+    const view = document.createElement('div');
+    view.className = 'mp-hist-view active';
+    view.id = 'hist-view';
+    view.innerHTML = `
+      <div class="mp-hist-bar">
+        <div>
+          <div class="mp-hist-bar-title">${DOW_LONG[d.getDay()]} ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+          <div class="mp-hist-bar-sub">${counts.total} slot(s) · ${counts.blue} completed · ${counts.outstanding} outstanding</div>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <span class="mp-hist-readonly">VIEW ONLY</span>
+          <button class="mp-btn mp-btn-ghost" id="hist-back">Close</button>
+        </div>
+      </div>
+      <div class="mp-hist-filters">
+        <button class="mp-hist-filter active" data-filter="all">All ${counts.total}</button>
+        <button class="mp-hist-filter" data-filter="outstanding">Outstanding ${counts.outstanding}</button>
+        <button class="mp-hist-filter" data-filter="blue">Completed ${counts.blue}</button>
+        <button class="mp-hist-filter" data-filter="purple">Printed ${counts.purple}</button>
+        <button class="mp-hist-filter" data-filter="green">Picked ${counts.green}</button>
+      </div>
+      <div class="mp-hist-body" id="hist-body" style="padding:12px;"></div>`;
+    root.appendChild(view);
+    renderHistoryBody();
+
+    view.querySelector('#hist-back').addEventListener('click', () => view.remove());
+    view.querySelector('.mp-hist-filters').addEventListener('click', (e) => {
+      const btn = e.target.closest('.mp-hist-filter');
+      if (!btn) return;
+      histFilter = btn.dataset.filter;
+      view.querySelectorAll('.mp-hist-filter').forEach(b => b.classList.toggle('active', b === btn));
+      renderHistoryBody();
+    });
+  }
+
+  document.getElementById('btn-history').addEventListener('click', showHistoryPicker);
+
   // ---------- NOT SCANNED ----------
   // Labels still sitting in Sendcloud's Created Labels from before today.
   // Every order should clear within 24 hours once the courier collects it, so
