@@ -57,72 +57,84 @@
 
   /* ---------- History ---------- */
   .mp-hist-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,.72); z-index: 900;
+    position: fixed; inset: 0; background: rgba(0,0,0,.78); z-index: 900;
     display: flex; align-items: flex-start; justify-content: center; padding: 18px 12px; overflow-y: auto;
   }
   .mp-hist-box {
     background: #1a1d1a; border: 1.5px solid #454b45; border-radius: 14px;
-    padding: 16px; width: 100%; max-width: 560px; color: #e8e6e0;
+    padding: 14px; width: 100%; max-width: 620px; color: #e8e6e0;
   }
-  .mp-hist-title { font-size: 17px; font-weight: 900; margin: 0 0 4px; }
-  .mp-hist-sub { font-size: 12px; color: #9a978f; margin: 0 0 14px; line-height: 1.45; }
 
-  .mp-hist-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .mp-hist-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
   .mp-hist-quick-btn {
-    flex: 1 1 0; min-width: 92px; padding: 10px 8px; border-radius: 9px;
+    flex: 1 1 0; min-width: 100px; padding: 11px 8px; border-radius: 9px;
     background: #242824; border: 1.5px solid #454b45; color: #e8e6e0;
     font-family: inherit; cursor: pointer; text-align: center;
   }
   .mp-hist-quick-btn:active { background: #2f352f; }
   .mp-hist-quick-day { font-size: 14px; font-weight: 800; }
-  .mp-hist-quick-date { font-size: 10.5px; color: #9a978f; margin-top: 2px; }
-  .mp-hist-quick-btn.good { border-color: #2f6b3e; }
+  .mp-hist-quick-date { font-size: 11px; color: #9a978f; margin-top: 2px; }
+  .mp-hist-quick-btn.good { border-color: #3d8a50; }
   .mp-hist-quick-btn.bad  { border-color: #b03636; }
 
-  .mp-hist-cal-head {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 12.5px; font-weight: 800; color: #9a978f; margin-bottom: 8px;
-  }
-  .mp-hist-cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
-  .mp-hist-dow { text-align: center; font-size: 10px; font-weight: 800; color: #6f746f; padding-bottom: 2px; }
+  /* Five columns — weekdays only, no Saturday or Sunday. */
+  .mp-hist-cal { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; }
+  .mp-hist-dow { text-align: center; font-size: 10.5px; font-weight: 800; color: #7d827d; padding-bottom: 3px; }
   .mp-hist-day {
-    aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    border-radius: 7px; font-size: 13px; font-weight: 800; font-family: inherit;
-    background: #242824; border: 1.5px solid transparent; color: #6f746f; cursor: default;
+    aspect-ratio: 1.15; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; font-size: 14px; font-weight: 800; font-family: inherit;
+    background: #242824; border: 1.5px solid transparent; color: #6f746f;
   }
+  .mp-hist-day.blank { background: none; border: none; }
   .mp-hist-day.has-data { cursor: pointer; color: #fff; }
   .mp-hist-day.good { background: #2f6b3e; border-color: #3d8a50; }
   .mp-hist-day.bad  { background: #8f2c2c; border-color: #b03636; }
-  .mp-hist-day.outside { opacity: .25; }
-  .mp-hist-day.today { outline: 2px solid #c65d2e; outline-offset: 1px; }
-  .mp-hist-day .n { font-size: 9.5px; font-weight: 700; opacity: .85; margin-top: 1px; }
-  .mp-hist-key { display: flex; gap: 12px; font-size: 11px; color: #9a978f; margin: 10px 0 0; flex-wrap: wrap; }
-  .mp-hist-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .mp-hist-day.today {
+    background: #c65d2e; border-color: #e07a45; color: #fff; font-size: 11px; letter-spacing: .04em;
+  }
+  .mp-hist-key { display: flex; gap: 14px; font-size: 11px; color: #9a978f; margin: 12px 0 0; flex-wrap: wrap; }
+  .mp-hist-key i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
-  /* Read-only day view */
-  .mp-hist-view { position: fixed; inset: 0; background: var(--bg); z-index: 890; overflow-y: auto; display: none; }
-  .mp-hist-view.active { display: block; }
+  .mp-hist-close {
+    width: 100%; margin-top: 14px; padding: 12px; border-radius: 10px;
+    background: #454b45; border: 1.5px solid #5d645d; color: #fff;
+    font-family: inherit; font-size: 14px; font-weight: 800; cursor: pointer;
+  }
+  .mp-hist-close:active { background: #545b54; }
+
+  /* Read-only day view. An explicit solid colour — var(--bg) was never
+     defined, so this panel rendered transparent and the live list showed
+     through it. */
+  .mp-hist-view {
+    position: fixed; inset: 0; background: #f6f5f1; z-index: 890;
+    display: none; flex-direction: column;
+  }
+  .mp-hist-view.active { display: flex; }
   .mp-hist-bar {
-    position: sticky; top: 0; z-index: 5; background: #1a1d1a; border-bottom: 1.5px solid #454b45;
+    flex: 0 0 auto; background: #1a1d1a; border-bottom: 1.5px solid #454b45;
     padding: 10px 12px; display: flex; align-items: center; gap: 10px; justify-content: space-between;
   }
   .mp-hist-bar-title { font-size: 15px; font-weight: 900; color: #e8e6e0; }
-  .mp-hist-bar-sub { font-size: 11.5px; color: #9a978f; }
-  .mp-hist-readonly {
-    background: #3a2410; border: 1px solid #d99b1c; color: #f0b840;
-    font-size: 11px; font-weight: 800; border-radius: 6px; padding: 3px 8px; white-space: nowrap;
+  .mp-hist-bar-sub { font-size: 11.5px; color: #9a978f; margin-top: 2px; }
+  .mp-hist-bar-close {
+    padding: 9px 18px; border-radius: 9px; background: #c0392b; border: none; color: #fff;
+    font-family: inherit; font-size: 13px; font-weight: 800; cursor: pointer; white-space: nowrap;
   }
-  /* Nothing in the history view responds to taps — it is a record, not a
-     working list. Pointer events are killed on the cards themselves so a
-     stray press can't change a past day. */
-  .mp-hist-body .mp-order-card { pointer-events: none; }
-  .mp-hist-body .mp-bulk-print-btn { display: none; }
-  .mp-hist-filters { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px 0; }
+  .mp-hist-bar-close:active { background: #d0483a; }
+  .mp-hist-filters { flex: 0 0 auto; display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px; background: #f6f5f1; }
   .mp-hist-filter {
     padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 800; font-family: inherit;
-    background: #242824; border: 1.5px solid #454b45; color: #b8b5ad; cursor: pointer;
+    background: #fff; border: 1.5px solid #d5d1c7; color: #555; cursor: pointer;
   }
   .mp-hist-filter.active { background: #c65d2e; border-color: #c65d2e; color: #fff; }
+
+  /* Scrollable body plus the same nav column as the main warehouse list. */
+  .mp-hist-main { flex: 1; display: flex; min-height: 0; padding: 0 10px 10px; gap: 8px; }
+  .mp-hist-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .mp-hist-nav-col { flex: 0 0 54px; display: flex; flex-direction: column; gap: 8px; padding: 2px 0; }
+  /* Nothing here responds to taps — it's a record, not a working list. */
+  .mp-hist-body .mp-order-card { pointer-events: none; }
+  .mp-hist-body .mp-bulk-print-btn { display: none; }
   .mp-summary-box.mp-summary-total { background: rgba(255,255,255,0.12); color: #fff; }
   .mp-brand .dot { width:10px; height:10px; border-radius:50%; background: var(--accent); }
   .mp-tabs { display:flex; gap:6px; }
@@ -3894,32 +3906,43 @@ This backup was generated in one click from Back End and contains:
     return out;
   }
 
-  const DOW_SHORT = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
   const DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const WEEKDAY_COLS = [1, 2, 3, 4, 5];   // Monday to Friday — weekends aren't shown at all
+
+  // "10 August", "29 July" — no year, since the calendar only goes back 30 days.
+  function shortDate(d) {
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long' });
+  }
 
   function buildHistoryCalendar(dayStats) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const start = new Date(today);
     start.setDate(start.getDate() - (HIST_DAYS_BACK - 1));
-    // Pad to a whole week so the columns line up under the day letters.
-    const gridStart = new Date(start);
-    gridStart.setDate(gridStart.getDate() - gridStart.getDay());
 
-    let cells = DOW_SHORT.map(d => `<div class="mp-hist-dow">${d}</div>`).join('');
-    for (let i = 0; i < 42; i++) {
-      const d = new Date(gridStart);
-      d.setDate(d.getDate() + i);
-      if (d > today) break;
+    // Collect the weekdays in range, oldest first.
+    const days = [];
+    for (let d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) {
+      if (WEEKDAY_COLS.includes(d.getDay())) days.push(new Date(d));
+    }
+
+    let cells = WEEKDAY_COLS.map(i => `<div class="mp-hist-dow">${DOW_LONG[i]}</div>`).join('');
+    // Blank spacers only, so the first row lines up under the right weekday.
+    // No out-of-range dates are drawn at all.
+    if (days.length) {
+      const lead = WEEKDAY_COLS.indexOf(days[0].getDay());
+      for (let i = 0; i < lead; i++) cells += '<div class="mp-hist-day blank"></div>';
+    }
+    for (const d of days) {
       const k = dayKey(d.getTime());
       const stat = dayStats.get(k);
-      const outside = d < start ? ' outside' : '';
-      const isToday = d.getTime() === today.getTime() ? ' today' : '';
-      if (!stat) {
-        cells += `<div class="mp-hist-day${outside}${isToday}">${d.getDate()}</div>`;
+      const isToday = d.getTime() === today.getTime();
+      if (isToday) {
+        cells += `<div class="mp-hist-day today">TODAY</div>`;
+      } else if (!stat) {
+        cells += `<div class="mp-hist-day">${d.getDate()}</div>`;
       } else {
-        const cls = stat.allDone ? 'good' : 'bad';
-        cells += `<button class="mp-hist-day has-data ${cls}${outside}${isToday}" data-day="${k}" title="${stat.blue} of ${stat.total} completed">${d.getDate()}<span class="n">${stat.total}</span></button>`;
+        cells += `<button class="mp-hist-day has-data ${stat.allDone ? 'good' : 'bad'}" data-day="${k}" title="${stat.blue} of ${stat.total} completed">${d.getDate()}</button>`;
       }
     }
     return cells;
@@ -3933,10 +3956,9 @@ This backup was generated in one click from Back End and contains:
       const k = dayKey(d.getTime());
       const stat = dayStats.get(k);
       const cls = !stat ? '' : (stat.allDone ? ' good' : ' bad');
-      const dateLabel = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
       return `<button class="mp-hist-quick-btn${cls}" data-day="${k}">
                 <div class="mp-hist-quick-day">${DOW_LONG[d.getDay()]}</div>
-                <div class="mp-hist-quick-date">${dateLabel}${stat ? ' · ' + stat.total : ''}</div>
+                <div class="mp-hist-quick-date">${shortDate(d)}</div>
               </button>`;
     }).join('');
 
@@ -3944,25 +3966,20 @@ This backup was generated in one click from Back End and contains:
     overlay.className = 'mp-hist-overlay';
     overlay.innerHTML = `
       <div class="mp-hist-box">
-        <div class="mp-hist-title">History</div>
-        <p class="mp-hist-sub">Pick a day to see its report. View only — past days can't be changed.</p>
         ${quick ? `<div class="mp-hist-quick">${quick}</div>` : ''}
-        <div class="mp-hist-cal-head"><span>Last ${HIST_DAYS_BACK} days</span></div>
         <div class="mp-hist-cal">${buildHistoryCalendar(dayStats)}</div>
         <div class="mp-hist-key">
           <span><i style="background:#2f6b3e"></i>All completed</span>
           <span><i style="background:#8f2c2c"></i>Something left over</span>
           <span><i style="background:#242824;border:1px solid #454b45"></i>No slots</span>
         </div>
-        <div class="mp-modal-actions" style="margin-top:14px;">
-          <button class="mp-btn mp-btn-ghost" id="hist-close">Close</button>
-        </div>
+        <button class="mp-hist-close" id="hist-close">Close</button>
       </div>`;
     root.appendChild(overlay);
     overlay.querySelector('#hist-close').addEventListener('click', () => overlay.remove());
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) { overlay.remove(); return; }
-      const btn = e.target.closest('[data-day]');
+      const btn = e.target.closest('button[data-day]');
       if (!btn) return;
       overlay.remove();
       showHistoryDay(btn.dataset.day, orders);
@@ -3970,7 +3987,6 @@ This backup was generated in one click from Back End and contains:
   }
 
   let histFilter = 'all';
-  let histDayKey = null;
   let histOrders = [];
 
   function renderHistoryBody() {
@@ -3991,14 +4007,22 @@ This backup was generated in one click from Back End and contains:
     const sorted = sortOrdersByProductGroup(items);
     const clusters = clusterOrders(sorted);
     body.innerHTML = clusters.map(cluster => `
-      <div class="${cluster.isMixed ? 'mp-group-cluster mp-group-cluster-mixed' : 'mp-group-cluster'}">
+      <div class="${cluster.isMixed ? 'mp-group-cluster mp-group-cluster-mixed' : 'mp-group-cluster'}" style="margin-bottom:10px;">
         <div class="mp-group-cluster-label"><span>${escapeHtml(cluster.label)} — ${cluster.items.length}</span></div>
         <div class="mp-group-cluster-grid">${cluster.items.map(renderOrderCard).join('')}</div>
       </div>`).join('');
   }
 
+  function scrollHistory(dir) {
+    const el = document.getElementById('hist-body');
+    if (!el) return;
+    const step = Math.max(120, el.clientHeight * 0.8);
+    if (dir === 'top') el.scrollTo({ top: 0, behavior: 'smooth' });
+    else if (dir === 'bottom') el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    else el.scrollBy({ top: dir === 'up' ? -step : step, behavior: 'smooth' });
+  }
+
   function showHistoryDay(key, allOrdersCache) {
-    histDayKey = key;
     histFilter = 'all';
     histOrders = (allOrdersCache || []).filter(o => o.addedAt && dayKey(o.addedAt) === key);
     const d = new Date(key + 'T12:00:00');
@@ -4012,17 +4036,13 @@ This backup was generated in one click from Back End and contains:
 
     const view = document.createElement('div');
     view.className = 'mp-hist-view active';
-    view.id = 'hist-view';
     view.innerHTML = `
       <div class="mp-hist-bar">
         <div>
-          <div class="mp-hist-bar-title">${DOW_LONG[d.getDay()]} ${d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+          <div class="mp-hist-bar-title">${DOW_LONG[d.getDay()]} ${shortDate(d)}</div>
           <div class="mp-hist-bar-sub">${counts.total} slot(s) · ${counts.blue} completed · ${counts.outstanding} outstanding</div>
         </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <span class="mp-hist-readonly">VIEW ONLY</span>
-          <button class="mp-btn mp-btn-ghost" id="hist-back">Close</button>
-        </div>
+        <button class="mp-hist-bar-close" id="hist-back">✕ Close</button>
       </div>
       <div class="mp-hist-filters">
         <button class="mp-hist-filter active" data-filter="all">All ${counts.total}</button>
@@ -4031,11 +4051,23 @@ This backup was generated in one click from Back End and contains:
         <button class="mp-hist-filter" data-filter="purple">Printed ${counts.purple}</button>
         <button class="mp-hist-filter" data-filter="green">Picked ${counts.green}</button>
       </div>
-      <div class="mp-hist-body" id="hist-body" style="padding:12px;"></div>`;
+      <div class="mp-hist-main">
+        <div class="mp-hist-body" id="hist-body"></div>
+        <div class="mp-hist-nav-col">
+          <button class="mp-wh-nav-btn" data-scroll="top" title="Scroll to top"><svg viewBox="0 0 24 24"><path d="M12 5l-7 7h4v7h6v-7h4z"/><rect x="5" y="3" width="14" height="2" rx="1"/></svg></button>
+          <button class="mp-wh-nav-btn" data-scroll="up" title="Scroll up"><svg viewBox="0 0 24 24"><path d="M12 6l-8 9h5v6h6v-6h5z"/></svg></button>
+          <button class="mp-wh-nav-btn" data-scroll="down" title="Scroll down"><svg viewBox="0 0 24 24"><path d="M12 18l8-9h-5V3h-6v6H4z"/></svg></button>
+          <button class="mp-wh-nav-btn" data-scroll="bottom" title="Scroll to bottom"><svg viewBox="0 0 24 24"><path d="M12 19l7-7h-4V5h-6v7H5z"/><rect x="5" y="19" width="14" height="2" rx="1"/></svg></button>
+        </div>
+      </div>`;
     root.appendChild(view);
     renderHistoryBody();
 
     view.querySelector('#hist-back').addEventListener('click', () => view.remove());
+    view.querySelector('.mp-hist-nav-col').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-scroll]');
+      if (b) scrollHistory(b.dataset.scroll);
+    });
     view.querySelector('.mp-hist-filters').addEventListener('click', (e) => {
       const btn = e.target.closest('.mp-hist-filter');
       if (!btn) return;
