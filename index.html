@@ -388,10 +388,16 @@
   .mp-order-card.state-red { background: #cc2b2b !important; border-color: #cc2b2b !important; }
   .mp-order-card.state-red .mp-order-card-main { color: #fff; }
   .mp-order-card.state-red .mp-order-time { color: rgba(255,255,255,0.8); }
-  .mp-today-badge-sm { display:inline-block; font-size:9px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:#fff; background:var(--accent); padding:1px 6px; border-radius:4px; }
-  .mp-order-card.state-green .mp-today-badge-sm { background:#fff; color: var(--good); }
-  .mp-order-card.state-blue .mp-today-badge-sm { background:#fff; color: #1e6fd9; }
-  .mp-order-card.state-red .mp-today-badge-sm { background:#fff; color: #cc2b2b; }
+  /* Added time (yellow, left) and completed time (green, right). Fixed
+     colours on every card state so they stay readable whatever the slot
+     colour underneath — these are the two facts staff read at a glance. */
+  .mp-time-added, .mp-time-done {
+    display: inline-block; font-size: 10.5px; font-weight: 800; letter-spacing: .02em;
+    padding: 2px 7px; border-radius: 5px; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .mp-time-added { background: #f2c200; color: #2a2408; }
+  .mp-time-done  { background: #2f8f4a; color: #fff; }
 
   /* Possible-duplicate warning — deliberately placed after the state-color
      rules above so it wins on equal specificity and overrides green/
@@ -402,7 +408,6 @@
   }
   .mp-order-card.mp-possible-copy .mp-order-card-main,
   .mp-order-card.mp-possible-copy .mp-order-time { color: #fff; }
-  .mp-order-card.mp-possible-copy .mp-today-badge-sm { background: #fff; color: #6a2ca3; }
   @keyframes mp-possible-copy-flash {
     0%, 49% { background: #8b3ed9 !important; }
     50%, 100% { background: #4a1f7a !important; }
@@ -692,12 +697,13 @@
   // orders this just says "TODAY" with no time, since the orange badge on
   // the card now shows the upload time instead. Older orders still show the
   // full date + time here as before, since there's no badge for those.
-  function formatCardTimeLabel(ts) {
+  // Time on its own for today's slots — the date would just be noise on the
+  // live list. Older slots (history) keep the date so a card is still
+  // readable out of context.
+  function formatSlotStamp(ts) {
     const d = new Date(ts);
-    const now = new Date();
-    if (d.toDateString() === now.toDateString()) return 'TODAY';
-    const date = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-    return `${date} ${formatTimeOnly(ts)}`;
+    if (d.toDateString() === new Date().toDateString()) return formatTimeOnly(ts);
+    return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} ${formatTimeOnly(ts)}`;
   }
 
   // Highlighted date/time badge shown on the result popup — orange for
@@ -1822,6 +1828,12 @@ This backup was generated in one click from Back End and contains:
       const idx = arr.findIndex(o => String(o.id) === String(id));
       if (idx === -1) return false;
       arr[idx].state = newState;
+      // Stamped here rather than at each call site, so every route to blue
+      // — scanning, printing a non-scannable, or Back End marking it —
+      // records the time. Cleared when a slot leaves blue so a stale
+      // completion time can't linger on a slot that isn't finished.
+      if (newState === 'blue') { if (!arr[idx].completedAt) arr[idx].completedAt = Date.now(); }
+      else delete arr[idx].completedAt;
       delete arr[idx].done; // retire the old boolean field, state replaces it
       const setRes = await window.storage.set(key, JSON.stringify(arr), true);
       return !!setRes;
@@ -1859,6 +1871,7 @@ This backup was generated in one click from Back End and contains:
           current.push(productIdx); // newly marking as not-done
           if (arr[idx].state === 'blue') {
             arr[idx].state = 'default';
+            delete arr[idx].completedAt;
             blueCleared = true;
           }
         } else {
@@ -1920,6 +1933,7 @@ This backup was generated in one click from Back End and contains:
         arr[idx].scanCount = next;
         if (next >= total) {
           arr[idx].state = 'blue'; // fully scanned — same full-blue behaviour as before
+          if (!arr[idx].completedAt) arr[idx].completedAt = Date.now();
         }
         const setRes = await window.storage.set(key, JSON.stringify(arr), true);
         if (!setRes) return null;
@@ -2149,8 +2163,8 @@ This backup was generated in one click from Back End and contains:
         ${copyWarning}
         <div class="mp-order-card-main">${headerLine}${productLines}</div>
         <div class="mp-order-card-foot">
-          ${o.addedAt ? `<span class="mp-order-time">${formatCardTimeLabel(o.addedAt)}</span>` : '<span></span>'}
-          ${o.addedAt && isToday(o.addedAt) ? `<span class="mp-today-badge-sm">${formatTimeOnly(o.addedAt)}</span>` : ''}
+          ${o.addedAt ? `<span class="mp-time-added" title="Slot added">${formatSlotStamp(o.addedAt)}</span>` : '<span></span>'}
+          ${o.completedAt ? `<span class="mp-time-done" title="Marked complete">${formatSlotStamp(o.completedAt)}</span>` : ''}
         </div>
       </div>`;
   }
@@ -2700,19 +2714,26 @@ This backup was generated in one click from Back End and contains:
   // the single-print case, since printing many at once with zero feedback
   // until it's all done would be confusing).
   async function handleBulkPrintSection(clusterLabel, items) {
-    // Only slots still in their normal state get printed — blue (already
-    // scanned/complete), red (flagged not-done), and purple (already
-    // printed) are all skipped, since reprinting those isn't wanted here.
-    const printable = items.filter(o => !o.state || o.state === 'green');
+    // Only blue (already scanned/complete) and purple (already printed) are
+    // skipped. Everything else prints.
+    //
+    // This used to test `!o.state || o.state === 'green'`, which looked
+    // right but silently skipped a whole class of slot: tapping a slot green
+    // and then tapping it again stores the STRING 'default', not an empty
+    // value. 'default' is truthy, so those slots failed both halves of the
+    // test and were quietly left out — and if every slot in a section had
+    // been tapped and untapped, staff got "Nothing to print here" even
+    // though the section was full of normal-looking slots.
+    const printable = items.filter(o => o.state !== 'blue' && o.state !== 'purple');
     const skippedCount = items.length - printable.length;
 
     if (printable.length === 0) {
-      await customAlert(`Nothing to print in "${clusterLabel}" — every slot here is already blue, red, or purple.`);
+      await customAlert(`Nothing to print in "${clusterLabel}" — every slot here is already printed (purple) or completed (blue).`);
       return;
     }
 
     const confirmMsg = skippedCount > 0
-      ? `Print ${printable.length} label(s) in "${clusterLabel}"? (${skippedCount} already-blue/red/purple slot(s) will be skipped.)`
+      ? `Print ${printable.length} label(s) in "${clusterLabel}"? (${skippedCount} already printed/completed slot(s) will be skipped.)`
       : `Print all ${printable.length} label(s) in "${clusterLabel}"?`;
     const confirmed = await customConfirm(confirmMsg, `Yes, print ${printable.length}`);
     if (!confirmed) return;
@@ -2737,7 +2758,7 @@ This backup was generated in one click from Back End and contains:
     if (failures.length === 0) {
       // all succeeded — no popup needed, the purple slots are visible confirmation
     } else {
-      await customAlert(`Printed ${items.length - failures.length} of ${items.length}. Failed:\n\n${failures.join('\n')}`);
+      await customAlert(`Printed ${printable.length - failures.length} of ${printable.length}. Failed:\n\n${failures.join('\n')}`);
     }
   }
 
