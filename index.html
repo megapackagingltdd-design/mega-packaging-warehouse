@@ -173,15 +173,29 @@
     font-family: inherit; cursor: pointer; margin-right: 8px; white-space: nowrap;
     animation: mp-print-status-pulse 2.5s infinite;
   }
-  .mp-ns-item { border-bottom: 1px solid #2a2f2a; padding: 10px 0; }
+  /* This list sits inside .mp-modal-box, which is WHITE — the colours here
+     have to be dark. They were originally written for a dark panel, which
+     is why the customer name came out near-invisible. */
+  .mp-ns-item { border-bottom: 1px solid #e6e3da; padding: 12px 0; }
   .mp-ns-item:last-child { border-bottom: none; }
   .mp-ns-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-  .mp-ns-name { font-weight: 800; font-size: 14px; color: #e8e6e0; }
-  .mp-ns-age { font-size: 11.5px; font-weight: 800; color: #f0b840; white-space: nowrap; }
+  .mp-ns-name { font-weight: 900; font-size: 16px; color: #1a1d1a; letter-spacing: .005em; }
+  .mp-ns-products { font-size: 14px; font-weight: 800; color: #262a26; margin-top: 5px; line-height: 1.4; }
+  .mp-ns-age {
+    font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
+    border: 1px solid #edd8ae; border-radius: 5px; padding: 2px 7px; white-space: nowrap;
+  }
   .mp-ns-meta {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px; color: #9a978f; margin-top: 4px; line-height: 1.6; word-break: break-all;
+    font-size: 11.5px; color: #6b6f6b; margin-top: 5px; line-height: 1.6; word-break: break-all;
   }
+  .mp-ns-actions { margin-top: 10px; }
+  .mp-ns-print {
+    padding: 8px 15px; border-radius: 7px; background: #fff; border: 1.5px solid #c65d2e;
+    color: #c65d2e; font-family: inherit; font-size: 12.5px; font-weight: 800; cursor: pointer;
+  }
+  .mp-ns-print:active { background: #c65d2e; color: #fff; }
+  .mp-ns-print:disabled { opacity: .5; }
   #btn-print-system-status.status-ok { border-color: var(--good); color: var(--good); }
   #btn-print-system-status.status-down { border-color: #cc2b2b; color: #ff8a8a; animation: mp-print-status-pulse 1.5s infinite; }
   @keyframes mp-print-status-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
@@ -4231,22 +4245,86 @@ This backup was generated in one click from Back End and contains:
     overlay.querySelector('#ns-ok').addEventListener('click', () => overlay.remove());
   }
 
-  document.getElementById('btn-not-scanned').addEventListener('click', () => {
-    if (!notScannedItems.length) return;
-    const rows = notScannedItems.map(i => `
-      <div class="mp-ns-item">
+  // Matches a not-scanned label back to its slot so the modal can show when
+  // WE scanned it. That contrast is the useful part: our side finished at
+  // 17:42 two days ago, and the courier still hasn't collected it.
+  async function enrichNotScanned(items) {
+    let all = [];
+    try { all = await getAllOrders(); } catch (e) { return items; }
+    const byOrderNo = new Map();
+    for (const o of all) {
+      for (const n of (o.sourceOrderNumbers || [])) byOrderNo.set(String(n).trim(), o);
+    }
+    return items.map(i => {
+      const slot = byOrderNo.get(String(i.orderNumber || '').trim()) ||
+                   byOrderNo.get(String(i.shipmentId || '').trim());
+      return slot ? { ...i, slotProducts: (slot.raw || '').split('\n').slice(1).join(' + '),
+                      slotAddedAt: slot.addedAt, slotCompletedAt: slot.completedAt } : i;
+    });
+  }
+
+  function notScannedRowHtml(i, idx) {
+    const products = i.slotProducts || i.products || '';
+    return `
+      <div class="mp-ns-item" data-idx="${idx}">
         <div class="mp-ns-top">
           <span class="mp-ns-name">${escapeHtml(i.name || '')}${i.postcode ? ' (' + escapeHtml(i.postcode) + ')' : ''}</span>
           <span class="mp-ns-age">${i.daysOld} day${i.daysOld === 1 ? '' : 's'}</span>
         </div>
+        ${products ? `<div class="mp-ns-products">${escapeHtml(products)}</div>` : ''}
         <div class="mp-ns-meta">
           ${i.orderNumber ? 'Order ' + escapeHtml(i.orderNumber) + '<br/>' : ''}
           ${i.trackingNumber ? 'Tracking ' + escapeHtml(i.trackingNumber) + '<br/>' : ''}
           ${i.shippingMethod ? escapeHtml(i.shippingMethod) + '<br/>' : ''}
           Label made ${i.labelCreatedAt ? formatTimestamp(i.labelCreatedAt) : 'unknown'}
+          ${i.slotCompletedAt ? '<br/>Scanned here ' + formatTimestamp(i.slotCompletedAt) : (i.slotAddedAt ? '<br/>Not scanned on our side either' : '')}
         </div>
-      </div>`).join('');
-    showNotScannedModal(rows);
+        <div class="mp-ns-actions">
+          <button class="mp-ns-print" data-print="${idx}">Print label again</button>
+        </div>
+      </div>`;
+  }
+
+  function showNotScannedModal(items) {
+    const overlay = document.createElement('div');
+    overlay.className = 'mp-modal-overlay';
+    overlay.innerHTML = `
+      <div class="mp-modal-box" style="max-width:560px; text-align:left;">
+        <h3 style="margin:0 0 10px; font-size:16px; color:#c67f0a;">⚠️ NOT SCANNED — ${items.length} label(s)</h3>
+        <div style="max-height:56vh; overflow-y:auto; text-align:left;" id="ns-rows">
+          ${items.map(notScannedRowHtml).join('')}
+        </div>
+        <div class="mp-status" id="ns-status" style="margin-top:8px;"></div>
+        <div class="mp-modal-actions"><button class="mp-btn mp-btn-primary" id="ns-ok">Close</button></div>
+      </div>`;
+    root.appendChild(overlay);
+    overlay.querySelector('#ns-ok').addEventListener('click', () => overlay.remove());
+    overlay.querySelector('#ns-rows').addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-print]');
+      if (!btn) return;
+      const item = items[parseInt(btn.dataset.print, 10)];
+      if (!item) return;
+      const statusEl = overlay.querySelector('#ns-status');
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = 'Printing…';
+      statusEl.textContent = `Sending ${item.name}'s label to the printer…`;
+      try {
+        const reqId = await createPrintRequest(item.name, item.postcode || '',
+          item.orderNumber ? [item.orderNumber] : (item.shipmentId ? [item.shipmentId] : []));
+        const res = await pollPrintRequestStatus(reqId, { timeoutMs: 120000 });
+        statusEl.textContent = res.ok ? `Printed ${item.name}'s label.` : `Could not print: ${res.reason}`;
+      } catch (err) {
+        statusEl.textContent = 'Could not print — ' + ((err && err.message) || 'try again') + '.';
+      }
+      btn.disabled = false;
+      btn.textContent = label;
+    });
+  }
+
+  document.getElementById('btn-not-scanned').addEventListener('click', async () => {
+    if (!notScannedItems.length) return;
+    showNotScannedModal(await enrichNotScanned(notScannedItems));
   });
 
   async function updatePrintSystemStatus() {
