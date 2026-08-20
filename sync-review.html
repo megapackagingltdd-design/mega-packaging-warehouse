@@ -153,7 +153,8 @@
   .ns-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
   .ns-row:last-child { border-bottom: none; }
   .ns-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-  .ns-name { font-weight: 800; font-size: 14px; color: #1a1d1a; }
+  .ns-name { font-weight: 900; font-size: 15.5px; color: #1a1d1a; }
+  .ns-products { font-size: 13.5px; font-weight: 700; color: #333; margin-top: 5px; line-height: 1.4; }
   .ns-age {
     font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
     border: 1px solid #edd8ae; border-radius: 5px; padding: 2px 7px; white-space: nowrap;
@@ -847,6 +848,7 @@
           <span class="ns-name">${escapeHtml(i.name || '')}${i.postcode ? ' (' + escapeHtml(i.postcode) + ')' : ''}</span>
           <span class="ns-age">${i.daysOld} day${i.daysOld === 1 ? '' : 's'}</span>
         </div>
+        ${i.products ? `<div class="ns-products">${escapeHtml(i.products)}</div>` : ''}
         <div class="ns-meta">
           ${i.orderNumber ? 'Order ' + escapeHtml(i.orderNumber) + '<br/>' : 'No order number<br/>'}
           ${i.trackingNumber ? 'Tracking ' + escapeHtml(i.trackingNumber) + '<br/>' : ''}
