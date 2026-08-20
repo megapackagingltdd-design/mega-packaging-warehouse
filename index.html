@@ -1,3 +1,22 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<meta name="theme-color" content="#1a1d1a">
+<title>Mega Packaging — Parcels</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Parcels">
+<meta name="robots" content="noindex, nofollow">
+<style>
+  /* nothing extra — the parcels app has its own way back to the catalogue */
+</style>
+</head>
+<body>
 <div id="mp-app"></div>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
@@ -4387,3 +4406,17 @@ This backup was generated in one click from Back End and contains:
   scanInput.focus();
 })();
 </script>
+
+
+
+<script>
+  /* Makes the parcel system installable, so it opens in its own window
+     alongside the ordering app rather than as another browser tab. */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
