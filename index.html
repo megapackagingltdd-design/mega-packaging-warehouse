@@ -39,6 +39,13 @@
   .mp-clock-time { font-size: 26px; font-weight: 900; line-height: 1.1; letter-spacing: .02em; }
   .mp-clock-date { font-size: 12px; font-weight: 700; color: #ccc; text-transform: uppercase; letter-spacing: .05em; margin-top: 2px; }
   .mp-top-right { display: flex; align-items: center; gap: 12px; }
+  #btn-portal {
+    background: #1e5fa8; border: 1.5px solid #2f7ad0; color: #fff;
+    border-radius: 8px; padding: 7px 13px; font-size: 12px; font-weight: 800;
+    font-family: inherit; cursor: pointer; white-space: nowrap;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  #btn-portal:active { background: #2f7ad0; }
   .mp-summary-box {
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding: 4px 16px; border-radius: 8px; min-width: 64px;
@@ -808,6 +815,7 @@
           <div class="mp-tab" data-tab="add">Back End</div>
           <div class="mp-tab active" data-tab="wh">Warehouse</div>
         </div>
+        <button id="btn-portal" title="Open the customer ordering portal">🛒 Portal</button>
         <button id="btn-close-browser" title="Close browser">✕ Close</button>
       </div>
     </div>
@@ -4199,6 +4207,12 @@ This backup was generated in one click from Back End and contains:
   }
 
   document.getElementById('btn-history').addEventListener('click', showHistoryPicker);
+
+  // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
+  // tabs over a shift. The portal has its own button to come back here.
+  document.getElementById('btn-portal').addEventListener('click', () => {
+    window.location.href = 'https://mega-portal-seven.vercel.app/';
+  });
 
   // Plays the alert once on unlock so staff know it's working and how loud it is.
   document.getElementById('btn-enable-sound').addEventListener('click', () => unlockSound(true));
