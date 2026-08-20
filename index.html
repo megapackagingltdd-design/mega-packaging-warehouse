@@ -4230,7 +4230,9 @@ This backup was generated in one click from Back End and contains:
   // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
   // tabs over a shift. The portal has its own button to come back here.
   document.getElementById('btn-portal').addEventListener('click', () => {
-    window.location.href = 'https://mega-portal-seven.vercel.app/';
+    // Station mode: the big-button layout for the touch screen, and it puts a
+    // Parcels button in the corner over there so there is a way back.
+    window.location.href = 'https://mega-portal-seven.vercel.app/?station=1';
   });
 
   // Plays the alert once on unlock so staff know it's working and how loud it is.
