@@ -4236,18 +4236,17 @@ This backup was generated in one click from Back End and contains:
 
   document.getElementById('btn-history').addEventListener('click', showHistoryPicker);
 
-  // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
-  // tabs over a shift. The portal has its own button to come back here.
+  // Switches to that app's own dedicated window/profile (megaordering:// /
+  // megaprints://, registered by the same workstation script as megaclose://)
+  // rather than navigating this window to its address — same window would mean
+  // reaching it through the Parcels profile, where its own Close button won't
+  // recognise it.
   document.getElementById('btn-portal').addEventListener('click', () => {
-    // Station mode: the big-button layout for the touch screen, and it puts a
-    // Parcels button in the corner over there so there is a way back.
-    window.location.href = 'https://mega-portal-seven.vercel.app/?station=1';
+    window.location.href = 'megaordering://open';
   });
 
-  // Opens in the same tab, matching btn-portal above — same reasoning, no pile
-  // of tabs on the warehouse PC over a shift.
   document.getElementById('btn-megaprints').addEventListener('click', () => {
-    window.location.href = 'https://megaprintslon.vercel.app';
+    window.location.href = 'megaprints://open';
   });
 
   // Plays the alert once on unlock so staff know it's working and how loud it is.
