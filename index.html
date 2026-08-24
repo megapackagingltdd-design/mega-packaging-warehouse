@@ -4434,7 +4434,17 @@ This backup was generated in one click from Back End and contains:
      registered by make-kiosk-shortcuts.ps1 and shuts both MEGA windows. If it
      is not set up, we at least try to close this one. */
   function megaCloseAll(){
-    try{ window.location.href = 'megaclose://exit'; }catch(e){}
+    // Attempt through a hidden iframe rather than navigating this whole page to megaclose:// —
+    // if the protocol isn't recognised in this context (e.g. reached via a cross-app link rather
+    // than the dedicated shortcut), only the iframe fails silently instead of the browser showing
+    // a "can't open this address" error over the app.
+    try {
+      const iframe = document.createElement('iframe');
+      iframe.style.display = 'none';
+      iframe.src = 'megaclose://exit';
+      document.body.appendChild(iframe);
+      setTimeout(() => { try { document.body.removeChild(iframe); } catch(e){} }, 1000);
+    } catch(e){}
     setTimeout(() => { try{ window.close(); }catch(e){} }, 400);
   }
 </script>
