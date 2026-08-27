@@ -267,18 +267,27 @@
 
   <div class="card tab-panel" id="panel-eightply" style="display:none;">
     <div class="tab-empty" id="eightply-empty" style="display:none;">No 8ply x1 orders.</div>
+    <!-- Same actions top and bottom, so a long list doesn't have to be
+         scrolled to the end to act on it. -->
+    <div class="btn-row eightply-bulk" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-good" data-bulk="upload-8ply">Upload All 8ply x1</button>
+    </div>
     <div id="eightply-list"></div>
-    <div class="btn-row" id="eightply-bulk-actions" style="display:none; margin-top:6px;">
-      <button class="btn btn-good" id="btn-upload-8ply">Upload All 8ply x1</button>
+    <div class="btn-row eightply-bulk" style="display:none; margin-top:6px;">
+      <button class="btn btn-good" data-bulk="upload-8ply">Upload All 8ply x1</button>
     </div>
   </div>
 
   <div class="card tab-panel" id="panel-other" style="display:none;">
     <div class="tab-empty" id="other-empty" style="display:none;">No other orders.</div>
+    <div class="btn-row review-bulk" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-good" data-bulk="approve-all">Approve All</button>
+      <button class="btn btn-danger" data-bulk="reject-all">Reject All</button>
+    </div>
     <div id="review-list"></div>
-    <div class="btn-row" id="review-bulk-actions" style="display:none; margin-top:6px;">
-      <button class="btn btn-good" id="btn-approve-all">Approve All</button>
-      <button class="btn btn-danger" id="btn-reject-all">Reject All</button>
+    <div class="btn-row review-bulk" style="display:none; margin-top:6px;">
+      <button class="btn btn-good" data-bulk="approve-all">Approve All</button>
+      <button class="btn btn-danger" data-bulk="reject-all">Reject All</button>
     </div>
   </div>
 
@@ -476,10 +485,14 @@
         const data = doc.exists ? doc.data() : null;
         if (data && data.status === 'done') {
           statusEl.textContent = `Done — ${data.importedCount != null ? data.importedCount : '?'} order(s) queued below for review (${data.skippedCount != null ? data.skippedCount : 0} already in the system).`;
-          btn.disabled = false;
-          renderReviewQueue();
           renderSkippedList();
           renderNotScanned();
+          // The queue has to be rendered before anything can be
+          // auto-approved: the approve step reads the converted text out of
+          // each card's textarea, so the cards must exist first.
+          await renderReviewQueue();
+          await autoApproveEightPly(statusEl);
+          btn.disabled = false;
           return;
         }
         if (data && data.status === 'failed') {
@@ -647,9 +660,7 @@
   async function renderReviewQueueInner() {
     const attentionListEl = document.getElementById('attention-list');
     const listEl = document.getElementById('review-list');
-    const bulkEl = document.getElementById('review-bulk-actions');
     const eightplyListEl = document.getElementById('eightply-list');
-    const eightplyBulkEl = document.getElementById('eightply-bulk-actions');
     // Capped so a large backlog can't lock up the browser — every card is a
     // live textarea, and thousands of them will freeze the page. Work
     // through it in passes; the next batch appears after each upload.
@@ -664,8 +675,7 @@
       setTabCount('other', 0, false);
       document.getElementById('eightply-empty').style.display = 'block';
       document.getElementById('other-empty').style.display = 'block';
-      document.getElementById('eightply-bulk-actions').style.display = 'none';
-      document.getElementById('review-bulk-actions').style.display = 'none';
+      document.querySelectorAll('.eightply-bulk, .review-bulk').forEach(el => { el.style.display = 'none'; });
       chooseDefaultTab();
       return;
     }
@@ -707,11 +717,11 @@
       : '';
 
     eightplyListEl.innerHTML = cappedNote + eightplyCards.join('');
-    eightplyBulkEl.style.display = eightplyCards.length > 0 ? 'flex' : 'none';
+    document.querySelectorAll('.eightply-bulk').forEach(el => { el.style.display = eightplyCards.length > 0 ? 'flex' : 'none'; });
     document.getElementById('eightply-empty').style.display = eightplyCards.length > 0 ? 'none' : 'block';
 
     listEl.innerHTML = cappedNote + normalCards.join('');
-    bulkEl.style.display = normalCards.length > 0 ? 'flex' : 'none';
+    document.querySelectorAll('.review-bulk').forEach(el => { el.style.display = normalCards.length > 0 ? 'flex' : 'none'; });
     document.getElementById('other-empty').style.display = normalCards.length > 0 ? 'none' : 'block';
 
     chooseDefaultTab();
@@ -1157,281 +1167,72 @@
   document.getElementById('attention-list').addEventListener('click', handleReviewListClick);
   document.getElementById('eightply-list').addEventListener('click', handleReviewListClick);
 
-  // Scoped to '#review-list .review-card' — these two only ever touch the
-  // Other orders tab. They no longer sweep up the 8ply x1 tab or the
-  // Needs Attention cards.
-  document.getElementById('btn-approve-all').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-approve-all');
-    const statusEl = document.getElementById('top-status');
-    const ids = [...document.querySelectorAll('#review-list .review-card')].map(c => c.dataset.id);
-    if (!ids.length) return;
-    if (!confirm(`Approve and add all ${ids.length} order(s) from Other orders as slots?`)) return;
-    btn.disabled = true;
-    try {
-      const added = await approveReviewItems(ids, (done, all, phase) => {
-        btn.textContent = `${phase}… ${done}/${all}`;
-      });
-      statusEl.textContent = `Added ${added} order(s) from Other orders as slots.`;
-    } catch (e) {
-      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Anything left is still in the tab.`;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Approve All';
-    renderReviewQueue();
-  });
-  document.getElementById('btn-reject-all').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-reject-all');
-    const statusEl = document.getElementById('top-status');
-    const ids = [...document.querySelectorAll('#review-list .review-card')].map(c => c.dataset.id);
-    if (!ids.length) return;
-    if (!confirm(`Reject all ${ids.length} order(s) from Other orders? None will be added as slots.`)) return;
-    btn.disabled = true;
-    try {
-      await runInBatches(ids, 25, id => rejectReviewItem(id), (done, all) => {
-        btn.textContent = `Rejecting… ${done}/${all}`;
-      });
-      statusEl.textContent = `Rejected ${ids.length} order(s) from Other orders.`;
-    } catch (e) {
-      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Press again to clear the rest.`;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Reject All';
-    renderReviewQueue();
-  });
-
-  // ---------- Upload All 8ply x1 ----------
-  document.getElementById('btn-upload-8ply').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-upload-8ply');
-    const statusEl = document.getElementById('top-status');
-    const ids = [...document.querySelectorAll('#eightply-list .review-card')].map(c => c.dataset.id);
-    if (!ids.length) return;
-    if (!confirm(`Upload all ${ids.length} 8ply x1 order(s) as slots? Nothing from the Other orders tab is included.`)) return;
-    btn.disabled = true;
-    try {
-      const added = await approveReviewItems(ids, (done, all, phase) => {
-        btn.textContent = `${phase}… ${done}/${all}`;
-      });
-      statusEl.textContent = `Uploaded ${added} 8ply x1 order(s) as slots.`;
-    } catch (e) {
-      statusEl.textContent = `Stopped partway — ${(e && e.message) ? e.message : 'unknown error'}. Anything left is still in the tab, press upload again.`;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Upload All 8ply x1';
-    renderReviewQueue();
-  });
-
-  // ---------- Not Complete Orders (moved here from Back End's manual paste box) ----------
-  const NOT_COMPLETE_KEY = 'not-complete-list';
-
-  function splitGluedTitle(name) {
-    if (name === name.toUpperCase()) return name;
-    const m = name.match(/^(Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Rev)(?=[A-Z])/);
-    return m ? name.slice(0, m[0].length) + ' ' + name.slice(m[0].length) : name;
-  }
-  function cleanName(raw) {
-    let name = String(raw || '').trim();
-    if (!name) return '';
-    name = name.replace(/\s*\([^)]*\)\S*$/, '').trim();
-    const dashMatch = name.match(/^(.*?)\s+-\s+(\S+)$/);
-    if (dashMatch) {
-      const trailing = dashMatch[2];
-      const looksLikeCode = /\d/.test(trailing) || (trailing === trailing.toUpperCase() && trailing.length >= 6);
-      if (looksLikeCode) name = dashMatch[1].trim();
-    }
-    name = splitGluedTitle(name);
-    name = name.replace(/^(Mr|Mrs|Ms|Miss|Mx|Dr|Prof|Sir|Madam|Rev)\s+/i, '').trim();
-    return name;
-  }
-
-  async function getNotCompleteList() {
-    try {
-      const res = await storageGet('not-complete-list');
-      if (!res) return [];
-      return JSON.parse(res);
-    } catch (e) { return []; }
-  }
-  async function addToNotCompleteList(rawName) {
-    const cleaned = cleanName(rawName);
-    if (!cleaned) return;
-    const list = await getNotCompleteList();
-    if (!list.some(n => n.toLowerCase() === cleaned.toLowerCase())) list.push(cleaned);
-    await storageCollection.doc(NOT_COMPLETE_KEY).set({ value: JSON.stringify(list), shared: true });
-  }
-
-  // ---------- Fast bulk delete via the Firestore REST API ----------
-  // The SDK approach was slow for two compounding reasons: fetching a page
-  // downloaded every field of every record (including the big groupJson
-  // blob) just to throw it away, and each delete was its own HTTP round
-  // trip. This does neither.
+  // One delegated handler for both copies of each button row. Buttons are
+  // matched by data-bulk rather than id, since ids have to be unique and
+  // these now appear twice on the page.
   //
-  //  - runQuery with a __name__ select mask returns document IDs ONLY, so
-  //    no record contents come down the wire at all.
-  //  - the SDK's batch commits up to 500 deletions in one round trip.
-  //
-  // Net effect: roughly one request per 500 deletions instead of 500, with
-  // almost nothing downloaded.
-  const FIRESTORE_REST = `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/(default)/documents`;
-
-  // Firestore answers 429 both for short-term rate limiting (recoverable —
-  // just slow down) and for a blown daily quota (not recoverable today).
-  // The response body distinguishes them, so it's pulled out and shown
-  // rather than leaving a bare status code on screen.
-  async function firestoreErrorReason(res) {
-    try {
-      const body = await res.json();
-      const err = body && (body.error || (Array.isArray(body) && body[0] && body[0].error));
-      if (err) return `${err.status || res.status}: ${err.message || ''}`.trim();
-    } catch (e) { /* body wasn't JSON */ }
-    return String(res.status);
+  // Scoped to '#review-list .review-card' — these only ever touch the Other
+  // tab, never the 8ply tab or the flagged Attention cards.
+  function bulkButtons(action) {
+    return [...document.querySelectorAll(`[data-bulk="${action}"]`)];
   }
-
-  // Retries with exponential backoff on 429/503. If Firestore is briefly
-  // throttling, backing off clears it. If the daily quota is gone, every
-  // attempt fails and the real reason is reported instead of a bare code.
-  async function firestoreFetch(url, body, attempt = 0) {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+  function setBulkBusy(action, busy, label) {
+    bulkButtons(action).forEach(b => {
+      b.disabled = busy;
+      if (label) b.textContent = label;
     });
-    if (res.ok) return res;
-    if ((res.status === 429 || res.status === 503) && attempt < 5) {
-      const waitMs = Math.min(1000 * Math.pow(2, attempt), 16000);
-      const statusEl = document.getElementById('top-status');
-      if (statusEl) statusEl.textContent = `Firestore is throttling — waiting ${waitMs / 1000}s before retrying…`;
-      await new Promise(r => setTimeout(r, waitMs));
-      return firestoreFetch(url, body, attempt + 1);
-    }
-    const reason = await firestoreErrorReason(res);
-    const err = new Error(reason);
-    err.status = res.status;
-    throw err;
   }
 
-  async function countCollection(collName) {
-    try {
-      const res = await firestoreFetch(`${FIRESTORE_REST}:runAggregationQuery`, {
-        structuredAggregationQuery: {
-          structuredQuery: { from: [{ collectionId: collName }] },
-          aggregations: [{ alias: 'n', count: {} }]
-        }
-      });
-      const data = await res.json();
-      const row = Array.isArray(data) ? data.find(d => d.result) : null;
-      const v = row && row.result && row.result.aggregateFields && row.result.aggregateFields.n;
-      return v ? Number(v.integerValue) : null;
-    } catch (e) {
-      return null;
-    }
-  }
+  const BULK_LABELS = {
+    'approve-all': 'Approve All',
+    'reject-all': 'Reject All',
+    'upload-8ply': 'Upload All 8ply x1'
+  };
 
-  // Lists document IDs without downloading any field data — important here
-  // because skipped-duplicate records carry a large groupJson blob. If the
-  // REST endpoint refuses the call for any reason, it falls back to the
-  // SDK, which works but does download the full records.
-  async function fetchDocumentNames(collName, limit) {
-    try {
-      const res = await firestoreFetch(`${FIRESTORE_REST}:runQuery`, {
-        structuredQuery: {
-          from: [{ collectionId: collName }],
-          select: { fields: [{ fieldPath: '__name__' }] },
-          limit
-        }
-      });
-      const data = await res.json();
-      if (!Array.isArray(data)) return [];
-      return data.filter(d => d.document).map(d => d.document.name);
-    } catch (e) {
-      const snap = await db.collection(collName).limit(limit).get();
-      return snap.docs.map(d => `/documents/${collName}/${d.id}`);
-    }
-  }
-
-  // Deletes via the Firebase SDK's own batch, NOT the REST :batchWrite
-  // endpoint. :batchWrite authenticates through Google Cloud IAM rather
-  // than Firestore security rules, so an unauthenticated browser call to it
-  // is refused with PERMISSION_DENIED however open the rules are. The SDK
-  // batch goes through the normal rules path, and still commits up to 500
-  // deletions in a single round trip.
-  //
-  // Document names come back from runQuery as a full path:
-  //   projects/<id>/databases/(default)/documents/<collection>/<docId>
-  // so only the part after "/documents/" is needed.
-  async function batchDeleteNames(names) {
-    const batch = db.batch();
-    for (const name of names) {
-      const relative = name.split('/documents/')[1];
-      if (!relative) continue;
-      const slash = relative.indexOf('/');
-      const coll = relative.slice(0, slash);
-      const docId = relative.slice(slash + 1);
-      batch.delete(db.collection(coll).doc(docId));
-    }
-    await batch.commit();
-  }
-
-  async function deleteCollectionInPages(collName, onProgress, pageSize = 300) {
-    let total = 0;
-    while (true) {
-      const names = await fetchDocumentNames(collName, pageSize);
-      if (!names.length) break;
-      await batchDeleteNames(names);
-      total += names.length;
-      if (onProgress) onProgress(total);
-      if (names.length < pageSize) break;
-      await new Promise(r => setTimeout(r, 150));
-    }
-    return total;
-  }
-
-  // ---------- Top-level Reject All (queue + duplicates together) ----------
-  document.getElementById('btn-reject-everything').addEventListener('click', async () => {
-    const btn = document.getElementById('btn-reject-everything');
+  document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-bulk]');
+    if (!btn || btn.disabled) return;
+    const action = btn.dataset.bulk;
     const statusEl = document.getElementById('top-status');
-    btn.disabled = true;
-    statusEl.textContent = 'Counting…';
 
-    let reviewTotal = null, skippedTotal = null;
-    try {
-      reviewTotal = await countCollection('pending-sync-review');
-      skippedTotal = await countCollection('sync-skipped-duplicates');
-    } catch (e) { /* counting is a nicety — carry on without it */ }
-
-    const known = reviewTotal !== null && skippedTotal !== null;
-    if (known && reviewTotal + skippedTotal === 0) {
-      statusEl.textContent = 'Nothing to reject — both lists are already empty.';
-      btn.disabled = false;
-      return;
-    }
-    const detail = known
-      ? `This deletes ${reviewTotal} review item(s) and ${skippedTotal} skipped-duplicate record(s).`
-      : 'This clears the whole review queue and every skipped-duplicate record.';
-    if (!confirm(`Reject everything? ${detail} Nothing will be added as a slot.`)) {
-      statusEl.textContent = '';
-      btn.disabled = false;
-      return;
-    }
-
-    let reviewCleared = 0, skippedCleared = 0;
-    try {
-      reviewCleared = await deleteCollectionInPages('pending-sync-review', n => {
-        statusEl.textContent = `Clearing review queue… ${n}${reviewTotal ? ' of ' + reviewTotal : ''}`;
-      });
-      skippedCleared = await deleteCollectionInPages('sync-skipped-duplicates', n => {
-        statusEl.textContent = `Clearing skipped duplicates… ${n}${skippedTotal ? ' of ' + skippedTotal : ''}`;
-      });
-      statusEl.textContent = `Cleared ${reviewCleared} review item(s) and ${skippedCleared} skipped-duplicate record(s).`;
-    } catch (e) {
-      const msg = (e && e.message) ? e.message : 'unknown error';
-      if (e && e.status === 429) {
-        statusEl.textContent = `Firestore refused further requests after clearing ${reviewCleared + skippedCleared}. This is usually the daily free-tier quota being used up — it resets at 08:00 UK time. Reported reason: ${msg}`;
-      } else {
-        statusEl.textContent = `Stopped after ${reviewCleared + skippedCleared} — ${msg}. Press again to carry on from where it stopped.`;
+    if (action === 'approve-all' || action === 'upload-8ply') {
+      const sel = action === 'upload-8ply' ? '#eightply-list .review-card' : '#review-list .review-card';
+      const ids = [...document.querySelectorAll(sel)].map(c => c.dataset.id);
+      if (!ids.length) return;
+      const what = action === 'upload-8ply'
+        ? `Upload all ${ids.length} 8ply x1 order(s) as slots? Nothing from the Other tab is included.`
+        : `Approve and add all ${ids.length} order(s) from Other as slots?`;
+      if (!confirm(what)) return;
+      setBulkBusy(action, true);
+      try {
+        const added = await approveReviewItems(ids, (done, all, phase) => {
+          setBulkBusy(action, true, `${phase}… ${done}/${all}`);
+        });
+        statusEl.textContent = `Added ${added} order(s) as slots.`;
+      } catch (err) {
+        statusEl.textContent = `Stopped partway — ${(err && err.message) || 'unknown error'}. Anything left is still in the tab.`;
       }
+      setBulkBusy(action, false, BULK_LABELS[action]);
+      renderReviewQueue();
+      return;
     }
-    btn.disabled = false;
-    renderReviewQueue();
-    renderSkippedList();
+
+    if (action === 'reject-all') {
+      const ids = [...document.querySelectorAll('#review-list .review-card')].map(c => c.dataset.id);
+      if (!ids.length) return;
+      if (!confirm(`Reject all ${ids.length} order(s) from Other? None will be added as slots.`)) return;
+      setBulkBusy(action, true);
+      try {
+        await runInBatches(ids, 25, id => rejectReviewItem(id), (done, all) => {
+          setBulkBusy(action, true, `Rejecting… ${done}/${all}`);
+        });
+        statusEl.textContent = `Rejected ${ids.length} order(s).`;
+      } catch (err) {
+        statusEl.textContent = `Stopped partway — ${(err && err.message) || 'unknown error'}. Press again to clear the rest.`;
+      }
+      setBulkBusy(action, false, BULK_LABELS[action]);
+      renderReviewQueue();
+    }
   });
 
   // ---------- Long-press -> "Mark as Not Complete" action sheet ----------
