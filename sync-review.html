@@ -164,6 +164,11 @@
     font-size: 11.5px; color: #777; margin-top: 4px; line-height: 1.6; word-break: break-all;
   }
 
+  .learned-section {
+    font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: #999; margin: 14px 0 4px;
+  }
+  .learned-section:first-child { margin-top: 0; }
   .learned-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
   .learned-row:last-child { border-bottom: none; }
   .learned-sku {
@@ -370,7 +375,7 @@
       renderManualLabelsList();
       renderReviewQueue();
       renderSkippedList();
-      renderLearnedList();
+      loadAutoApprove().then(renderLearnedList);
       renderNotScanned();
     } else {
       pinError.textContent = result.reason;
@@ -488,6 +493,7 @@
           // The queue has to be rendered before anything can be
           // auto-approved: the approve step reads the converted text out of
           // each card's textarea, so the cards must exist first.
+          await loadAutoApprove();
           await renderReviewQueue();
           await autoApproveEightPly(statusEl);
           btn.disabled = false;
@@ -560,6 +566,7 @@
 
         <div class="btn-row" style="margin-bottom:8px;">
           <button class="btn btn-ghost" data-action="mark-notprocessed" data-id="${doc.id}">Not Processed</button>
+          <button class="btn btn-ghost" data-action="always-approve" data-id="${doc.id}">Always approve</button>
         </div>
 
         <div class="btn-row">
@@ -941,12 +948,28 @@
   async function renderLearnedListInner() {
     const listEl = document.getElementById('learned-list');
     const snap = await db.collection('sku-corrections').get();
-    if (snap.empty) {
+
+    // Always-approve products listed above the SKU corrections — same tab,
+    // since both are "things the system has been taught".
+    const approved = [...autoApproveSet].sort();
+    const approvedHtml = approved.length ? `
+      <div class="learned-section">Always approved — added without review</div>
+      ${approved.map(k => `
+        <div class="learned-row">
+          <div class="learned-sku">${escapeHtml(k)}</div>
+          <div class="learned-rule">any quantity</div>
+          <div class="learned-actions">
+            <button class="learned-btn remove" data-action="remove-approved" data-key="${escapeHtml(k)}">Remove</button>
+          </div>
+        </div>`).join('')}` : '';
+
+    if (snap.empty && !approved.length) {
       listEl.innerHTML = '';
       document.getElementById('learned-empty').style.display = 'block';
       return;
     }
     document.getElementById('learned-empty').style.display = 'none';
+    if (snap.empty) { listEl.innerHTML = approvedHtml; return; }
     const rows = snap.docs
       .slice()
       .sort((a, b) => String(a.data().sku || '').localeCompare(String(b.data().sku || '')))
@@ -993,7 +1016,7 @@
             </div>
           </div>`;
       });
-    listEl.innerHTML = rows.join('');
+    listEl.innerHTML = approvedHtml + '<div class="learned-section">Learned SKUs</div>' + rows.join('');
   }
 
   document.getElementById('learned-list').addEventListener('click', async (e) => {
@@ -1001,6 +1024,14 @@
     if (!btn) return;
     const action = btn.dataset.action;
 
+    if (action === 'remove-approved') {
+      const key = btn.dataset.key;
+      if (!confirm(`Stop auto-approving "${key}"? Orders with it will come back for review.`)) return;
+      autoApproveSet.delete(key);
+      try { await saveAutoApprove(); } catch (err) { showRenderError('the always-approve list', err); }
+      renderLearnedList();
+      return;
+    }
     if (action === 'edit-learned') {
       editingLearnedId = btn.dataset.id;
       renderLearnedList();
@@ -1128,6 +1159,33 @@
     const action = btn.dataset.action;
     if (busyReviewIds.has(docId)) return;   // already working on this one
 
+    // Remembers the products on this order so future orders made up only of
+    // approved products go through on their own. Handled before the busy
+    // guard because it isn't a queue action — the order still needs
+    // approving or rejecting afterwards.
+    if (action === 'always-approve') {
+      const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
+      const keys = productKeysOf(textarea ? textarea.value : '');
+      if (!keys.length) return;
+      const fresh = keys.filter(k => !autoApproveSet.has(k));
+      if (!fresh.length) {
+        document.getElementById('top-status').textContent = 'Already on the always-approve list.';
+        return;
+      }
+      const list = fresh.map(k => '• ' + k).join('\n');
+      if (!confirm(`Always approve these product(s) in future?\n\n${list}\n\nAn order is only added automatically when EVERY product on it is approved. Any quantity counts.`)) return;
+      fresh.forEach(k => autoApproveSet.add(k));
+      try {
+        await saveAutoApprove();
+        document.getElementById('top-status').textContent = `Added ${fresh.length} product(s) to the always-approve list.`;
+        renderLearnedList();
+      } catch (err) {
+        fresh.forEach(k => autoApproveSet.delete(k));
+        document.getElementById('top-status').textContent = 'Could not save that — ' + ((err && err.message) || 'try again') + '.';
+      }
+      return;
+    }
+
     if (action === 'reject-one' && !confirm('Reject this order? It will not be added as a slot.')) return;
 
     busyReviewIds.add(docId);
@@ -1233,6 +1291,61 @@
     }
   });
 
+  // ---------- Always-approve products ----------
+  // Products you've marked as never needing a look. An order is added
+  // automatically only when EVERY line on it is on this list — one
+  // unapproved item anywhere and the whole order still waits for you.
+  //
+  // Kept in warehouse-storage rather than its own collection, so no
+  // Firestore rules change is needed to make it work.
+  const AUTO_APPROVE_KEY = 'auto-approve-products';
+  let autoApproveSet = new Set();
+
+  // Strips a trailing quantity so the PRODUCT is remembered, not the amount:
+  //   "wood fork full box x1" -> "wood fork full box"
+  // Only a trailing "xN" is removed — a quantity baked into the product name
+  // itself, like "small paper x50 single" or "8ply 2,500", is left alone
+  // because that IS the product.
+  function productKey(line) {
+    return String(line || '')
+      .replace(/\s*x\s*\d+\s*$/i, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase();
+  }
+
+  // Every product on an order, as keys.
+  function productKeysOf(raw) {
+    return String(raw || '')
+      .split('\n').slice(1).join(' + ')
+      .split('+')
+      .map(productKey)
+      .filter(Boolean);
+  }
+
+  async function loadAutoApprove() {
+    try {
+      const res = await storageCollection.doc(AUTO_APPROVE_KEY).get();
+      const list = res.exists ? JSON.parse(res.data().value || '[]') : [];
+      autoApproveSet = new Set(list.map(productKey));
+    } catch (e) {
+      autoApproveSet = new Set();
+    }
+  }
+
+  async function saveAutoApprove() {
+    await storageCollection.doc(AUTO_APPROVE_KEY).set({
+      value: JSON.stringify([...autoApproveSet]), shared: true, updatedAt: Date.now()
+    });
+  }
+
+  // True only when every single product on the order is approved.
+  function orderIsFullyApproved(raw) {
+    const keys = productKeysOf(raw);
+    if (!keys.length) return false;
+    return keys.every(k => autoApproveSet.has(k));
+  }
+
   // ---------- Auto-approve 8ply x1 ----------
   // Straight after a sync, everything sitting in the 8ply x1 tab is added
   // without asking. These are single-item orders that convert the same way
@@ -1245,16 +1358,23 @@
   // possible-duplicate warning goes to the Attention tab, not this one, so
   // it still waits for you.
   async function autoApproveEightPly(statusEl) {
+    // Everything in the 8ply tab, plus any order in the Other tab whose
+    // products are ALL on the always-approve list. A single unapproved item
+    // keeps the whole order back for review.
     const ids = [...document.querySelectorAll('#eightply-list .review-card')].map(c => c.dataset.id);
+    for (const card of document.querySelectorAll('#review-list .review-card')) {
+      const ta = card.querySelector('.compare-converted-textarea');
+      if (ta && orderIsFullyApproved(ta.value)) ids.push(card.dataset.id);
+    }
     if (!ids.length) return;
     const before = statusEl.textContent;
     try {
       const added = await approveReviewItems(ids, (done, all, phase) => {
         statusEl.textContent = `${before} ${phase} ${done}/${all} 8ply x1…`;
       });
-      statusEl.textContent = `${before} ${added} 8ply x1 order(s) added automatically.`;
+      statusEl.textContent = `${before} ${added} order(s) added automatically.`;
     } catch (e) {
-      statusEl.textContent = `${before} Could not auto-add the 8ply x1 orders — ${(e && e.message) || 'try again'}. They're still in the tab.`;
+      statusEl.textContent = `${before} Could not auto-add — ${(e && e.message) || 'try again'}. They're still in the tab.`;
     }
     await renderReviewQueue();
   }
