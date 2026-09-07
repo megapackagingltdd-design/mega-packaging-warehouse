@@ -1159,31 +1159,21 @@
     const action = btn.dataset.action;
     if (busyReviewIds.has(docId)) return;   // already working on this one
 
-    // Remembers the products on this order so future orders made up only of
-    // approved products go through on their own. Handled before the busy
-    // guard because it isn't a queue action — the order still needs
-    // approving or rejecting afterwards.
+    // Remembers the products on this order for next time, AND adds this
+    // order as a slot right now. Saving the rule without also clearing the
+    // order left the card sitting there looking like nothing had happened.
+    let alwaysApproveKeys = null;
     if (action === 'always-approve') {
       const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
       const keys = productKeysOf(textarea ? textarea.value : '');
       if (!keys.length) return;
       const fresh = keys.filter(k => !autoApproveSet.has(k));
-      if (!fresh.length) {
-        document.getElementById('top-status').textContent = 'Already on the always-approve list.';
-        return;
-      }
-      const list = fresh.map(k => '• ' + k).join('\n');
-      if (!confirm(`Always approve these product(s) in future?\n\n${list}\n\nAn order is only added automatically when EVERY product on it is approved. Any quantity counts.`)) return;
-      fresh.forEach(k => autoApproveSet.add(k));
-      try {
-        await saveAutoApprove();
-        document.getElementById('top-status').textContent = `Added ${fresh.length} product(s) to the always-approve list.`;
-        renderLearnedList();
-      } catch (err) {
-        fresh.forEach(k => autoApproveSet.delete(k));
-        document.getElementById('top-status').textContent = 'Could not save that — ' + ((err && err.message) || 'try again') + '.';
-      }
-      return;
+      const list = (fresh.length ? fresh : keys).map(k => '• ' + k).join('\n');
+      const lead = fresh.length
+        ? `Add this order now, and always approve these product(s) in future?`
+        : `These product(s) are already always-approved. Add this order now?`;
+      if (!confirm(`${lead}\n\n${list}\n\nFuture orders are added automatically only when EVERY product on them is approved. Any quantity counts.`)) return;
+      alwaysApproveKeys = fresh;
     }
 
     if (action === 'reject-one' && !confirm('Reject this order? It will not be added as a slot.')) return;
@@ -1195,13 +1185,33 @@
     const cardButtons = card ? [...card.querySelectorAll('button')] : [btn];
     const originalText = btn.textContent;
     cardButtons.forEach(b => { b.disabled = true; });
-    btn.textContent = action === 'approve-one' ? 'Adding…'
+    btn.textContent = (action === 'approve-one' || action === 'always-approve') ? 'Adding…'
                     : action === 'reject-one' ? 'Rejecting…'
                     : 'Saving…';
     if (card) card.style.opacity = '0.6';
 
     try {
-      if (action === 'approve-one') {
+      if (action === 'always-approve') {
+        if (alwaysApproveKeys && alwaysApproveKeys.length) {
+          alwaysApproveKeys.forEach(k => autoApproveSet.add(k));
+          try {
+            await saveAutoApprove();
+            renderLearnedList();
+          } catch (err) {
+            // The rule didn't save, but the order can still be added — just
+            // don't pretend the rule stuck.
+            alwaysApproveKeys.forEach(k => autoApproveSet.delete(k));
+            document.getElementById('top-status').textContent =
+              'Could not save the always-approve rule — ' + ((err && err.message) || 'try again') + '. Adding the order anyway.';
+          }
+        }
+        await approveReviewItem(docId);
+        const saved = alwaysApproveKeys && alwaysApproveKeys.length && autoApproveSet.has(alwaysApproveKeys[0]);
+        if (saved) {
+          document.getElementById('top-status').textContent =
+            `Added, and ${alwaysApproveKeys.length} product(s) will be approved automatically from now on.`;
+        }
+      } else if (action === 'approve-one') {
         await approveReviewItem(docId);
       } else if (action === 'reject-one') {
         await rejectReviewItem(docId);
