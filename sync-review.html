@@ -164,6 +164,17 @@
     font-size: 11.5px; color: #777; margin-top: 4px; line-height: 1.6; word-break: break-all;
   }
 
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 950;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-box {
+    background: #fff; border-radius: 14px; padding: 20px; max-width: 340px; width: 100%;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25);
+  }
+  .modal-title { font-size: 16px; font-weight: 900; margin-bottom: 8px; }
+  .modal-body { font-size: 13.5px; line-height: 1.5; color: #555; margin-bottom: 16px; }
+
   .learned-section {
     font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
     color: #999; margin: 14px 0 4px;
@@ -1356,6 +1367,27 @@
     return keys.every(k => autoApproveSet.has(k));
   }
 
+  // Small acknowledgement popup after a sync adds orders on its own.
+  function autoApprovedAlert(total, eightply, approved) {
+    return new Promise(resolve => {
+      const parts = [];
+      if (eightply) parts.push(`${eightply} × 8ply x1`);
+      if (approved) parts.push(`${approved} × always-approved product(s)`);
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay';
+      overlay.innerHTML = `
+        <div class="modal-box">
+          <div class="modal-title">${total} order${total === 1 ? '' : 's'} added automatically</div>
+          <div class="modal-body">${parts.join('<br/>')}<br/><br/>They're on the warehouse list now — nothing else to do.</div>
+          <div class="btn-row"><button class="btn btn-primary" id="auto-ok">OK</button></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      const done = () => { overlay.remove(); resolve(); };
+      overlay.querySelector('#auto-ok').addEventListener('click', done);
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) done(); });
+    });
+  }
+
   // ---------- Auto-approve 8ply x1 ----------
   // Straight after a sync, everything sitting in the 8ply x1 tab is added
   // without asking. These are single-item orders that convert the same way
@@ -1372,17 +1404,25 @@
     // products are ALL on the always-approve list. A single unapproved item
     // keeps the whole order back for review.
     const ids = [...document.querySelectorAll('#eightply-list .review-card')].map(c => c.dataset.id);
+    const eightplyCount = ids.length;
     for (const card of document.querySelectorAll('#review-list .review-card')) {
       const ta = card.querySelector('.compare-converted-textarea');
       if (ta && orderIsFullyApproved(ta.value)) ids.push(card.dataset.id);
     }
+    const approvedCount = ids.length - eightplyCount;
     if (!ids.length) return;
     const before = statusEl.textContent;
     try {
       const added = await approveReviewItems(ids, (done, all, phase) => {
-        statusEl.textContent = `${before} ${phase} ${done}/${all} 8ply x1…`;
+        statusEl.textContent = `${before} ${phase} ${done}/${all}…`;
       });
       statusEl.textContent = `${before} ${added} order(s) added automatically.`;
+      // A popup as well as the status line — the status line is easy to miss,
+      // and orders going into the warehouse without being seen is worth an
+      // explicit acknowledgement.
+      if (added > 0) {
+        await autoApprovedAlert(added, eightplyCount, approvedCount);
+      }
     } catch (e) {
       statusEl.textContent = `${before} Could not auto-add — ${(e && e.message) || 'try again'}. They're still in the tab.`;
     }
