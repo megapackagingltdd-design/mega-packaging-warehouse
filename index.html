@@ -279,6 +279,51 @@
     position: fixed; inset: 0; background: rgba(26,29,26,0.55);
     display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px;
   }
+  /* ---------- Long-press action sheet ---------- */
+  .mp-sheet {
+    position: relative; background: #fff; border-radius: 16px;
+    width: 100%; max-width: 600px; box-shadow: 0 18px 50px rgba(0,0,0,.35);
+    padding: 26px 24px 22px; text-align: center;
+  }
+  .mp-sheet-x {
+    position: absolute; top: 12px; right: 12px;
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #f0eee8; border: none; color: #555;
+    font-size: 26px; line-height: 1; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-sheet-x:active { background: #e0ddd5; }
+
+  .mp-sheet-body { padding: 12px 34px 24px; }
+  .mp-sheet-customer {
+    font-size: 15px; font-weight: 700; color: #6b6f6b; margin-bottom: 10px; line-height: 1.35;
+  }
+  .mp-sheet-products {
+    font-size: 27px; font-weight: 900; color: #141714; line-height: 1.25;
+    white-space: pre-wrap; letter-spacing: -.01em;
+  }
+
+  /* One row of large targets. Drops to two rows on a narrow screen rather
+     than shrinking below a comfortable tap size. */
+  .mp-sheet-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+  .mp-sheet-btn {
+    /* flex-basis 0 with a min-width, so four fit one row on the warehouse
+       screen and only wrap to two rows on a genuinely narrow phone. */
+    flex: 1 1 0; min-width: 96px; min-height: 62px; border-radius: 12px; border: none;
+    font-family: inherit; font-size: 16px; font-weight: 800; color: #fff;
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-sheet-btn:active { filter: brightness(1.15); }
+  .mp-sheet-btn.edit  { background: #c65d2e; }
+  .mp-sheet-btn.print { background: #6a2ca3; }
+  .mp-sheet-btn.blue  { background: #1e6fd9; }
+  .mp-sheet-btn.del   { background: #a33; }
+  @media (max-width: 520px) {
+    .mp-sheet-products { font-size: 22px; }
+    .mp-sheet-body { padding: 10px 8px 20px; }
+  }
+
   .mp-modal-box {
     background: #fff; border-radius: 12px; padding: 24px; max-width: 360px; width: 100%;
     box-shadow: 0 12px 40px rgba(0,0,0,0.25);
@@ -2694,28 +2739,41 @@ This backup was generated in one click from Back End and contains:
     });
   })();
 
-  // Action sheet shown on long-press: Edit / Delete / Cancel
+  // Action sheet shown on long-press. Built for a touchscreen: big targets,
+  // real spacing, and the order itself readable at a glance rather than
+  // squeezed above a row of small buttons.
   function showSlotActionSheet(order) {
     return new Promise(resolve => {
+      const lines = String(order.raw || '').split('\n');
+      const customer = lines[0] || '';
+      const products = lines.slice(1).join('\n') || '(no products listed)';
+      const isBlue = order.state === 'blue';
+
       const overlay = document.createElement('div');
       overlay.className = 'mp-modal-overlay';
       overlay.innerHTML = `
-        <div class="mp-modal-box">
-          <p style="white-space:pre-wrap; font-weight:700;">${escapeHtml(order.raw)}</p>
-          <div class="mp-modal-actions" style="flex-wrap:wrap;">
-            <button class="mp-btn mp-btn-ghost" id="sheet-cancel">Cancel</button>
-            <button class="mp-btn mp-btn-primary" id="sheet-edit">Edit</button>
-            <button class="mp-btn" id="sheet-print" style="background:#6a2ca3; color:#fff; border:none;">Print</button>
-            <button class="mp-btn" id="sheet-blue" style="background:#1e6fd9; color:#fff; border:none;">${order.state === 'blue' ? 'Remove Blue' : 'Mark Blue'}</button>
-            <button class="mp-btn" id="sheet-delete" style="background:#a33; color:#fff; border:none;">Delete</button>
+        <div class="mp-sheet">
+          <button class="mp-sheet-x" id="sheet-cancel" aria-label="Close">&times;</button>
+          <div class="mp-sheet-body">
+            <div class="mp-sheet-customer">${escapeHtml(customer)}</div>
+            <div class="mp-sheet-products">${escapeHtml(products)}</div>
+          </div>
+          <div class="mp-sheet-actions">
+            <button class="mp-sheet-btn edit" id="sheet-edit">Edit</button>
+            <button class="mp-sheet-btn print" id="sheet-print">Print</button>
+            <button class="mp-sheet-btn blue" id="sheet-blue">${isBlue ? 'Remove Blue' : 'Mark Blue'}</button>
+            <button class="mp-sheet-btn del" id="sheet-delete">Delete</button>
           </div>
         </div>`;
       root.appendChild(overlay);
-      overlay.querySelector('#sheet-cancel').addEventListener('click', () => { overlay.remove(); resolve(null); });
-      overlay.querySelector('#sheet-edit').addEventListener('click', () => { overlay.remove(); resolve('edit'); });
-      overlay.querySelector('#sheet-print').addEventListener('click', () => { overlay.remove(); resolve('print'); });
-      overlay.querySelector('#sheet-blue').addEventListener('click', () => { overlay.remove(); resolve(order.state === 'blue' ? 'unblue' : 'blue'); });
-      overlay.querySelector('#sheet-delete').addEventListener('click', () => { overlay.remove(); resolve('delete'); });
+      const close = (val) => { overlay.remove(); resolve(val); };
+      overlay.querySelector('#sheet-cancel').addEventListener('click', () => close(null));
+      overlay.querySelector('#sheet-edit').addEventListener('click', () => close('edit'));
+      overlay.querySelector('#sheet-print').addEventListener('click', () => close('print'));
+      overlay.querySelector('#sheet-blue').addEventListener('click', () => close(isBlue ? 'unblue' : 'blue'));
+      overlay.querySelector('#sheet-delete').addEventListener('click', () => close('delete'));
+      // Tapping the dark area outside also closes, the same as the X.
+      overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
     });
   }
 
