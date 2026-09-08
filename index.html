@@ -1,23 +1,3 @@
-<!DOCTYPE html>
-<html lang="en-GB">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<meta name="color-scheme" content="light">
-<meta name="theme-color" content="#1a1d1a">
-<title>Mega Packaging — Parcels</title>
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="icon" href="icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Parcels">
-<meta name="robots" content="noindex, nofollow">
-<style>
-  /* nothing extra — the parcels app has its own way back to the catalogue */
-</style>
-
-</head>
-<body>
 <div id="mp-app"></div>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; }
@@ -66,13 +46,6 @@
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   #btn-portal:active { background: #2f7ad0; }
-  #btn-megaprints {
-    background: #b5652b; border: 1.5px solid #8f4d1e; color: #fff;
-    border-radius: 8px; padding: 7px 13px; font-size: 12px; font-weight: 800;
-    font-family: inherit; cursor: pointer; white-space: nowrap;
-    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
-  }
-  #btn-megaprints:active { background: #8f4d1e; }
   .mp-summary-box {
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     padding: 4px 16px; border-radius: 8px; min-width: 64px;
@@ -843,7 +816,6 @@
           <div class="mp-tab active" data-tab="wh">Warehouse</div>
         </div>
         <button id="btn-portal" title="Open the customer ordering catalogue">🛒 Catalogue</button>
-        <button id="btn-megaprints" title="Open Mega Prints">🖨️ Mega Prints</button>
         <button id="btn-close-browser" title="Close browser">✕ Close</button>
       </div>
     </div>
@@ -1688,9 +1660,9 @@ This backup was generated in one click from Back End and contains:
   })();
 
   document.getElementById('btn-close-browser').addEventListener('click', async () => {
-    const confirmed = await customConfirm('Close both MEGA apps and go back to the desktop?', 'Yes, close');
+    const confirmed = await customConfirm('Are you sure you want to close this browser tab?', 'Yes, close');
     if (!confirmed) return;
-    megaCloseAll();
+    window.close();
   });
 
   document.getElementById('btn-restore-backup').addEventListener('click', async () => {
@@ -2382,7 +2354,7 @@ This backup was generated in one click from Back End and contains:
   function updateSoundBanner() {
     const banner = document.getElementById('sound-banner');
     if (!banner) return;
-    banner.style.display = 'none';   // never shown: any tap unlocks the sound anyway
+    banner.style.display = soundIsBlocked() ? 'flex' : 'none';
   }
 
   function unlockSound(playTest) {
@@ -2734,6 +2706,7 @@ This backup was generated in one click from Back End and contains:
             <button class="mp-btn mp-btn-ghost" id="sheet-cancel">Cancel</button>
             <button class="mp-btn mp-btn-primary" id="sheet-edit">Edit</button>
             <button class="mp-btn" id="sheet-print" style="background:#6a2ca3; color:#fff; border:none;">Print</button>
+            <button class="mp-btn" id="sheet-blue" style="background:#1e6fd9; color:#fff; border:none;">${order.state === 'blue' ? 'Remove Blue' : 'Mark Blue'}</button>
             <button class="mp-btn" id="sheet-delete" style="background:#a33; color:#fff; border:none;">Delete</button>
           </div>
         </div>`;
@@ -2741,6 +2714,7 @@ This backup was generated in one click from Back End and contains:
       overlay.querySelector('#sheet-cancel').addEventListener('click', () => { overlay.remove(); resolve(null); });
       overlay.querySelector('#sheet-edit').addEventListener('click', () => { overlay.remove(); resolve('edit'); });
       overlay.querySelector('#sheet-print').addEventListener('click', () => { overlay.remove(); resolve('print'); });
+      overlay.querySelector('#sheet-blue').addEventListener('click', () => { overlay.remove(); resolve(order.state === 'blue' ? 'unblue' : 'blue'); });
       overlay.querySelector('#sheet-delete').addEventListener('click', () => { overlay.remove(); resolve('delete'); });
     });
   }
@@ -2932,6 +2906,17 @@ This backup was generated in one click from Back End and contains:
       }
     } else if (action === 'print') {
       await handlePrintRequest(order, id, addedAt);
+    } else if (action === 'blue' || action === 'unblue') {
+      // Goes through setSlotState, the same path a completed scan uses, so
+      // the completion time is stamped and cleared in exactly the same way.
+      const target = action === 'blue' ? 'blue' : 'default';
+      const ok = await setSlotState(id, addedAt, target);
+      if (ok) {
+        order.state = target;
+        loadAndRenderList();
+      } else {
+        await customAlert('Could not update that slot — try again.');
+      }
     } else if (action === 'delete') {
       const confirmed = await customConfirm('Delete this slot? This cannot be undone.', 'Yes, delete');
       if (confirmed) {
@@ -4236,17 +4221,10 @@ This backup was generated in one click from Back End and contains:
 
   document.getElementById('btn-history').addEventListener('click', showHistoryPicker);
 
-  // Switches to that app's own dedicated window/profile (megaordering:// /
-  // megaprints://, registered by the same workstation script as megaclose://)
-  // rather than navigating this window to its address — same window would mean
-  // reaching it through the Parcels profile, where its own Close button won't
-  // recognise it.
+  // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
+  // tabs over a shift. The portal has its own button to come back here.
   document.getElementById('btn-portal').addEventListener('click', () => {
-    window.location.href = 'megaordering://open';
-  });
-
-  document.getElementById('btn-megaprints').addEventListener('click', () => {
-    window.location.href = 'megaprints://open';
+    window.location.href = 'https://mega-portal-seven.vercel.app/';
   });
 
   // Plays the alert once on unlock so staff know it's working and how loud it is.
@@ -4422,40 +4400,3 @@ This backup was generated in one click from Back End and contains:
   scanInput.focus();
 })();
 </script>
-
-
-
-
-
-<script>
-  /* A web page may not close a window it did not open, and certainly cannot
-     close the other app. So the button asks Windows to do it: megaclose:// is
-     registered by make-kiosk-shortcuts.ps1 and shuts both MEGA windows. If it
-     is not set up, we at least try to close this one. */
-  function megaCloseAll(){
-    // Attempt through a hidden iframe rather than navigating this whole page to megaclose:// —
-    // if the protocol isn't recognised in this context (e.g. reached via a cross-app link rather
-    // than the dedicated shortcut), only the iframe fails silently instead of the browser showing
-    // a "can't open this address" error over the app.
-    try {
-      const iframe = document.createElement('iframe');
-      iframe.style.display = 'none';
-      iframe.src = 'megaclose://exit';
-      document.body.appendChild(iframe);
-      setTimeout(() => { try { document.body.removeChild(iframe); } catch(e){} }, 1000);
-    } catch(e){}
-    setTimeout(() => { try{ window.close(); }catch(e){} }, 400);
-  }
-</script>
-
-<script>
-  /* Makes the parcel system installable, so it opens in its own window
-     alongside the ordering app rather than as another browser tab. */
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    });
-  }
-</script>
-</body>
-</html>
