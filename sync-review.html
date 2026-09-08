@@ -169,11 +169,22 @@
     display: flex; align-items: center; justify-content: center; padding: 20px;
   }
   .modal-box {
-    background: #fff; border-radius: 14px; padding: 20px; max-width: 340px; width: 100%;
+    background: #fff; border-radius: 14px; padding: 20px; max-width: 420px; width: 100%;
     box-shadow: 0 12px 40px rgba(0,0,0,.25);
   }
-  .modal-title { font-size: 16px; font-weight: 900; margin-bottom: 8px; }
-  .modal-body { font-size: 13.5px; line-height: 1.5; color: #555; margin-bottom: 16px; }
+  .auto-list { max-height: 55vh; overflow-y: auto; }
+  .auto-row {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 11px 0; border-bottom: 1px solid #ece9e1;
+  }
+  .auto-prod { font-size: 15px; font-weight: 800; color: #1a1d1a; line-height: 1.35; }
+  .auto-count {
+    font-size: 15px; font-weight: 900; color: #c65d2e; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .auto-total { border-bottom: none; border-top: 2px solid #1a1d1a; margin-top: 4px; padding-top: 12px; }
+  .auto-total .auto-prod { text-transform: uppercase; font-size: 12px; letter-spacing: .06em; color: #777; }
+  .auto-total .auto-count { font-size: 20px; color: #1a1d1a; }
 
   .learned-section {
     font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
@@ -1367,19 +1378,28 @@
     return keys.every(k => autoApproveSet.has(k));
   }
 
-  // Small acknowledgement popup after a sync adds orders on its own.
-  function autoApprovedAlert(total, eightply, approved) {
+  // Summary of what a sync added on its own: the product line on the left,
+  // how many orders of it on the right, and a total. No title or blurb —
+  // it's a readout, not a message.
+  function autoApprovedAlert(tally, total) {
     return new Promise(resolve => {
-      const parts = [];
-      if (eightply) parts.push(`${eightply} × 8ply x1`);
-      if (approved) parts.push(`${approved} × always-approved product(s)`);
+      const rows = [...tally.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .map(([line, n]) => `
+          <div class="auto-row">
+            <span class="auto-prod">${escapeHtml(line)}</span>
+            <span class="auto-count">${n}</span>
+          </div>`).join('');
       const overlay = document.createElement('div');
       overlay.className = 'modal-overlay';
       overlay.innerHTML = `
         <div class="modal-box">
-          <div class="modal-title">${total} order${total === 1 ? '' : 's'} added automatically</div>
-          <div class="modal-body">${parts.join('<br/>')}<br/><br/>They're on the warehouse list now — nothing else to do.</div>
-          <div class="btn-row"><button class="btn btn-primary" id="auto-ok">OK</button></div>
+          <div class="auto-list">${rows}</div>
+          <div class="auto-row auto-total">
+            <span class="auto-prod">Added</span>
+            <span class="auto-count">${total}</span>
+          </div>
+          <div class="btn-row" style="margin-top:16px;"><button class="btn btn-primary" id="auto-ok">OK</button></div>
         </div>`;
       document.body.appendChild(overlay);
       const done = () => { overlay.remove(); resolve(); };
@@ -1411,6 +1431,16 @@
     }
     const approvedCount = ids.length - eightplyCount;
     if (!ids.length) return;
+
+    // Read the product lines BEFORE approving — the cards are removed from
+    // the page once the orders are added.
+    const tally = new Map();
+    for (const id of ids) {
+      const ta = document.querySelector(`.compare-converted-textarea[data-id="${id}"]`);
+      const line = ta ? String(ta.value).split('\n').slice(1).join(' + ').trim() : '';
+      const key = line || '(no products)';
+      tally.set(key, (tally.get(key) || 0) + 1);
+    }
     const before = statusEl.textContent;
     try {
       const added = await approveReviewItems(ids, (done, all, phase) => {
@@ -1421,7 +1451,7 @@
       // and orders going into the warehouse without being seen is worth an
       // explicit acknowledgement.
       if (added > 0) {
-        await autoApprovedAlert(added, eightplyCount, approvedCount);
+        await autoApprovedAlert(tally, added);
       }
     } catch (e) {
       statusEl.textContent = `${before} Could not auto-add — ${(e && e.message) || 'try again'}. They're still in the tab.`;
