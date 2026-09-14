@@ -997,6 +997,17 @@
   // at all, Back End opens directly with no PIN and full content.
   let currentBackendAccessLevel = 'full'; // 'full' | 'restricted' — updated each time Back End is entered
 
+  // Whether this session has been unlocked by a MASTER PIN. Starts false, so
+  // a workstation that's just been switched on gets Print and Mark Blue only
+  // — Edit and Delete stay hidden until a master signs in via Back End.
+  // Defaulting this to true would mean every shift starts with full rights
+  // on a machine nobody has signed into.
+  let isMasterSession = false;
+
+  function setMasterSession(on) {
+    isMasterSession = !!on;
+  }
+
   function applyBackendAccessLevel(level) {
     currentBackendAccessLevel = level;
     const restrictedIds = ['ncomplete-section', 'summary-pins-section', 'backend-extra-actions-row', 'restore-row'];
@@ -1044,6 +1055,7 @@
       const backendUsers = pins.filter(p => p.active && (p.backendAccess || p.master));
       if (backendUsers.length === 0) {
         applyBackendAccessLevel('full'); // nobody configured — Back End is fully open
+        setMasterSession(true);          // ...and nothing to lock down against
         switchToTab('add');
         renderSummaryPinsList();
         return;
@@ -1058,6 +1070,7 @@
         }
       }
       applyBackendAccessLevel(matched.master ? 'full' : 'restricted');
+      setMasterSession(!!matched.master);
       switchToTab('add');
       renderSummaryPinsList();
       return;
@@ -2770,19 +2783,23 @@ This backup was generated in one click from Back End and contains:
             <div class="mp-sheet-products">${escapeHtml(products)}</div>
           </div>
           <div class="mp-sheet-actions">
-            <button class="mp-sheet-btn edit" id="sheet-edit">Edit</button>
             <button class="mp-sheet-btn print" id="sheet-print">Print</button>
             <button class="mp-sheet-btn blue" id="sheet-blue">${isBlue ? 'Remove Blue' : 'Mark Blue'}</button>
-            <button class="mp-sheet-btn del" id="sheet-delete">Delete</button>
+            ${isMasterSession ? `
+            <button class="mp-sheet-btn edit" id="sheet-edit">Edit</button>
+            <button class="mp-sheet-btn del" id="sheet-delete">Delete</button>` : ''}
           </div>
         </div>`;
       root.appendChild(overlay);
       const close = (val) => { overlay.remove(); resolve(val); };
       overlay.querySelector('#sheet-cancel').addEventListener('click', () => close(null));
-      overlay.querySelector('#sheet-edit').addEventListener('click', () => close('edit'));
       overlay.querySelector('#sheet-print').addEventListener('click', () => close('print'));
       overlay.querySelector('#sheet-blue').addEventListener('click', () => close(isBlue ? 'unblue' : 'blue'));
-      overlay.querySelector('#sheet-delete').addEventListener('click', () => close('delete'));
+      // Only present for a master session.
+      const editBtn = overlay.querySelector('#sheet-edit');
+      if (editBtn) editBtn.addEventListener('click', () => close('edit'));
+      const delBtn = overlay.querySelector('#sheet-delete');
+      if (delBtn) delBtn.addEventListener('click', () => close('delete'));
       // Tapping the dark area outside also closes, the same as the X.
       overlay.addEventListener('click', (e) => { if (e.target === overlay) close(null); });
     });
@@ -2962,6 +2979,12 @@ This backup was generated in one click from Back End and contains:
     if (!order) return;
 
     const action = await showSlotActionSheet(order);
+    // Checked again here, not just when drawing the buttons — hiding a
+    // control isn't the same as preventing the action.
+    if ((action === 'edit' || action === 'delete') && !isMasterSession) {
+      await customAlert('Editing and deleting slots needs a master PIN. Open Back End and sign in with a master account first.');
+      return;
+    }
     if (action === 'edit') {
       const newRaw = await showEditSlotModal(order.raw);
       if (newRaw !== null && newRaw.trim() !== '') {
