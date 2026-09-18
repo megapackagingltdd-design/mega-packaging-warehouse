@@ -464,7 +464,18 @@
   /* Products are what the picker actually needs, so they carry the size and
      weight. The customer name still has to be there for matching a label,
      but it's reference, not the headline. */
-  .mp-order-card-main { line-height: 1.3; white-space: pre-wrap; text-align: center; }
+  /* Cards in a row are stretched to match the tallest one, so a card with a
+     single product used to leave its text stranded at the top against a
+     neighbour listing ten items. The customer name stays pinned at the top
+     as a header, and the products sit in the middle of whatever space is
+     left — so every card in a row reads along the same line. */
+  .mp-order-card-main {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+    line-height: 1.3; white-space: pre-wrap; text-align: center;
+  }
+  .mp-card-products {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
+  }
   .mp-card-header-line {
     font-size: 11px; font-weight: 700; opacity: .72; margin-bottom: 5px;
     line-height: 1.3; letter-spacing: .01em;
@@ -2295,7 +2306,7 @@ This backup was generated in one click from Back End and contains:
       <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
         ${copyWarning}
-        <div class="mp-order-card-main">${headerLine}${productLines}</div>
+        <div class="mp-order-card-main">${headerLine}<div class="mp-card-products">${productLines}</div></div>
         <div class="mp-order-card-foot">
           ${o.addedAt ? `<span class="mp-time-added" title="Slot added">${formatSlotStamp(o.addedAt)}</span>` : '<span></span>'}
           ${o.completedAt ? `<span class="mp-time-done" title="Marked complete">${formatSlotStamp(o.completedAt)}</span>` : ''}
