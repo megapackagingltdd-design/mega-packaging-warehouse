@@ -172,6 +172,29 @@
     background: #fff; border-radius: 14px; padding: 20px; max-width: 420px; width: 100%;
     box-shadow: 0 12px 40px rgba(0,0,0,.25);
   }
+  /* Friday: the button calls attention to itself, since a weekly report
+     nobody remembers to open is worthless. Other days it stays quiet. */
+  #btn-pattern.is-friday { background: #f2c200; border-color: #d9ae00; color: #241d00; font-weight: 900; }
+
+  .rep-title { font-size: 16px; font-weight: 900; margin-bottom: 12px; }
+  .rep-stats { font-size: 13.5px; line-height: 1.9; color: #444; margin-bottom: 14px; }
+  .rep-stats b { color: #1a1d1a; font-size: 15px; }
+  .rep-head {
+    font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+    color: #999; margin: 16px 0 6px;
+  }
+  .rep-row { border-top: 1px solid #ece9e1; padding: 9px 0; }
+  .rep-prod { font-size: 14px; font-weight: 800; color: #1a1d1a; line-height: 1.35; }
+  .rep-meta { font-size: 12px; color: #777; margin-top: 3px; }
+  .rep-tag {
+    display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase;
+    letter-spacing: .05em; padding: 1px 6px; border-radius: 4px; margin-left: 6px;
+  }
+  .rep-tag.strong { background: #e4f0e6; color: #2f6b3e; }
+  .rep-tag.weak { background: #f0eee8; color: #999; }
+  .rep-empty { font-size: 13.5px; color: #777; line-height: 1.55; }
+  .rep-note { font-size: 12px; color: #999; line-height: 1.5; margin-top: 16px; border-top: 1px solid #ece9e1; padding-top: 10px; }
+
   .joined-card { border: 2px solid #c0392b; }
   .joined-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .joined-title { font-size: 15px; font-weight: 900; color: #a3271b; }
@@ -298,6 +321,7 @@
     <div class="btn-row">
       <button class="btn btn-primary" id="btn-sync">Sync from Sendcloud</button>
       <button class="btn btn-danger" data-bulk="clear-everything">Clear All</button>
+      <button class="btn btn-ghost" id="btn-pattern">📊 <span id="pattern-label">Patterns</span></button>
     </div>
     <div class="status-line" id="sync-status"></div>
     <div class="status-line" id="top-status"></div>
@@ -524,6 +548,16 @@
   }
 
   // ---------- Sync from Sendcloud ----------
+  document.getElementById('btn-pattern').addEventListener('click', () => {
+    showPatternReport().catch(e => showRenderError('the pattern report', e));
+  });
+  // Friday only — highlighted and named, so it's a prompt rather than a
+  // button you'd have to remember exists.
+  if (new Date().getDay() === 5) {
+    document.getElementById('btn-pattern').classList.add('is-friday');
+    document.getElementById('pattern-label').textContent = 'Weekly report';
+  }
+
   document.getElementById('btn-sync').addEventListener('click', async () => {
     const btn = document.getElementById('btn-sync');
     const statusEl = document.getElementById('sync-status');
@@ -1216,17 +1250,41 @@
   // parallel. Approving one at a time meant three round trips per order and
   // was the reason a large batch looked frozen.
   // Returns the number actually added.
+  let decisionBuffer = [];
+
   async function approveReviewItems(docIds, onProgress) {
     const items = [];
+    decisionBuffer = [];
     let read = 0;
     await runInBatches(docIds, 25, async (docId) => {
       const textarea = document.querySelector(`.compare-converted-textarea[data-id="${docId}"]`);
       const raw = textarea ? textarea.value.trim() : '';
       if (!raw) return;
       const doc = await db.collection('pending-sync-review').doc(docId).get();
-      const orderNumbers = doc.exists ? String(doc.data().orderNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
-      const trackingNumbers = doc.exists ? String(doc.data().trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean) : [];
+      const d = doc.exists ? doc.data() : {};
+      const orderNumbers = String(d.orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
+      const trackingNumbers = String(d.trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean);
       items.push({ docId, raw, sourceOrderNumbers: orderNumbers, trackingNumbers });
+
+      // Observation only — captured here because this is the one point
+      // where the system's proposal and your final answer both exist.
+      const proposed = String(d.raw || '');
+      let sourceItems = [];
+      try { sourceItems = JSON.parse(d.originalItemsJson || '[]'); } catch (e) {}
+      const finalParsed = extractLabelCount(raw);
+      const proposedParsed = extractLabelCount(proposed);
+      decisionBuffer.push({
+        at: Date.now(),
+        orderNumbers,
+        skus: sourceItems.map(it => `${it.sku || '(none)'} x${it.qty}`),
+        proposed: proposedParsed.raw.split('\n').slice(1).join(' + '),
+        final: finalParsed.raw.split('\n').slice(1).join(' + '),
+        signature: productSignature(finalParsed.raw),
+        labelCount: finalParsed.labelCount,
+        // Did you change the products, or only the label count / name?
+        editedProducts: productSignature(proposedParsed.raw) !== productSignature(finalParsed.raw),
+        editedHeader: proposedParsed.raw.split('\n')[0].trim() !== finalParsed.raw.split('\n')[0].trim()
+      });
     }, (done, all) => { read = done; if (onProgress) onProgress(done, all, 'Reading'); });
 
     if (!items.length) return 0;
@@ -1236,6 +1294,9 @@
     await runInBatches(items.map(i => i.docId), 25,
       id => db.collection('pending-sync-review').doc(id).delete(),
       (done, all) => { if (onProgress) onProgress(done, all, 'Clearing'); });
+
+    await recordDecisions(decisionBuffer);
+    decisionBuffer = [];
     return items.length;
   }
   // "Not Processed" — adds the order as a real slot in Warehouse view, same
@@ -1413,6 +1474,192 @@
       renderReviewQueue();
     }
   });
+
+  // ---------- Decision log ----------
+  // Records what you decided about each order as you approve it: the source
+  // SKUs, what the system proposed, what you actually sent through, and how
+  // many labels you asked for. That last one is the point of this — "(2)"
+  // in the header is a judgement about whether the goods physically fit in
+  // one parcel, and nothing in the system currently knows why.
+  //
+  // Nothing here changes any behaviour. It only observes, so that once
+  // there's enough history the patterns can be shown back to you and, if
+  // you agree with them, turned into suggestions later.
+  //
+  // One document per ISO week, in warehouse-storage, so no rules change is
+  // needed and a week's worth stays well inside the document size limit.
+  function isoWeekKey(d = new Date()) {
+    const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    // ISO weeks run Monday-Sunday and belong to the year of their Thursday.
+    const day = t.getUTCDay() || 7;
+    t.setUTCDate(t.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
+    return `${t.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+  }
+
+  function decisionDocId(weekKey) { return `decision-log-${weekKey}`; }
+
+  // Products as a stable signature, quantities included — whether something
+  // fits in one box depends on how much of it there is.
+  function productSignature(raw) {
+    return String(raw || '')
+      .split('\n').slice(1).join(' + ')
+      .split('+')
+      .map(x => x.trim().toLowerCase().replace(/\s+/g, ' '))
+      .filter(Boolean)
+      .sort()
+      .join(' + ');
+  }
+
+  async function recordDecisions(entries) {
+    if (!entries.length) return;
+    const weekKey = isoWeekKey();
+    const id = decisionDocId(weekKey);
+    try {
+      const res = await storageCollection.doc(id).get();
+      let log = [];
+      if (res.exists) {
+        try { log = JSON.parse(res.data().value || '[]'); } catch (e) { log = []; }
+      }
+      log.push(...entries);
+      // A hard ceiling so a runaway week can't grow the document without
+      // bound; oldest entries drop first.
+      if (log.length > 1200) log = log.slice(log.length - 1200);
+      await storageCollection.doc(id).set({
+        value: JSON.stringify(log), shared: true, weekKey, updatedAt: Date.now()
+      });
+    } catch (e) {
+      // Logging must never block an approval — it's observation, not work.
+      console.warn('Could not record decisions:', e && e.message);
+    }
+  }
+
+  // ---------- Pattern report ----------
+  // Deliberately plain counting, not a guess. It reports what actually
+  // happened and how often, so a pattern you recognise is obvious and a
+  // coincidence stays visibly thin. Confidence is just "how many times",
+  // because with a handful of orders anything can look like a rule.
+  async function loadDecisionLog(weeks = 12) {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < weeks; i++) {
+      const key = isoWeekKey(d);
+      try {
+        const res = await storageCollection.doc(decisionDocId(key)).get();
+        if (res.exists) out.push(...JSON.parse(res.data().value || '[]'));
+      } catch (e) { /* a missing week is normal */ }
+      d.setDate(d.getDate() - 7);
+    }
+    return out;
+  }
+
+  function analyseDecisions(log) {
+    const bySig = new Map();
+    for (const e of log) {
+      if (!e.signature) continue;
+      if (!bySig.has(e.signature)) bySig.set(e.signature, { total: 0, counts: new Map(), example: e.final });
+      const rec = bySig.get(e.signature);
+      rec.total++;
+      const lc = e.labelCount || 1;
+      rec.counts.set(lc, (rec.counts.get(lc) || 0) + 1);
+    }
+
+    // A product set you have ALWAYS split, seen enough times to mean it.
+    const alwaysSplit = [];
+    const sometimesSplit = [];
+    for (const [sig, rec] of bySig) {
+      const multi = [...rec.counts.entries()].filter(([n]) => n > 1);
+      if (!multi.length) continue;
+      const multiTotal = multi.reduce((a, [, n]) => a + n, 0);
+      const row = {
+        products: rec.example, total: rec.total, multiTotal,
+        labels: [...rec.counts.entries()].sort((a, b) => b[1] - a[1])
+      };
+      if (multiTotal === rec.total) alwaysSplit.push(row); else sometimesSplit.push(row);
+    }
+    alwaysSplit.sort((a, b) => b.total - a.total);
+    sometimesSplit.sort((a, b) => b.total - a.total);
+
+    const edited = log.filter(e => e.editedProducts).length;
+    const headerEdited = log.filter(e => e.editedHeader).length;
+    const split = log.filter(e => (e.labelCount || 1) > 1).length;
+
+    return {
+      totalOrders: log.length, split, edited, headerEdited,
+      alwaysSplit, sometimesSplit,
+      firstAt: log.length ? Math.min(...log.map(e => e.at)) : null
+    };
+  }
+
+  function reportRow(r) {
+    const labelText = r.labels.map(([n, c]) => `${n} label${n === 1 ? '' : 's'} ×${c}`).join(', ');
+    const confident = r.total >= 4;
+    return `
+      <div class="rep-row">
+        <div class="rep-prod">${escapeHtml(r.products || '(unknown)')}</div>
+        <div class="rep-meta">${labelText} · seen ${r.total} time${r.total === 1 ? '' : 's'}
+          ${confident ? '<span class="rep-tag strong">pattern</span>' : '<span class="rep-tag weak">too few to be sure</span>'}
+        </div>
+      </div>`;
+  }
+
+  async function showPatternReport() {
+    const statusEl = document.getElementById('top-status');
+    statusEl.textContent = 'Reading the decision log…';
+    let log = [];
+    try { log = await loadDecisionLog(12); }
+    catch (e) { statusEl.textContent = 'Could not read the log — ' + ((e && e.message) || 'try again'); return; }
+    statusEl.textContent = '';
+    const a = analyseDecisions(log);
+
+    const since = a.firstAt ? new Date(a.firstAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }) : null;
+    const body = a.totalOrders === 0
+      ? `<div class="rep-empty">Nothing recorded yet. The log starts filling from the next sync you approve — come back after a few days of normal work.</div>`
+      : `
+        <div class="rep-stats">
+          <div><b>${a.totalOrders}</b> orders recorded${since ? ' since ' + since : ''}</div>
+          <div><b>${a.split}</b> sent as more than one label</div>
+          <div><b>${a.edited}</b> where you changed the products</div>
+          <div><b>${a.headerEdited}</b> where you changed the name line</div>
+        </div>
+        ${a.alwaysSplit.length ? `
+          <div class="rep-head">Always split — every time you've seen these</div>
+          ${a.alwaysSplit.map(reportRow).join('')}` : ''}
+        ${a.sometimesSplit.length ? `
+          <div class="rep-head">Sometimes split — depends on something not captured yet</div>
+          ${a.sometimesSplit.map(reportRow).join('')}` : ''}
+        ${!a.alwaysSplit.length && !a.sometimesSplit.length
+          ? '<div class="rep-empty">No multi-label orders recorded yet, so there is no splitting pattern to show.</div>' : ''}
+        <div class="rep-note">Counting only — nothing here changes how orders are processed. When you want this interpreted properly, press Copy and paste it into a chat.</div>`;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:560px;">
+        <div class="rep-title">What the sync page has noticed</div>
+        <div style="max-height:60vh; overflow-y:auto;">${body}</div>
+        <div class="btn-row" style="margin-top:16px;">
+          <button class="btn btn-ghost" id="rep-copy">Copy for chat</button>
+          <button class="btn btn-primary" id="rep-ok">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#rep-ok').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#rep-copy').addEventListener('click', async (e) => {
+      // The raw entries, not the summary — so the full detail can be read.
+      const text = JSON.stringify({ summary: {
+        totalOrders: a.totalOrders, split: a.split, edited: a.edited, headerEdited: a.headerEdited
+      }, entries: log }, null, 1);
+      try {
+        await navigator.clipboard.writeText(text);
+        e.target.textContent = 'Copied';
+      } catch (err) {
+        e.target.textContent = 'Copy failed';
+      }
+    });
+  }
 
   // ---------- Always-approve products ----------
   // Products you've marked as never needing a look. An order is added
