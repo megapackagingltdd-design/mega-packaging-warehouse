@@ -370,6 +370,55 @@
     .mp-order-card.mp-web, .mp-order-card.mp-web.state-purple { animation: none; }
   }
 
+  /* ---------- Measuring tape + dimensions ---------- */
+  /* Bottom-right of the card, clear of the label-count badge (top-right)
+     and the WEBSITE ribbon (top-left). */
+  .mp-tape-btn {
+    position: absolute; bottom: 6px; right: 6px; z-index: 4;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: #fff; border: 2px solid #c65d2e; color: #c65d2e;
+    font-size: 16px; line-height: 1; cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 5px rgba(0,0,0,.25);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-tape-btn:active { background: #c65d2e; transform: scale(.92); }
+  /* A completion time already sits bottom-right, so the chip row is given
+     room rather than letting the two overlap. */
+  .mp-order-card:has(.mp-tape-btn) .mp-order-card-foot { padding-right: 40px; }
+
+  .mp-dim-head { padding: 4px 34px 18px; text-align: center; }
+  .mp-dim-eyebrow {
+    font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+    color: #9a948a; margin-bottom: 6px;
+  }
+  .mp-dim-product { font-size: 24px; font-weight: 900; color: #141714; line-height: 1.25; }
+
+  /* minmax(0, 1fr), not 1fr: a plain 1fr won't shrink below the intrinsic
+     width of the number inputs, so the columns blew past the popup and the
+     Length and Height boxes were cut off the right-hand edge. */
+  .mp-dim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 4px; }
+  @media (max-width: 460px) { .mp-dim-grid { grid-template-columns: minmax(0, 1fr); } }
+  .mp-dim-field { display: block; text-align: left; }
+  .mp-dim-field > span {
+    display: block; font-size: 12px; font-weight: 800; color: #555; margin-bottom: 5px;
+  }
+  .mp-dim-field > span i { font-style: normal; font-weight: 700; color: #a33; }
+  .mp-dim-field.required > span { color: #1a1d1a; }
+  .mp-dim-input { display: flex; align-items: center; gap: 8px; }
+  .mp-dim-input input {
+    flex: 1; min-width: 0; font-family: inherit; font-size: 22px; font-weight: 800;
+    padding: 12px 14px; border: 2px solid var(--line); border-radius: 10px;
+    background: #fff; color: #1a1d1a; box-sizing: border-box;
+  }
+  .mp-dim-field.required .mp-dim-input input { border-color: #c65d2e; }
+  .mp-dim-input input:focus { outline: none; border-color: #2f8f4a; }
+  .mp-dim-input em { font-style: normal; font-size: 14px; font-weight: 800; color: #8a8378; }
+  .mp-dim-error {
+    min-height: 20px; font-size: 13px; font-weight: 700; color: #a33;
+    text-align: left; padding: 6px 2px 10px;
+  }
+
   /* ---------- Long-press action sheet ---------- */
   /* Nothing in here is text to be selected. Without this, holding a finger
      on a slot starts a text selection and pops the copy/paste callout on
@@ -2372,6 +2421,71 @@ This backup was generated in one click from Back End and contains:
     return { bg: '#ffffff', border: '#d8d5cc' };
   }
 
+  // ---------- Product dimensions ----------
+  // A record of what each product physically is: weight, and length / width
+  // / height if someone measured them. Built up from the floor, one product
+  // at a time, so it can be exported and pasted into Amazon and the other
+  // channels instead of being measured again every time.
+  //
+  // Only ever offered on a slot holding ONE product. With two or more there
+  // is no way for staff to know which one they're describing, and a wrong
+  // measurement is worse than a missing one.
+  //
+  // Keyed on the product line exactly as the slot shows it, quantity
+  // included: "8ply x1" and "8ply x2" are different parcels and measure
+  // differently, so they're recorded separately rather than one overwriting
+  // the other.
+  const DIMENSIONS_KEY = 'product-dimensions';
+  let productDimensions = {};     // key -> record
+
+  function dimensionKey(productLine) {
+    return String(productLine || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  async function loadProductDimensions() {
+    try {
+      const res = await window.storage.get(DIMENSIONS_KEY, true);
+      productDimensions = (res && res.value) ? JSON.parse(res.value) : {};
+    } catch (e) {
+      productDimensions = {};
+    }
+    return productDimensions;
+  }
+
+  async function saveProductDimension(record) {
+    // Re-read before writing: two people may be measuring different products
+    // at the same time, and a blind overwrite would lose one of them.
+    return queueStorageWrite(DIMENSIONS_KEY, async () => {
+      let all = {};
+      try {
+        const res = await window.storage.get(DIMENSIONS_KEY, true);
+        all = (res && res.value) ? JSON.parse(res.value) : {};
+      } catch (e) { all = {}; }
+      all[record.key] = record;
+      const ok = await window.storage.set(DIMENSIONS_KEY, JSON.stringify(all), true);
+      if (ok) productDimensions = all;
+      return !!ok;
+    });
+  }
+
+  // The one product on this slot, or null when there are none or several.
+  function singleProductOf(order) {
+    const { products } = getDisplayLines(order.raw || '');
+    const real = (products || []).map(p => String(p).trim()).filter(Boolean);
+    return real.length === 1 ? real[0] : null;
+  }
+
+  function dimensionsKnown(productLine) {
+    const k = dimensionKey(productLine);
+    return !!(k && productDimensions[k]);
+  }
+
+  // Shown only where it can actually be used: one product, not yet measured.
+  function needsDimensions(order) {
+    const p = singleProductOf(order);
+    return !!p && !dimensionsKnown(p);
+  }
+
   // Orders placed on the Mega website carry an MP-#### order number and
   // follow a different fulfilment process from Amazon / Sendcloud ones, so
   // they are themed separately on the board.
@@ -2403,6 +2517,10 @@ This backup was generated in one click from Back End and contains:
     }
 
     const labelBadge = o.labelCount ? `<div class="mp-label-count-badge" title="${o.labelCount} labels used">${o.labelCount}</div>` : '';
+    // Measuring tape — only on a single-product slot we have no record for.
+    const tapeBtn = needsDimensions(o)
+      ? `<button class="mp-tape-btn" data-measure="${o.id}" title="Record this product's weight and size">📏</button>`
+      : '';
     const copyWarning = o._possibleCopy ? `<div class="mp-possible-copy-label">POSSIBLE COPY</div>` : '';
     const { header, products } = getDisplayLines(o.raw);
     const notDone = Array.isArray(o.notDoneProducts) ? o.notDoneProducts : [];
@@ -2411,6 +2529,7 @@ This backup was generated in one click from Back End and contains:
     return `
       <div class="mp-order-card${isWebsiteOrder(o) ? ' mp-web' : ''}${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
+        ${tapeBtn}
         ${copyWarning}
         <div class="mp-order-card-main">${headerLine}<div class="mp-card-products">${productLines}</div></div>
         <div class="mp-order-card-foot">
@@ -2638,6 +2757,7 @@ This backup was generated in one click from Back End and contains:
 
   async function loadAndRenderList() {
     allOrders = await getAllOrders();
+    await loadProductDimensions();
     const todayOrders = allOrders.filter(o => o.addedAt && isToday(o.addedAt));
     checkForNewOrdersAndChime(todayOrders);
     updateSummaryBanner(todayOrders);
@@ -2879,6 +2999,114 @@ This backup was generated in one click from Back End and contains:
       if (scrollKeys.includes(e.key)) e.preventDefault();
     });
   })();
+
+  // Weight is required — it's the one figure every channel insists on and a
+  // listing can't go up without it. Length / width / height are optional,
+  // because a measuring tape isn't always to hand and a weight on its own
+  // is still worth having.
+  function showDimensionsModal(productLine, existing) {
+    return new Promise(resolve => {
+      const e = existing || {};
+      const overlay = document.createElement('div');
+      overlay.className = 'mp-modal-overlay';
+      overlay.innerHTML = `
+        <div class="mp-sheet" style="max-width:520px;">
+          <button class="mp-sheet-x" id="dim-cancel" aria-label="Close">&times;</button>
+          <div class="mp-dim-head">
+            <div class="mp-dim-eyebrow">📏 Measure this product</div>
+            <div class="mp-dim-product">${escapeHtml(productLine)}</div>
+          </div>
+          <div class="mp-dim-grid">
+            <label class="mp-dim-field required">
+              <span>Weight <i>(required)</i></span>
+              <div class="mp-dim-input"><input type="number" id="dim-weight" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${e.weight != null ? e.weight : ''}"><em>kg</em></div>
+            </label>
+            <label class="mp-dim-field">
+              <span>Length</span>
+              <div class="mp-dim-input"><input type="number" id="dim-l" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.length != null ? e.length : ''}"><em>cm</em></div>
+            </label>
+            <label class="mp-dim-field">
+              <span>Width</span>
+              <div class="mp-dim-input"><input type="number" id="dim-w" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.width != null ? e.width : ''}"><em>cm</em></div>
+            </label>
+            <label class="mp-dim-field">
+              <span>Height</span>
+              <div class="mp-dim-input"><input type="number" id="dim-h" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.height != null ? e.height : ''}"><em>cm</em></div>
+            </label>
+          </div>
+          <div class="mp-dim-error" id="dim-error"></div>
+          <div class="mp-sheet-actions" style="margin-top:4px;">
+            <button class="mp-sheet-btn" id="dim-skip" style="background:#6b7280;">Not now</button>
+            <button class="mp-sheet-btn" id="dim-save" style="background:#2f8f4a;">Save</button>
+          </div>
+        </div>`;
+      root.appendChild(overlay);
+
+      const weightEl = overlay.querySelector('#dim-weight');
+      const errEl = overlay.querySelector('#dim-error');
+      weightEl.focus();
+
+      const close = (val) => { overlay.remove(); resolve(val); };
+      overlay.querySelector('#dim-cancel').addEventListener('click', () => close(null));
+      overlay.querySelector('#dim-skip').addEventListener('click', () => close(null));
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(null); });
+
+      const num = (sel) => {
+        const v = String(overlay.querySelector(sel).value || '').trim();
+        if (v === '') return null;
+        const n = Number(v);
+        return isFinite(n) && n > 0 ? n : null;
+      };
+
+      overlay.querySelector('#dim-save').addEventListener('click', () => {
+        const weight = num('#dim-weight');
+        if (weight == null) {
+          errEl.textContent = 'Weight is needed — it is the one figure every channel asks for.';
+          weightEl.focus();
+          return;
+        }
+        close({ weight, length: num('#dim-l'), width: num('#dim-w'), height: num('#dim-h') });
+      });
+
+      // Enter moves on rather than submitting half-filled, except on the
+      // last box where it saves — quicker with a keyboard at the bench.
+      const order = ['#dim-weight', '#dim-l', '#dim-w', '#dim-h'];
+      order.forEach((sel, i) => {
+        overlay.querySelector(sel).addEventListener('keydown', (ev) => {
+          if (ev.key !== 'Enter') return;
+          ev.preventDefault();
+          if (i < order.length - 1) overlay.querySelector(order[i + 1]).focus();
+          else overlay.querySelector('#dim-save').click();
+        });
+      });
+    });
+  }
+
+  async function handleMeasureRequest(order) {
+    const productLine = singleProductOf(order);
+    if (!productLine) return;
+    const key = dimensionKey(productLine);
+    const result = await showDimensionsModal(productLine, productDimensions[key]);
+    if (!result) return;
+    const record = {
+      key,
+      product: productLine,
+      // Whatever SKUs came with this order. On a single-product slot this
+      // is normally exactly one, which is what makes the export usable.
+      skus: Array.isArray(order.sourceSkus) ? order.sourceSkus : [],
+      weight: result.weight,
+      length: result.length,
+      width: result.width,
+      height: result.height,
+      recordedAt: Date.now()
+    };
+    const ok = await saveProductDimension(record);
+    if (ok) {
+      loadAndRenderList();
+    } else {
+      await customAlert('Could not save those measurements — try again.');
+    }
+  }
 
   // Action sheet shown on long-press. Built for a touchscreen: big targets,
   // real spacing, and the order itself readable at a glance rather than
@@ -3150,6 +3378,16 @@ This backup was generated in one click from Back End and contains:
   let longPressFired = false;
 
   whListBody.addEventListener('click', (e) => {
+    // The tape sits on top of the card, so its click has to be caught
+    // before the card's own tap-to-green handler sees it.
+    const tape = e.target.closest('[data-measure]');
+    if (tape) {
+      e.stopPropagation();
+      const ord = allOrders.find(o => String(o.id) === String(tape.dataset.measure));
+      if (ord) handleMeasureRequest(ord).catch(err => console.error('measure failed:', err));
+      return;
+    }
+
     const bulkBtn = e.target.closest('.mp-bulk-print-btn');
     if (!bulkBtn) return;
     e.stopPropagation();
@@ -3160,6 +3398,7 @@ This backup was generated in one click from Back End and contains:
   });
 
   whListBody.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('[data-measure]')) return;  // holding the tape isn't a slot long-press
     const card = e.target.closest('.mp-order-card');
     if (!card) return;
     longPressFired = false;
@@ -3186,6 +3425,7 @@ This backup was generated in one click from Back End and contains:
 
   whListBody.addEventListener('click', async (e) => {
     if (longPressFired) { longPressFired = false; return; } // long-press already handled this interaction
+    if (e.target.closest('[data-measure]')) return;            // the tape, not the slot
     const card = e.target.closest('.mp-order-card');
     if (!card) return;
     const id = card.dataset.id;
