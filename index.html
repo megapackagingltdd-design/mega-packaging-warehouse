@@ -279,6 +279,97 @@
     position: fixed; inset: 0; background: rgba(26,29,26,0.55);
     display: flex; align-items: center; justify-content: center; z-index: 200; padding: 20px;
   }
+
+  /* ================= WEBSITE ORDERS (MP-####) =================
+     Orders from the Mega website follow a different process from Amazon /
+     Sendcloud ones, so they get a materials theme of their own rather than
+     the green / purple / blue track — a glance has to tell staff which
+     process an order belongs to before they read anything.
+
+       new      gold      (shimmering, loud — needs doing)
+       picked   bronze
+       printed  silver    (shimmering, cooler)
+       complete platinum  (pale and quiet — nothing left to do)
+       flagged  ruby      (deep red, still unmistakably a problem)
+
+     Every rule is !important because the card carries an inline group
+     colour that would otherwise win. */
+  .mp-order-card.mp-web {
+    overflow: hidden;
+    background: linear-gradient(135deg, #b8860b 0%, #e8c14a 18%, #fff3c4 30%, #e8c14a 42%,
+                #c9961a 60%, #e8c14a 80%, #b8860b 100%) !important;
+    background-size: 300% 100% !important;
+    border-color: #8a6412 !important;
+    animation: mpGoldSweep 4.5s linear infinite;
+  }
+  @keyframes mpGoldSweep {
+    0%   { background-position: 0% 50%; }
+    100% { background-position: 300% 50%; }
+  }
+
+  /* Ribbon sits top-LEFT so it never collides with the label-count badge,
+     which is pinned top-right. */
+  .mp-order-card.mp-web::after {
+    content: 'WEBSITE';
+    position: absolute; top: 11px; left: -30px; width: 104px;
+    transform: rotate(-45deg);
+    background: #c0392b; color: #fff;
+    font-size: 8.5px; font-weight: 900; letter-spacing: .12em;
+    text-align: center; padding: 2px 0; z-index: 3;
+    box-shadow: 0 1px 4px rgba(0,0,0,.3);
+  }
+
+  .mp-order-card.mp-web .mp-order-card-main,
+  .mp-order-card.mp-web .mp-card-header-line { color: #2a2206 !important; }
+  .mp-order-card.mp-web .mp-card-header-line { opacity: .72; }
+
+  /* --- picked: bronze --- */
+  .mp-order-card.mp-web.state-green {
+    background: linear-gradient(145deg, #b5702a 0%, #8c5116 100%) !important;
+    border-color: #6b3d0f !important;
+    animation: none;
+  }
+  /* --- printed: silver --- */
+  .mp-order-card.mp-web.state-purple {
+    background: linear-gradient(135deg, #8d949c 0%, #c9d1d9 20%, #f2f6fa 32%, #c9d1d9 46%,
+                #9aa2ab 64%, #c9d1d9 82%, #8d949c 100%) !important;
+    background-size: 300% 100% !important;
+    border-color: #6c737a !important;
+    animation: mpGoldSweep 5.5s linear infinite;
+  }
+  /* --- complete: platinum --- */
+  .mp-order-card.mp-web.state-blue {
+    background: linear-gradient(145deg, #e9edf2 0%, #cfd6de 100%) !important;
+    border-color: #a8b2bd !important;
+    animation: none;
+  }
+  /* --- flagged: ruby --- */
+  .mp-order-card.mp-web.state-red {
+    background: linear-gradient(145deg, #8e1b2e 0%, #5e0f1e 100%) !important;
+    border-color: #440a16 !important;
+    animation: none;
+  }
+
+  .mp-order-card.mp-web.state-green .mp-order-card-main,
+  .mp-order-card.mp-web.state-green .mp-card-header-line,
+  .mp-order-card.mp-web.state-red .mp-order-card-main,
+  .mp-order-card.mp-web.state-red .mp-card-header-line { color: #fff !important; }
+  .mp-order-card.mp-web.state-purple .mp-order-card-main,
+  .mp-order-card.mp-web.state-purple .mp-card-header-line,
+  .mp-order-card.mp-web.state-blue .mp-order-card-main,
+  .mp-order-card.mp-web.state-blue .mp-card-header-line { color: #1b1f24 !important; }
+
+  /* Ribbon recoloured so it stays legible on each metal. */
+  .mp-order-card.mp-web.state-purple::after,
+  .mp-order-card.mp-web.state-blue::after { background: #1b1f24; }
+  .mp-order-card.mp-web.state-red::after  { background: #f5d976; color: #5e0f1e; }
+
+  /* Staff may leave this screen running all day; respect a reduced-motion
+     preference rather than shimmering at them indefinitely. */
+  @media (prefers-reduced-motion: reduce) {
+    .mp-order-card.mp-web, .mp-order-card.mp-web.state-purple { animation: none; }
+  }
+
   /* ---------- Long-press action sheet ---------- */
   /* Nothing in here is text to be selected. Without this, holding a finger
      on a slot starts a text selection and pops the copy/paste callout on
@@ -2281,6 +2372,21 @@ This backup was generated in one click from Back End and contains:
     return { bg: '#ffffff', border: '#d8d5cc' };
   }
 
+  // Orders placed on the Mega website carry an MP-#### order number and
+  // follow a different fulfilment process from Amazon / Sendcloud ones, so
+  // they are themed separately on the board.
+  //
+  // Matched against the stored order numbers rather than the card text:
+  // product lines are free text and could easily contain something that
+  // looks like a code, and a mis-flagged order would send staff down the
+  // wrong process.
+  const MP_ORDER_RE = /^\s*MP[-\u2013\u2014 ]?\d+\s*$/i;
+
+  function isWebsiteOrder(o) {
+    const nums = Array.isArray(o && o.sourceOrderNumbers) ? o.sourceOrderNumbers : [];
+    return nums.some(n => MP_ORDER_RE.test(String(n || '')));
+  }
+
   function renderOrderCard(o) {
     const color = colorForGroup(o._group);
     const hasPartialScan = o.labelCount > 1 && o.scanCount > 0 && o.scanCount < o.labelCount && o.state !== 'blue';
@@ -2303,7 +2409,7 @@ This backup was generated in one click from Back End and contains:
     const headerLine = header ? `<div class="mp-card-header-line">${escapeHtml(header)}</div>` : '';
     const productLines = products.map((p, i) => `<div class="mp-card-product-line${notDone.includes(i) ? ' mp-card-product-red' : ''}">${escapeHtml(p)}</div>`).join('');
     return `
-      <div class="mp-order-card${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
+      <div class="mp-order-card${isWebsiteOrder(o) ? ' mp-web' : ''}${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
         ${copyWarning}
         <div class="mp-order-card-main">${headerLine}<div class="mp-card-products">${productLines}</div></div>
@@ -3340,7 +3446,11 @@ This backup was generated in one click from Back End and contains:
       const lc = matches[0].labelCount;
       const labelText = lc ? `Order has ${lc} label${lc === 1 ? '' : 's'}. ` : '';
       const previousDayText = fromPreviousDay ? 'Order is from previous. ' : '';
-      text = previousDayText + labelText + productText;
+      // Announced first, before anything else: website orders follow a
+      // different process, so staff need to know which one they're on
+      // before they start listening to the products.
+      const websiteText = isWebsiteOrder(matches[0]) ? 'Mega website. ' : '';
+      text = websiteText + previousDayText + labelText + productText;
     } else {
       text = `${matches.length} matches found. Select one order to continue.`;
     }
