@@ -398,17 +398,22 @@
     overflow: hidden;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
-  .mp-dim-bar { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 14px; }
-  .mp-dim-titles { flex: 1; min-width: 0; }
-  .mp-dim-eyebrow {
-    font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #9a948a;
-  }
+  /* The product name is the whole heading — there's no doubt what the
+     screen is for once it's open, so a title above it was just noise. */
+  .mp-dim-bar { flex: 0 0 auto; position: relative; display: flex; align-items: center; min-height: 52px; }
   .mp-dim-product {
-    font-size: clamp(20px, 3.4vh, 30px); font-weight: 900; color: #141714;
-    line-height: 1.2; margin-top: 2px;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1; min-width: 0;
+    text-align: center; padding: 0 58px;
+    /* Scales with width as well as height, so a long name isn't cut off on
+       a narrow screen; wraps to a second line rather than truncating,
+       because a half-shown product name is worse than a smaller one. */
+    font-size: clamp(20px, min(5vh, 6.5vw), 46px); font-weight: 900; color: #141714;
+    line-height: 1.15;
+    overflow: hidden;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
   }
   .mp-dim-close {
+    position: absolute; top: 50%; right: 0; transform: translateY(-50%);
     flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
     background: #e8e5dd; border: none; color: #444;
     font-size: 30px; line-height: 1; font-family: inherit; cursor: pointer;
@@ -427,14 +432,16 @@
   @media (max-width: 720px) { .mp-dim-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
   .mp-dim-tile {
-    display: flex; flex-direction: column;
+    display: flex; flex-direction: column; align-items: center;
     min-height: clamp(120px, 20vh, 170px); padding: 12px 14px; border-radius: 14px;
     background: #fff; border: 3px solid #e2ded4; cursor: pointer;
-    font-family: inherit; text-align: left; overflow: hidden;
+    font-family: inherit; text-align: center; overflow: hidden;
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .mp-dim-tile.active { border-color: #c65d2e; box-shadow: 0 0 0 4px rgba(198,93,46,.14); }
-  .mp-dim-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .mp-dim-tile-top {
+    width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
   .mp-dim-tile-label { font-size: 14px; font-weight: 800; color: #444; }
   .mp-dim-tile-label i { font-style: normal; font-size: 10px; font-weight: 900; color: #c0392b; letter-spacing: .05em; }
   .mp-dim-tile.required .mp-dim-tile-label { color: #1a1d1a; }
@@ -442,7 +449,7 @@
   .mp-dim-scale { font-size: 26px; line-height: 1; opacity: .5; }
 
   /* Centred in whatever space is left, rather than stranded at the bottom. */
-  .mp-dim-value { flex: 1; display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .mp-dim-value { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 4px; }
   .mp-dim-value span {
     font-size: clamp(26px, 5vh, 46px); font-weight: 900; color: #141714;
     font-variant-numeric: tabular-nums; line-height: 1;
@@ -3142,10 +3149,7 @@ This backup was generated in one click from Back End and contains:
       overlay.className = 'mp-dim-screen';
       overlay.innerHTML = `
         <div class="mp-dim-bar">
-          <div class="mp-dim-titles">
-            <div class="mp-dim-eyebrow">Measure this product</div>
-            <div class="mp-dim-product">${escapeHtml(productLine)}</div>
-          </div>
+          <div class="mp-dim-product">${escapeHtml(productLine)}</div>
           <button class="mp-dim-close" id="dim-cancel" aria-label="Close">&times;</button>
         </div>
 
