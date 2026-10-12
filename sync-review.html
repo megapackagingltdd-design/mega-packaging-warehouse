@@ -1720,6 +1720,87 @@
     return out;
   }
 
+  // What the slots actually ended up as, written by the print-watcher each
+  // evening. This is the half that matters for label counts: the approval
+  // log records what was sent in, this records what it turned into after
+  // the counts were edited.
+  async function loadOutcomeLog(weeks = 12) {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < weeks; i++) {
+      const key = isoWeekKey(d);
+      try {
+        const res = await storageCollection.doc(`outcome-log-${key}`).get();
+        if (res.exists) out.push(...JSON.parse(res.data().value || '[]'));
+      } catch (e) { /* a missing week is normal */ }
+      d.setDate(d.getDate() - 7);
+    }
+    return out;
+  }
+
+  // Groups the end-of-day records by product set and reports how often each
+  // one needed more than one label. Plain counting — a rule is only worth
+  // acting on once it has happened enough times to not be coincidence, and
+  // the count is shown so that judgement stays with you.
+  function analyseOutcomes(log) {
+    const bySig = new Map();
+    for (const r of log) {
+      if (!r.signature) continue;
+      if (!bySig.has(r.signature)) {
+        bySig.set(r.signature, { products: r.products, total: 0, counts: new Map(), joined: 0, manual: 0, skus: new Set() });
+      }
+      const rec = bySig.get(r.signature);
+      rec.total++;
+      const lc = r.labelCount || 1;
+      rec.counts.set(lc, (rec.counts.get(lc) || 0) + 1);
+      if (r.joined) rec.joined++;
+      if (r.manualLabel) rec.manual++;
+      for (const k of (r.skus || [])) rec.skus.add(k);
+    }
+
+    const always = [], usually = [], sometimes = [];
+    for (const [sig, rec] of bySig) {
+      const multi = [...rec.counts.entries()].filter(([n]) => n > 1).reduce((a, [, c]) => a + c, 0);
+      if (!multi) continue;
+      const row = {
+        sig, products: rec.products, total: rec.total, multi,
+        share: multi / rec.total,
+        labels: [...rec.counts.entries()].sort((a, b) => b[1] - a[1]),
+        joined: rec.joined, manual: rec.manual,
+        skus: [...rec.skus]
+      };
+      if (row.share === 1) always.push(row);
+      else if (row.share >= 0.6) usually.push(row);
+      else sometimes.push(row);
+    }
+    const bySize = (a, b) => b.total - a.total;
+    always.sort(bySize); usually.sort(bySize); sometimes.sort(bySize);
+
+    return {
+      days: new Set(log.map(r => r.day)).size,
+      slots: log.length,
+      multiLabel: log.filter(r => (r.labelCount || 1) > 1).length,
+      joined: log.filter(r => r.joined).length,
+      manual: log.filter(r => r.manualLabel).length,
+      always, usually, sometimes
+    };
+  }
+
+  function outcomeRow(r) {
+    const labelText = r.labels.map(([n, c]) => `${n} label${n === 1 ? '' : 's'} ×${c}`).join(', ');
+    const confident = r.total >= 4;
+    const most = r.labels[0] ? r.labels[0][0] : 1;
+    return `
+      <div class="rep-row">
+        <div class="rep-prod">${escapeHtml(r.products || r.sig)}</div>
+        <div class="rep-meta">${labelText} · seen ${r.total} time${r.total === 1 ? '' : 's'}
+          ${confident ? `<span class="rep-tag strong">usually ${most}</span>` : '<span class="rep-tag weak">too few to be sure</span>'}
+          ${r.joined ? `<span class="rep-tag weak">joined ×${r.joined}</span>` : ''}
+          ${r.manual ? `<span class="rep-tag weak">own label ×${r.manual}</span>` : ''}
+        </div>
+      </div>`;
+  }
+
   function analyseDecisions(log) {
     const bySig = new Map();
     for (const e of log) {
@@ -1772,32 +1853,51 @@
 
   async function showPatternReport() {
     const statusEl = document.getElementById('top-status');
-    statusEl.textContent = 'Reading the decision log…';
-    let log = [];
-    try { log = await loadDecisionLog(12); }
-    catch (e) { statusEl.textContent = 'Could not read the log — ' + ((e && e.message) || 'try again'); return; }
+    statusEl.textContent = 'Reading the logs…';
+    let log = [], outcomes = [];
+    try {
+      log = await loadDecisionLog(12);
+      outcomes = await loadOutcomeLog(12);
+    }
+    catch (e) { statusEl.textContent = 'Could not read the logs — ' + ((e && e.message) || 'try again'); return; }
     statusEl.textContent = '';
     const a = analyseDecisions(log);
+    const o = analyseOutcomes(outcomes);
 
     const since = a.firstAt ? new Date(a.firstAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'long' }) : null;
-    const body = a.totalOrders === 0
-      ? `<div class="rep-empty">Nothing recorded yet. The log starts filling from the next sync you approve — come back after a few days of normal work.</div>`
+    const nothingYet = a.totalOrders === 0 && o.slots === 0;
+
+    const body = nothingYet
+      ? `<div class="rep-empty">Nothing recorded yet. Approvals are logged from the next sync, and the day's finished slots are read back by the print-watcher each evening. Come back after a few days of normal work.</div>`
       : `
         <div class="rep-stats">
-          <div><b>${a.totalOrders}</b> orders recorded${since ? ' since ' + since : ''}</div>
-          <div><b>${a.split}</b> sent as more than one label</div>
-          <div><b>${a.edited}</b> where you changed the products</div>
-          <div><b>${a.headerEdited}</b> where you changed the name line</div>
+          <div><b>${a.totalOrders}</b> orders approved${since ? ' since ' + since : ''}</div>
+          <div><b>${a.edited}</b> where you changed the products before approving</div>
         </div>
-        ${a.alwaysSplit.length ? `
-          <div class="rep-head">Always split — every time you've seen these</div>
-          ${a.alwaysSplit.map(reportRow).join('')}` : ''}
-        ${a.sometimesSplit.length ? `
-          <div class="rep-head">Sometimes split — depends on something not captured yet</div>
-          ${a.sometimesSplit.map(reportRow).join('')}` : ''}
-        ${!a.alwaysSplit.length && !a.sometimesSplit.length
-          ? '<div class="rep-empty">No multi-label orders recorded yet, so there is no splitting pattern to show.</div>' : ''}
-        <div class="rep-note">Counting only — nothing here changes how orders are processed. When you want this interpreted properly, press Copy and paste it into a chat.</div>`;
+
+        <div class="rep-head">What the slots ended up as</div>
+        ${o.slots === 0 ? `
+          <div class="rep-empty">No evening sweeps recorded yet. The print-watcher reads the finished slots after ${'8pm'} — this fills in once it has run on a working day.</div>`
+        : `
+          <div class="rep-stats">
+            <div><b>${o.slots}</b> slots read back over <b>${o.days}</b> day(s)</div>
+            <div><b>${o.multiLabel}</b> finished with more than one label</div>
+            <div><b>${o.joined}</b> were joined from separate orders</div>
+            <div><b>${o.manual}</b> used a label from outside Sendcloud</div>
+          </div>
+          ${o.always.length ? `
+            <div class="rep-head">Always needed extra labels</div>
+            ${o.always.map(outcomeRow).join('')}` : ''}
+          ${o.usually.length ? `
+            <div class="rep-head">Usually needed extra labels</div>
+            ${o.usually.map(outcomeRow).join('')}` : ''}
+          ${o.sometimes.length ? `
+            <div class="rep-head">Sometimes — depends on something not captured yet</div>
+            ${o.sometimes.map(outcomeRow).join('')}` : ''}
+          ${!o.always.length && !o.usually.length && !o.sometimes.length
+            ? '<div class="rep-empty">Nothing has needed a second label yet, so there is no pattern to show.</div>' : ''}
+        `}
+        <div class="rep-note">Counting only — nothing here changes how orders are processed, and no label is created automatically. When you want this read properly, press Copy and paste it into a chat.</div>`;
 
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -1815,9 +1915,12 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     overlay.querySelector('#rep-copy').addEventListener('click', async (e) => {
       // The raw entries, not the summary — so the full detail can be read.
-      const text = JSON.stringify({ summary: {
-        totalOrders: a.totalOrders, split: a.split, edited: a.edited, headerEdited: a.headerEdited
-      }, entries: log }, null, 1);
+      const text = JSON.stringify({
+        approvals: { totalOrders: a.totalOrders, edited: a.edited, headerEdited: a.headerEdited },
+        outcomes: { days: o.days, slots: o.slots, multiLabel: o.multiLabel, joined: o.joined, manual: o.manual },
+        approvalEntries: log,
+        outcomeEntries: outcomes
+      }, null, 1);
       try {
         await navigator.clipboard.writeText(text);
         e.target.textContent = 'Copied';
