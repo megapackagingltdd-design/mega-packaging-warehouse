@@ -195,6 +195,17 @@
   .rep-empty { font-size: 13.5px; color: #777; line-height: 1.55; }
   .rep-note { font-size: 12px; color: #999; line-height: 1.5; margin-top: 16px; border-top: 1px solid #ece9e1; padding-top: 10px; }
 
+  .chan-chip {
+    display: inline-block; margin: 6px 0 2px; padding: 3px 10px; border-radius: 5px;
+    font-size: 11px; font-weight: 800; letter-spacing: .03em;
+    border: 1.5px solid; background: #fff;
+  }
+  .chan-amazon { color: #8a5200; border-color: #f0a830; background: #fff8ec; }
+  .chan-web    { color: #7a5c00; border-color: #e0b63c; background: #fffbe9; }
+  .chan-ebay   { color: #0b5ea8; border-color: #4a9fe0; background: #eef6fd; }
+  .chan-manual { color: #5a5a5a; border-color: #b9b9b9; background: #f5f5f5; }
+  .chan-other  { color: #3d6b45; border-color: #86b593; background: #f0f7f1; }
+
   .joined-card { border: 2px solid #c0392b; }
   .joined-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .joined-title { font-size: 15px; font-weight: 900; color: #a3271b; }
@@ -621,6 +632,21 @@
     return /^8\s*ply\s*x\s*1$/.test(item);         // "8ply x1", "8 ply x 1" — but not x2, x10
   }
 
+  // Which sales channel an order arrived from. Colour-coded so a glance is
+  // enough: a flagged order usually has to be traced back to its source, and
+  // knowing whether that's Amazon or the website decides where you go looking.
+  function channelChipHtml(channel) {
+    const name = String(channel || '').trim();
+    if (!name) return '';
+    const l = name.toLowerCase();
+    let cls = 'chan-other';
+    if (l.includes('amazon')) cls = 'chan-amazon';
+    else if (l.includes('mega website') || l.includes('website')) cls = 'chan-web';
+    else if (l.includes('ebay')) cls = 'chan-ebay';
+    else if (l.includes('sendcloud')) cls = 'chan-manual';
+    return `<div class="chan-chip ${cls}">${escapeHtml(name)}</div>`;
+  }
+
   // ---------- Review queue ----------
   function buildReviewCardHtml(doc, d) {
     let originalItems = [];
@@ -639,6 +665,7 @@
       <div class="review-card${d.needsReview ? ' flagged' : ''}${d.isStuckOrder ? ' stuck' : ''}" data-id="${doc.id}">
         ${d.needsReview ? `<div class="review-flag${d.isStuckOrder ? ' stuck' : ''}">${d.isStuckOrder ? '🔴' : '⚠️'} ${escapeHtml(d.reviewReasons || 'Needs review')}</div>` : ''}
         <div class="review-header long-press-target" data-name="${escapeHtml(nameOnly)}">${escapeHtml(headerLine)}</div>
+        ${channelChipHtml(d.channel)}
 
         <div class="compare-block">
           <div class="compare-label">Original (from Sendcloud)</div>
