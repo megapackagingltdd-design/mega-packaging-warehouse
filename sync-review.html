@@ -195,6 +195,21 @@
   .rep-empty { font-size: 13.5px; color: #777; line-height: 1.55; }
   .rep-note { font-size: 12px; color: #999; line-height: 1.5; margin-top: 16px; border-top: 1px solid #ece9e1; padding-top: 10px; }
 
+  .dim-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid #ece9e1;
+  }
+  .dim-row:last-child { border-bottom: none; }
+  .dim-main { flex: 1; min-width: 0; }
+  .dim-product { font-size: 15px; font-weight: 900; color: #1a1d1a; line-height: 1.3; }
+  .dim-sku {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; color: #777; margin-top: 2px; word-break: break-all;
+  }
+  .dim-figs { font-size: 13px; color: #444; margin-top: 4px; }
+  .dim-figs b { color: #2f6b3e; font-size: 14px; }
+  .dim-missing { color: #b0aaa0; font-style: italic; }
+
   .chan-chip {
     display: inline-block; margin: 6px 0 2px; padding: 3px 10px; border-radius: 5px;
     font-size: 11px; font-weight: 800; letter-spacing: .03em;
@@ -349,6 +364,7 @@
     <button class="tab warn" data-tab="notscanned" style="display:none;">Not scanned <span class="tab-count" id="count-notscanned">0</span></button>
     <button class="tab" data-tab="upload">Upload</button>
     <button class="tab" data-tab="learned">Learned</button>
+    <button class="tab" data-tab="dimensions">Dimensions <span class="tab-count" id="count-dimensions">0</span></button>
   </div>
 
   <div class="card tab-panel" id="panel-attention" style="display:none;">
@@ -410,6 +426,17 @@
     <div class="tab-empty" id="learned-empty" style="display:none;">Nothing learned yet. Correct a flagged order and you'll be asked to save it.</div>
     <div id="learned-list"></div>
   </div>
+
+  <div class="card tab-panel" id="panel-dimensions" style="display:none;">
+    <div class="tab-empty" id="dimensions-empty" style="display:none;">
+      No measurements recorded yet. In the warehouse view, single-product slots show a 📏 button — measure one and it appears here.
+    </div>
+    <div class="btn-row" id="dimensions-actions" style="display:none; margin-bottom:10px;">
+      <button class="btn btn-good" id="btn-dim-copy">Copy for spreadsheet</button>
+      <button class="btn btn-ghost" id="btn-dim-csv">Download CSV</button>
+    </div>
+    <div id="dimensions-list"></div>
+  </div>
 </div>
 
 <script>
@@ -462,6 +489,7 @@
       loadAutoApprove().then(renderLearnedList);
       renderNotScanned();
       renderJoined();
+      renderDimensions();
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -539,6 +567,7 @@
       if (it.sourceOrderNumbers && it.sourceOrderNumbers.length) entry.sourceOrderNumbers = it.sourceOrderNumbers;
       if (it.trackingNumbers && it.trackingNumbers.length) entry.trackingNumbers = it.trackingNumbers;
       if (it.notProcessedType) entry.notProcessedType = true;
+      if (it.sourceSkus && it.sourceSkus.length) entry.sourceSkus = it.sourceSkus;
       existing.push(entry);
     });
     await storageCollection.doc(key).set({ value: JSON.stringify(existing), shared: true, updatedAt: now });
@@ -559,6 +588,25 @@
   }
 
   // ---------- Sync from Sendcloud ----------
+  document.getElementById('btn-dim-copy').addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(dimensionsTable('\t'));
+      e.target.textContent = 'Copied — paste into a spreadsheet';
+      setTimeout(() => { e.target.textContent = 'Copy for spreadsheet'; }, 2500);
+    } catch (err) {
+      e.target.textContent = 'Copy failed';
+    }
+  });
+
+  document.getElementById('btn-dim-csv').addEventListener('click', () => {
+    const blob = new Blob([dimensionsTable(',')], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `product-dimensions-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
   document.getElementById('btn-pattern').addEventListener('click', () => {
     showPatternReport().catch(e => showRenderError('the pattern report', e));
   });
@@ -948,6 +996,77 @@
     }
   }
 
+  // ---------- Product dimensions ----------
+  // Written from the warehouse view, read here so the whole set can be
+  // pulled out in one go and pasted into Amazon and the other channels.
+  const DIMENSIONS_KEY = 'product-dimensions';
+  let dimensionRows = [];
+
+  async function renderDimensions() {
+    try { await renderDimensionsInner(); }
+    catch (e) { showRenderError('the dimensions list', e); }
+  }
+
+  async function renderDimensionsInner() {
+    const listEl = document.getElementById('dimensions-list');
+    const res = await storageCollection.doc(DIMENSIONS_KEY).get();
+    let all = {};
+    if (res.exists) {
+      try { all = JSON.parse(res.data().value || '{}'); } catch (e) { all = {}; }
+    }
+    dimensionRows = Object.values(all).sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0));
+    setTabCount('dimensions', dimensionRows.length);
+
+    const actions = document.getElementById('dimensions-actions');
+    if (!dimensionRows.length) {
+      listEl.innerHTML = '';
+      actions.style.display = 'none';
+      document.getElementById('dimensions-empty').style.display = 'block';
+      return;
+    }
+    document.getElementById('dimensions-empty').style.display = 'none';
+    actions.style.display = 'flex';
+
+    listEl.innerHTML = dimensionRows.map(r => {
+      const dims = (r.length && r.width && r.height)
+        ? `${r.length} &times; ${r.width} &times; ${r.height} cm`
+        : '<span class="dim-missing">size not measured</span>';
+      const skus = (r.skus && r.skus.length) ? r.skus.join(', ') : '<span class="dim-missing">no SKU recorded</span>';
+      return `
+        <div class="dim-row">
+          <div class="dim-main">
+            <div class="dim-product">${escapeHtml(r.product || r.key || '')}</div>
+            <div class="dim-sku">${skus}</div>
+            <div class="dim-figs"><b>${r.weight} kg</b> &middot; ${dims}</div>
+          </div>
+          <button class="learned-btn remove" data-action="remove-dimension" data-key="${escapeHtml(r.key)}">Remove</button>
+        </div>`;
+    }).join('');
+  }
+
+  // A header row plus one line per product. Tab-separated so it pastes
+  // straight into a spreadsheet with the columns already split.
+  function dimensionsTable(sep) {
+    const head = ['SKU', 'Product', 'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)', 'Recorded'];
+    const rows = dimensionRows.map(r => ([
+      (r.skus && r.skus.length) ? r.skus.join(' / ') : '',
+      r.product || r.key || '',
+      r.weight != null ? r.weight : '',
+      r.length != null ? r.length : '',
+      r.width != null ? r.width : '',
+      r.height != null ? r.height : '',
+      r.recordedAt ? new Date(r.recordedAt).toLocaleDateString('en-GB') : ''
+    ]));
+    const esc = (v) => {
+      const t = String(v);
+      // Only CSV needs quoting; a tab-separated paste must stay unquoted
+      // or the spreadsheet shows the quotes.
+      if (sep !== ',') return t.replace(/[\t\r\n]+/g, ' ');
+      return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    return [head, ...rows].map(r => r.map(esc).join(sep)).join('\n');
+  }
+
   // ---------- Joined orders ----------
   // Separate orders from the same customer merged into one slot. Correct to
   // pick as one, but Sendcloud still holds a label per order — so this is the
@@ -1198,6 +1317,18 @@
     if (!btn) return;
     const action = btn.dataset.action;
 
+    if (action === 'remove-dimension') {
+      const key = btn.dataset.key;
+      if (!confirm(`Remove the measurements for "${key}"? The 📏 button will come back on that product so it can be measured again.`)) return;
+      try {
+        const res = await storageCollection.doc(DIMENSIONS_KEY).get();
+        const all = res.exists ? JSON.parse(res.data().value || '{}') : {};
+        delete all[key];
+        await storageCollection.doc(DIMENSIONS_KEY).set({ value: JSON.stringify(all), shared: true, updatedAt: Date.now() });
+      } catch (err) { showRenderError('the dimensions list', err); }
+      renderDimensions();
+      return;
+    }
     if (action === 'remove-approved') {
       const key = btn.dataset.key;
       if (!confirm(`Stop auto-approving "${key}"? Orders with it will come back for review.`)) return;
@@ -1291,7 +1422,15 @@
       const d = doc.exists ? doc.data() : {};
       const orderNumbers = String(d.orderNumber || '').split(',').map(s => s.trim()).filter(Boolean);
       const trackingNumbers = String(d.trackingNumber || '').split(',').map(s => s.trim()).filter(Boolean);
-      items.push({ docId, raw, sourceOrderNumbers: orderNumbers, trackingNumbers });
+      // The SKUs are only available here, on the review record. Carried onto
+      // the slot so the dimensions database can record a real SKU rather
+      // than only the converted product name.
+      let skuList = [];
+      try {
+        skuList = (JSON.parse(d.originalItemsJson || '[]') || [])
+          .map(it => String(it.sku || '').trim()).filter(Boolean);
+      } catch (e) {}
+      items.push({ docId, raw, sourceOrderNumbers: orderNumbers, trackingNumbers, sourceSkus: [...new Set(skuList)] });
 
       // Observation only — captured here because this is the one point
       // where the system's proposal and your final answer both exist.
