@@ -2965,7 +2965,10 @@ This backup was generated in one click from Back End and contains:
     return docRef.id;
   }
 
-  function pollPrintRequestStatus(requestId, { timeoutMs = 60000, intervalMs = 2000 } = {}) {
+  // Checked every 700ms rather than every 2s: the label is usually already
+  // out of the printer before a 2s poll noticed, which made printing feel
+  // slower than it was. A handful of extra reads per print is nothing.
+  function pollPrintRequestStatus(requestId, { timeoutMs = 60000, intervalMs = 700 } = {}) {
     return new Promise((resolve) => {
       const startedAt = Date.now();
       const check = async () => {
