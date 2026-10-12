@@ -387,37 +387,101 @@
      room rather than letting the two overlap. */
   .mp-order-card:has(.mp-tape-btn) .mp-order-card-foot { padding-right: 40px; }
 
-  .mp-dim-head { padding: 4px 34px 18px; text-align: center; }
+  /* Full screen and opaque. Nothing behind shows through, and nothing
+     scrolls: every control is sized to fit the viewport so a number can't
+     be typed into a field that's half off the screen. */
+  .mp-dim-screen {
+    position: fixed; inset: 0; z-index: 960;
+    background: #f6f5f1;
+    display: flex; flex-direction: column;
+    padding: 14px 16px 16px; gap: 10px;
+    overflow: hidden;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .mp-dim-bar { flex: 0 0 auto; display: flex; align-items: flex-start; gap: 14px; }
+  .mp-dim-titles { flex: 1; min-width: 0; }
   .mp-dim-eyebrow {
-    font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
-    color: #9a948a; margin-bottom: 6px;
+    font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: #9a948a;
   }
-  .mp-dim-product { font-size: 24px; font-weight: 900; color: #141714; line-height: 1.25; }
+  .mp-dim-product {
+    font-size: clamp(20px, 3.4vh, 30px); font-weight: 900; color: #141714;
+    line-height: 1.2; margin-top: 2px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .mp-dim-close {
+    flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%;
+    background: #e8e5dd; border: none; color: #444;
+    font-size: 30px; line-height: 1; font-family: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-dim-close:active { background: #d8d4ca; }
 
-  /* minmax(0, 1fr), not 1fr: a plain 1fr won't shrink below the intrinsic
-     width of the number inputs, so the columns blew past the popup and the
-     Length and Height boxes were cut off the right-hand edge. */
-  .mp-dim-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 4px; }
-  @media (max-width: 460px) { .mp-dim-grid { grid-template-columns: minmax(0, 1fr); } }
-  .mp-dim-field { display: block; text-align: left; }
-  .mp-dim-field > span {
-    display: block; font-size: 12px; font-weight: 800; color: #555; margin-bottom: 5px;
+  /* Four tiles across; two-up only when the screen is genuinely narrow. */
+  /* The tiles take only what they need; the keypad gets the rest, so the
+     keys are as large as the screen allows. */
+  .mp-dim-fields {
+    flex: 0 0 auto;
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
   }
-  .mp-dim-field > span i { font-style: normal; font-weight: 700; color: #a33; }
-  .mp-dim-field.required > span { color: #1a1d1a; }
-  .mp-dim-input { display: flex; align-items: center; gap: 8px; }
-  .mp-dim-input input {
-    flex: 1; min-width: 0; font-family: inherit; font-size: 22px; font-weight: 800;
-    padding: 12px 14px; border: 2px solid var(--line); border-radius: 10px;
-    background: #fff; color: #1a1d1a; box-sizing: border-box;
+  @media (max-width: 720px) { .mp-dim-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+  .mp-dim-tile {
+    display: flex; flex-direction: column;
+    min-height: clamp(120px, 20vh, 170px); padding: 12px 14px; border-radius: 14px;
+    background: #fff; border: 3px solid #e2ded4; cursor: pointer;
+    font-family: inherit; text-align: left; overflow: hidden;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
-  .mp-dim-field.required .mp-dim-input input { border-color: #c65d2e; }
-  .mp-dim-input input:focus { outline: none; border-color: #2f8f4a; }
-  .mp-dim-input em { font-style: normal; font-size: 14px; font-weight: 800; color: #8a8378; }
-  .mp-dim-error {
-    min-height: 20px; font-size: 13px; font-weight: 700; color: #a33;
-    text-align: left; padding: 6px 2px 10px;
+  .mp-dim-tile.active { border-color: #c65d2e; box-shadow: 0 0 0 4px rgba(198,93,46,.14); }
+  .mp-dim-tile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .mp-dim-tile-label { font-size: 14px; font-weight: 800; color: #444; }
+  .mp-dim-tile-label i { font-style: normal; font-size: 10px; font-weight: 900; color: #c0392b; letter-spacing: .05em; }
+  .mp-dim-tile.required .mp-dim-tile-label { color: #1a1d1a; }
+  .mp-dim-svg { width: clamp(54px, 7vh, 76px); height: auto; flex: 0 0 auto; }
+  .mp-dim-scale { font-size: 26px; line-height: 1; opacity: .5; }
+
+  /* Centred in whatever space is left, rather than stranded at the bottom. */
+  .mp-dim-value { flex: 1; display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .mp-dim-value span {
+    font-size: clamp(26px, 5vh, 46px); font-weight: 900; color: #141714;
+    font-variant-numeric: tabular-nums; line-height: 1;
+    overflow: hidden; text-overflow: ellipsis;
   }
+  .mp-dim-value span em { font-style: normal; color: #c9c4ba; }
+  .mp-dim-value small { font-size: 14px; font-weight: 800; color: #8a8378; }
+
+  .mp-dim-msg {
+    flex: 0 0 auto; min-height: 20px;
+    font-size: 14px; font-weight: 800; color: #c0392b; text-align: center;
+  }
+
+  /* 3 digit columns + a tall action column. Sized by viewport height so the
+     whole pad is always on screen. */
+  .mp-dim-pad {
+    flex: 0 0 auto;
+    display: grid;
+    flex: 1 1 auto; min-height: 0;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 1.45fr;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .mp-dim-key {
+    border-radius: 12px; border: none; font-family: inherit;
+    font-size: clamp(20px, 3.6vh, 30px); font-weight: 800;
+    background: #fff; color: #1a1d1a; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.14);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-dim-key:active { background: #ebe7de; transform: scale(.97); }
+  .mp-dim-key.back { background: #e8e5dd; }
+  .mp-dim-key.next, .mp-dim-key.save {
+    grid-column: 4; color: #fff; font-size: clamp(16px, 2.6vh, 22px); font-weight: 900;
+  }
+  .mp-dim-key.next { grid-row: 1 / span 2; background: #c65d2e; }
+  .mp-dim-key.save { grid-row: 3 / span 2; background: #2f8f4a; }
+  .mp-dim-key.next:active { background: #d9703f; }
+  .mp-dim-key.save:active { background: #38a657; }
 
   /* ---------- Long-press action sheet ---------- */
   /* Nothing in here is text to be selected. Without this, holding a finger
@@ -2438,8 +2502,22 @@ This backup was generated in one click from Back End and contains:
   const DIMENSIONS_KEY = 'product-dimensions';
   let productDimensions = {};     // key -> record
 
+  // Splits "wood fork full box x2" into the product and how many of it.
+  // Only a TRAILING "xN" is a quantity — a number inside the name is part
+  // of the product ("small paper x50 single", "8ply 2,500", "10x10 brown"),
+  // and stripping that would merge genuinely different products together.
+  // No trailing quantity means one of whatever it is.
+  function parseProductLine(line) {
+    const t = String(line || '').trim();
+    const m = t.match(/^(.*?)\s*x\s*(\d+)\s*$/i);
+    if (m && m[1].trim()) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
+    return { name: t, qty: 1 };
+  }
+
+  // Keyed on the product alone, quantity excluded — one measurement of one
+  // unit is the useful figure, and anything else is multiplied from it.
   function dimensionKey(productLine) {
-    return String(productLine || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return parseProductLine(productLine).name.toLowerCase().replace(/\s+/g, ' ');
   }
 
   async function loadProductDimensions() {
@@ -2468,11 +2546,20 @@ This backup was generated in one click from Back End and contains:
     });
   }
 
-  // The one product on this slot, or null when there are none or several.
+  // The one product on this slot — but only when there is exactly one
+  // product AND exactly one of it.
+  //
+  // Quantity matters as much as the product count. Measuring a box holding
+  // two of something records the wrong figure for one, and staff have no
+  // way to know they should have divided it. So the question is only ever
+  // asked where the answer is unambiguous; larger quantities are worked out
+  // from the single-unit figure instead.
   function singleProductOf(order) {
     const { products } = getDisplayLines(order.raw || '');
     const real = (products || []).map(p => String(p).trim()).filter(Boolean);
-    return real.length === 1 ? real[0] : null;
+    if (real.length !== 1) return null;
+    const parsed = parseProductLine(real[0]);
+    return parsed.qty === 1 ? parsed.name : null;
   }
 
   function dimensionsKnown(productLine) {
@@ -3000,85 +3087,174 @@ This backup was generated in one click from Back End and contains:
     });
   })();
 
-  // Weight is required — it's the one figure every channel insists on and a
-  // listing can't go up without it. Length / width / height are optional,
-  // because a measuring tape isn't always to hand and a weight on its own
-  // is still worth having.
+  // A small isometric box with ONE edge picked out, so there's no doubt
+  // which dimension is being asked for. Same box each time, different edge
+  // highlighted — that contrast is what makes it readable at a glance.
+  function boxDiagram(which) {
+    const F = { tl: [8, 20], tr: [46, 20], br: [46, 46], bl: [8, 46] };
+    const D = [14, -12];
+    const B = {};
+    for (const k in F) B[k] = [F[k][0] + D[0], F[k][1] + D[1]];
+    const p = (a) => a[0] + ',' + a[1];
+    const faces =
+      `<polygon points="${p(F.tl)} ${p(B.tl)} ${p(B.tr)} ${p(F.tr)}" fill="#f0ece3" stroke="#b8b1a4" stroke-width="1.4" stroke-linejoin="round"/>` +
+      `<polygon points="${p(F.tr)} ${p(B.tr)} ${p(B.br)} ${p(F.br)}" fill="#e4dfd4" stroke="#b8b1a4" stroke-width="1.4" stroke-linejoin="round"/>` +
+      `<polygon points="${p(F.tl)} ${p(F.tr)} ${p(F.br)} ${p(F.bl)}" fill="#faf8f4" stroke="#b8b1a4" stroke-width="1.4" stroke-linejoin="round"/>`;
+    const edges = {
+      length: [F.bl, F.br],   // across the front
+      width:  [F.br, B.br],   // front to back
+      height: [F.tr, F.br]    // bottom to top
+    };
+    const e = edges[which];
+    if (!e) return '';
+    const [a, b] = e;
+    return `<svg class="mp-dim-svg" viewBox="0 0 64 52" aria-hidden="true">${faces}` +
+      `<line x1="${a[0]}" y1="${a[1]}" x2="${b[0]}" y2="${b[1]}" stroke="#c65d2e" stroke-width="4.5" stroke-linecap="round"/>` +
+      `<circle cx="${a[0]}" cy="${a[1]}" r="3" fill="#c65d2e"/><circle cx="${b[0]}" cy="${b[1]}" r="3" fill="#c65d2e"/></svg>`;
+  }
+
+  // Full screen, opaque, and sized to fit without scrolling — this runs on a
+  // touchscreen at the bench, where a half-visible field or an accidental
+  // scroll means a wrong number gets saved. The slots behind are hidden
+  // completely so there's no question which product is being measured.
+  //
+  // Numbers go in through the on-screen keypad rather than the system
+  // keyboard: a tablet keyboard would cover half the screen and push the
+  // fields out of view, which is exactly what we're avoiding.
   function showDimensionsModal(productLine, existing) {
     return new Promise(resolve => {
       const e = existing || {};
+      const FIELDS = [
+        { id: 'weight', label: 'Weight',  unit: 'kg', required: true,  diagram: null },
+        { id: 'length', label: 'Length',  unit: 'cm', required: false, diagram: 'length' },
+        { id: 'width',  label: 'Width',   unit: 'cm', required: false, diagram: 'width'  },
+        { id: 'height', label: 'Height',  unit: 'cm', required: false, diagram: 'height' }
+      ];
+      const values = {
+        weight: e.weight != null ? String(e.weight) : '',
+        length: e.length != null ? String(e.length) : '',
+        width:  e.width  != null ? String(e.width)  : '',
+        height: e.height != null ? String(e.height) : ''
+      };
+      let active = 0;
+
       const overlay = document.createElement('div');
-      overlay.className = 'mp-modal-overlay';
+      overlay.className = 'mp-dim-screen';
       overlay.innerHTML = `
-        <div class="mp-sheet" style="max-width:520px;">
-          <button class="mp-sheet-x" id="dim-cancel" aria-label="Close">&times;</button>
-          <div class="mp-dim-head">
-            <div class="mp-dim-eyebrow">📏 Measure this product</div>
+        <div class="mp-dim-bar">
+          <div class="mp-dim-titles">
+            <div class="mp-dim-eyebrow">Measure this product</div>
             <div class="mp-dim-product">${escapeHtml(productLine)}</div>
           </div>
-          <div class="mp-dim-grid">
-            <label class="mp-dim-field required">
-              <span>Weight <i>(required)</i></span>
-              <div class="mp-dim-input"><input type="number" id="dim-weight" inputmode="decimal" step="0.01" min="0" placeholder="0.00" value="${e.weight != null ? e.weight : ''}"><em>kg</em></div>
-            </label>
-            <label class="mp-dim-field">
-              <span>Length</span>
-              <div class="mp-dim-input"><input type="number" id="dim-l" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.length != null ? e.length : ''}"><em>cm</em></div>
-            </label>
-            <label class="mp-dim-field">
-              <span>Width</span>
-              <div class="mp-dim-input"><input type="number" id="dim-w" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.width != null ? e.width : ''}"><em>cm</em></div>
-            </label>
-            <label class="mp-dim-field">
-              <span>Height</span>
-              <div class="mp-dim-input"><input type="number" id="dim-h" inputmode="decimal" step="0.1" min="0" placeholder="—" value="${e.height != null ? e.height : ''}"><em>cm</em></div>
-            </label>
-          </div>
-          <div class="mp-dim-error" id="dim-error"></div>
-          <div class="mp-sheet-actions" style="margin-top:4px;">
-            <button class="mp-sheet-btn" id="dim-skip" style="background:#6b7280;">Not now</button>
-            <button class="mp-sheet-btn" id="dim-save" style="background:#2f8f4a;">Save</button>
-          </div>
+          <button class="mp-dim-close" id="dim-cancel" aria-label="Close">&times;</button>
+        </div>
+
+        <div class="mp-dim-fields" id="dim-fields">
+          ${FIELDS.map((f, i) => `
+            <button class="mp-dim-tile${i === 0 ? ' active' : ''}${f.required ? ' required' : ''}" data-field="${i}">
+              <div class="mp-dim-tile-top">
+                <span class="mp-dim-tile-label">${f.label}${f.required ? ' <i>must</i>' : ''}</span>
+                ${f.diagram ? boxDiagram(f.diagram) : '<span class="mp-dim-scale">⚖</span>'}
+              </div>
+              <div class="mp-dim-value"><span data-value="${f.id}">${escapeHtml(values[f.id]) || '<em>—</em>'}</span><small>${f.unit}</small></div>
+            </button>`).join('')}
+        </div>
+
+        <div class="mp-dim-msg" id="dim-error"></div>
+
+        <div class="mp-dim-pad">
+          ${['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k =>
+            `<button class="mp-dim-key${k === '⌫' ? ' back' : ''}" data-key="${k}">${k}</button>`).join('')}
+          <button class="mp-dim-key next" id="dim-next">Next</button>
+          <button class="mp-dim-key save" id="dim-save">Save</button>
         </div>`;
       root.appendChild(overlay);
 
-      const weightEl = overlay.querySelector('#dim-weight');
       const errEl = overlay.querySelector('#dim-error');
-      weightEl.focus();
+      const tiles = [...overlay.querySelectorAll('.mp-dim-tile')];
+      const nextBtn = overlay.querySelector('#dim-next');
 
-      const close = (val) => { overlay.remove(); resolve(val); };
-      overlay.querySelector('#dim-cancel').addEventListener('click', () => close(null));
-      overlay.querySelector('#dim-skip').addEventListener('click', () => close(null));
-      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(null); });
+      function paint() {
+        tiles.forEach((t, i) => t.classList.toggle('active', i === active));
+        FIELDS.forEach(f => {
+          const el = overlay.querySelector(`[data-value="${f.id}"]`);
+          el.innerHTML = values[f.id] ? escapeHtml(values[f.id]) : '<em>—</em>';
+        });
+        nextBtn.textContent = active < FIELDS.length - 1 ? 'Next' : 'Done';
+      }
 
-      const num = (sel) => {
-        const v = String(overlay.querySelector(sel).value || '').trim();
-        if (v === '') return null;
-        const n = Number(v);
-        return isFinite(n) && n > 0 ? n : null;
-      };
+      function setActive(i) {
+        active = Math.max(0, Math.min(FIELDS.length - 1, i));
+        errEl.textContent = '';
+        paint();
+      }
 
-      overlay.querySelector('#dim-save').addEventListener('click', () => {
-        const weight = num('#dim-weight');
-        if (weight == null) {
-          errEl.textContent = 'Weight is needed — it is the one figure every channel asks for.';
-          weightEl.focus();
+      function press(key) {
+        const f = FIELDS[active];
+        let v = values[f.id];
+        if (key === '⌫') {
+          v = v.slice(0, -1);
+        } else if (key === '.') {
+          if (v.includes('.')) return;
+          v = (v === '' ? '0.' : v + '.');
+        } else {
+          if (v === '0') v = '';              // no leading zero
+          if (v.replace('.', '').length >= 6) return;  // nothing sane is longer
+          v = v + key;
+        }
+        values[f.id] = v;
+        errEl.textContent = '';
+        paint();
+      }
+
+      overlay.querySelector('.mp-dim-pad').addEventListener('click', (ev) => {
+        const k = ev.target.closest('[data-key]');
+        if (k) { press(k.dataset.key); return; }
+      });
+      overlay.querySelector('#dim-fields').addEventListener('click', (ev) => {
+        const t = ev.target.closest('[data-field]');
+        if (t) setActive(Number(t.dataset.field));
+      });
+
+      // Weight first, then straight on to length, width, height.
+      nextBtn.addEventListener('click', () => {
+        if (active === 0 && !(Number(values.weight) > 0)) {
+          errEl.textContent = 'Weight first — every channel asks for it.';
           return;
         }
-        close({ weight, length: num('#dim-l'), width: num('#dim-w'), height: num('#dim-h') });
+        if (active < FIELDS.length - 1) setActive(active + 1);
+        else overlay.querySelector('#dim-save').click();
       });
 
-      // Enter moves on rather than submitting half-filled, except on the
-      // last box where it saves — quicker with a keyboard at the bench.
-      const order = ['#dim-weight', '#dim-l', '#dim-w', '#dim-h'];
-      order.forEach((sel, i) => {
-        overlay.querySelector(sel).addEventListener('keydown', (ev) => {
-          if (ev.key !== 'Enter') return;
-          ev.preventDefault();
-          if (i < order.length - 1) overlay.querySelector(order[i + 1]).focus();
-          else overlay.querySelector('#dim-save').click();
-        });
+      const close = (val) => {
+        document.removeEventListener('keydown', onKey);
+        overlay.remove();
+        resolve(val);
+      };
+      overlay.querySelector('#dim-cancel').addEventListener('click', () => close(null));
+
+      overlay.querySelector('#dim-save').addEventListener('click', () => {
+        const weight = Number(values.weight);
+        if (!(weight > 0)) {
+          setActive(0);
+          errEl.textContent = 'Weight is needed before this can be saved.';
+          return;
+        }
+        const num = (k) => { const n = Number(values[k]); return values[k] !== '' && isFinite(n) && n > 0 ? n : null; };
+        close({ weight, length: num('length'), width: num('width'), height: num('height') });
       });
+
+      // A real keyboard still works if one is plugged in — the on-screen pad
+      // is for touch, not a replacement.
+      function onKey(ev) {
+        if (ev.key >= '0' && ev.key <= '9') { press(ev.key); ev.preventDefault(); }
+        else if (ev.key === '.') { press('.'); ev.preventDefault(); }
+        else if (ev.key === 'Backspace') { press('⌫'); ev.preventDefault(); }
+        else if (ev.key === 'Enter') { nextBtn.click(); ev.preventDefault(); }
+        else if (ev.key === 'Escape') { close(null); }
+      }
+      document.addEventListener('keydown', onKey);
+      paint();
     });
   }
 
