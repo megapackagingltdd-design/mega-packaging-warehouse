@@ -2569,9 +2569,32 @@ This backup was generated in one click from Back End and contains:
     return real.length === 1 ? real[0] : null;
   }
 
-  function dimensionsKnown(productLine) {
+  // Finds a record for this exact product line, falling back to records
+  // saved under an earlier key scheme.
+  //
+  // The key format changed during development: measurements taken at that
+  // time were stored under the product name WITHOUT its quantity, so
+  // "8ply x1" went in as "8ply". Looking only for the new key made those
+  // products ask to be measured all over again even though the data was
+  // sitting there. Rather than lose or rewrite what was already entered,
+  // both forms are accepted on read.
+  //
+  // The legacy fallback only answers for quantity 1, because that is the
+  // only quantity that scheme was ever used for — a two-pack genuinely has
+  // not been measured and should still be asked for.
+  function findDimensionRecord(productLine) {
     const k = dimensionKey(productLine);
-    return !!(k && productDimensions[k]);
+    if (k && productDimensions[k]) return productDimensions[k];
+    const parsed = parseProductLine(productLine);
+    if (parsed.qty === 1) {
+      const legacy = parsed.name.toLowerCase().replace(/\s+/g, ' ');
+      if (legacy && productDimensions[legacy]) return productDimensions[legacy];
+    }
+    return null;
+  }
+
+  function dimensionsKnown(productLine) {
+    return !!findDimensionRecord(productLine);
   }
 
   // Shown only where it can actually be used: one product, not yet measured.
@@ -3266,7 +3289,7 @@ This backup was generated in one click from Back End and contains:
     const productLine = singleProductOf(order);
     if (!productLine) return;
     const key = dimensionKey(productLine);
-    const result = await showDimensionsModal(productLine, productDimensions[key]);
+    const result = await showDimensionsModal(productLine, findDimensionRecord(productLine));
     if (!result) return;
     const parsed = parseProductLine(productLine);
     const record = {
