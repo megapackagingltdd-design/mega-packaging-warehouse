@@ -206,6 +206,10 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 11.5px; color: #777; margin-top: 2px; word-break: break-all;
   }
+  .dim-qty {
+    font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
+    border: 1px solid #edd8ae; border-radius: 5px; padding: 1px 7px; vertical-align: 2px;
+  }
   .dim-figs { font-size: 13px; color: #444; margin-top: 4px; }
   .dim-figs b { color: #2f6b3e; font-size: 14px; }
   .dim-missing { color: #b0aaa0; font-style: italic; }
@@ -1038,7 +1042,7 @@
       return `
         <div class="dim-row">
           <div class="dim-main">
-            <div class="dim-product">${escapeHtml(r.product || r.key || '')}</div>
+            <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.qty > 1) ? ' <span class="dim-qty">pack of ' + r.qty + '</span>' : ''}</div>
             <div class="dim-sku">${skus}</div>
             <div class="dim-figs"><b>${r.weight} kg</b> &middot; ${dims}</div>
           </div>
@@ -1050,9 +1054,14 @@
   // A header row plus one line per product. Tab-separated so it pastes
   // straight into a spreadsheet with the columns already split.
   function dimensionsTable(sep) {
-    const head = ['SKU', 'Product', 'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)', 'Recorded'];
+    // Base product and quantity are separate columns: the same product
+    // measured at x1 and x2 are two parcels, and a spreadsheet needs to
+    // group them without re-reading the text.
+    const head = ['SKU', 'Product', 'Qty', 'Full line', 'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)', 'Recorded'];
     const rows = dimensionRows.map(r => ([
       (r.skus && r.skus.length) ? r.skus.join(' / ') : '',
+      r.baseProduct || r.product || r.key || '',
+      r.qty != null ? r.qty : 1,
       r.product || r.key || '',
       r.weight != null ? r.weight : '',
       r.length != null ? r.length : '',
