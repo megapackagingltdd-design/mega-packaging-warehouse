@@ -738,7 +738,7 @@
   }
 
   // ---------- Tabs ----------
-  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned'];
+  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions'];
   let activeTab = null;
   let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
@@ -767,7 +767,10 @@
       // Don't leave the user staring at a panel that just emptied itself.
       if (n === 0 && activeTab === tab) { userPickedTab = false; chooseDefaultTab(); }
     }
-    if (countEl) countEl.style.display = n > 0 ? '' : 'none';
+    // Dimensions is a tab you check to see what has been collected, so its
+    // count stays visible at zero — a missing chip there reads as broken
+    // rather than empty.
+    if (countEl) countEl.style.display = (n > 0 || tab === 'dimensions') ? '' : 'none';
   }
 
   // Most urgent thing first: flagged orders, then the queue, then duplicates.
