@@ -454,6 +454,11 @@
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .mp-dim-tile.active { border-color: #c65d2e; box-shadow: 0 0 0 4px rgba(198,93,46,.14); }
+  /* A filled field turns green, so what is still outstanding is obvious
+     without reading anything. */
+  .mp-dim-tile.done { border-color: #87c79b; background: #f4fbf6; }
+  .mp-dim-tile.done.active { border-color: #c65d2e; }
+  .mp-dim-tile.done .mp-dim-tile-label::after { content: ' ✓'; color: #2f8f4a; font-weight: 900; }
   .mp-dim-tile-top {
     width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px;
   }
@@ -501,7 +506,11 @@
     grid-column: 4; color: #fff; font-size: clamp(16px, 2.6vh, 22px); font-weight: 900;
   }
   .mp-dim-key.next { grid-row: 1 / span 2; background: #c65d2e; }
-  .mp-dim-key.save { grid-row: 3 / span 2; background: #2f8f4a; }
+  .mp-dim-key.save { grid-row: 3 / span 2; background: #2f8f4a; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  /* Greyed while anything is missing — pressing it still explains what,
+     rather than being dead. */
+  .mp-dim-key.save.blocked { background: #9aa0a6; }
+  .mp-dim-key.save small { font-size: 11px; font-weight: 800; opacity: .9; }
   .mp-dim-key.next:active { background: #d9703f; }
   .mp-dim-key.save:active { background: #38a657; }
 
@@ -3169,12 +3178,17 @@ This backup was generated in one click from Back End and contains:
   function showDimensionsModal(productLine, existing) {
     return new Promise(resolve => {
       const e = existing || {};
+      // Every field is required. A half-filled record is worse than none:
+      // it reads as done, the measuring tape disappears, and the gap is
+      // only discovered later when the figures are needed. Save stays shut
+      // until all four are in.
       const FIELDS = [
-        { id: 'weight', label: 'Weight',  unit: 'kg', required: true,  diagram: null },
-        { id: 'length', label: 'Length',  unit: 'cm', required: false, diagram: 'length' },
-        { id: 'width',  label: 'Width',   unit: 'cm', required: false, diagram: 'width'  },
-        { id: 'height', label: 'Height',  unit: 'cm', required: false, diagram: 'height' }
+        { id: 'weight', label: 'Weight', unit: 'kg', diagram: null },
+        { id: 'length', label: 'Length', unit: 'cm', diagram: 'length' },
+        { id: 'width',  label: 'Width',  unit: 'cm', diagram: 'width'  },
+        { id: 'height', label: 'Height', unit: 'cm', diagram: 'height' }
       ];
+      const filled = (id) => Number(values[id]) > 0;
       const values = {
         weight: e.weight != null ? String(e.weight) : '',
         length: e.length != null ? String(e.length) : '',
@@ -3193,9 +3207,9 @@ This backup was generated in one click from Back End and contains:
 
         <div class="mp-dim-fields" id="dim-fields">
           ${FIELDS.map((f, i) => `
-            <button class="mp-dim-tile${i === 0 ? ' active' : ''}${f.required ? ' required' : ''}" data-field="${i}">
+            <button class="mp-dim-tile required${i === 0 ? ' active' : ''}" data-field="${i}">
               <div class="mp-dim-tile-top">
-                <span class="mp-dim-tile-label">${f.label}${f.required ? ' <i>must</i>' : ''}</span>
+                <span class="mp-dim-tile-label">${f.label}</span>
                 ${f.diagram ? boxDiagram(f.diagram) : '<span class="mp-dim-scale">⚖</span>'}
               </div>
               <div class="mp-dim-value"><span data-value="${f.id}">${escapeHtml(values[f.id]) || '<em>—</em>'}</span><small>${f.unit}</small></div>
@@ -3215,14 +3229,25 @@ This backup was generated in one click from Back End and contains:
       const errEl = overlay.querySelector('#dim-error');
       const tiles = [...overlay.querySelectorAll('.mp-dim-tile')];
       const nextBtn = overlay.querySelector('#dim-next');
+      const saveBtn = overlay.querySelector('#dim-save');
 
       function paint() {
-        tiles.forEach((t, i) => t.classList.toggle('active', i === active));
+        tiles.forEach((t, i) => {
+          t.classList.toggle('active', i === active);
+          t.classList.toggle('done', filled(FIELDS[i].id));
+        });
         FIELDS.forEach(f => {
           const el = overlay.querySelector(`[data-value="${f.id}"]`);
           el.innerHTML = values[f.id] ? escapeHtml(values[f.id]) : '<em>—</em>';
         });
+        const missing = FIELDS.filter(f => !filled(f.id));
         nextBtn.textContent = active < FIELDS.length - 1 ? 'Next' : 'Done';
+        // The Save button shows what is still outstanding rather than
+        // simply refusing when it is pressed.
+        saveBtn.classList.toggle('blocked', missing.length > 0);
+        saveBtn.innerHTML = missing.length
+          ? `Save<small>${missing.length} left</small>`
+          : 'Save';
       }
 
       function setActive(i) {
@@ -3260,12 +3285,13 @@ This backup was generated in one click from Back End and contains:
 
       // Weight first, then straight on to length, width, height.
       nextBtn.addEventListener('click', () => {
-        if (active === 0 && !(Number(values.weight) > 0)) {
-          errEl.textContent = 'Weight first — every channel asks for it.';
+        const f = FIELDS[active];
+        if (!filled(f.id)) {
+          errEl.textContent = `${f.label} is needed before moving on.`;
           return;
         }
         if (active < FIELDS.length - 1) setActive(active + 1);
-        else overlay.querySelector('#dim-save').click();
+        else saveBtn.click();
       });
 
       const close = (val) => {
@@ -3275,15 +3301,20 @@ This backup was generated in one click from Back End and contains:
       };
       overlay.querySelector('#dim-cancel').addEventListener('click', () => close(null));
 
-      overlay.querySelector('#dim-save').addEventListener('click', () => {
-        const weight = Number(values.weight);
-        if (!(weight > 0)) {
-          setActive(0);
-          errEl.textContent = 'Weight is needed before this can be saved.';
+      saveBtn.addEventListener('click', () => {
+        const missing = FIELDS.filter(f => !filled(f.id));
+        if (missing.length) {
+          // Jump to the first gap rather than just complaining.
+          setActive(FIELDS.indexOf(missing[0]));
+          errEl.textContent = missing.length === 1
+            ? `${missing[0].label} is still needed — all four are required.`
+            : `Still needed: ${missing.map(f => f.label).join(', ')}.`;
           return;
         }
-        const num = (k) => { const n = Number(values[k]); return values[k] !== '' && isFinite(n) && n > 0 ? n : null; };
-        close({ weight, length: num('length'), width: num('width'), height: num('height') });
+        close({
+          weight: Number(values.weight), length: Number(values.length),
+          width: Number(values.width),   height: Number(values.height)
+        });
       });
 
       // A real keyboard still works if one is plugged in — the on-screen pad
