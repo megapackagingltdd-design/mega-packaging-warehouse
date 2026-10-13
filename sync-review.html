@@ -195,6 +195,23 @@
   .rep-empty { font-size: 13.5px; color: #777; line-height: 1.55; }
   .rep-note { font-size: 12px; color: #999; line-height: 1.5; margin-top: 16px; border-top: 1px solid #ece9e1; padding-top: 10px; }
 
+  .dim-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .learned-btn.edit { border-color: #c65d2e; color: #c65d2e; }
+
+  .dim-row.editing { display: block; background: #fffdf6; border-radius: 8px; padding: 12px; margin: 4px 0; }
+  .dim-edit-title { font-size: 15px; font-weight: 900; color: #1a1d1a; margin-bottom: 10px; }
+  .dim-edit-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  @media (max-width: 560px) { .dim-edit-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .dim-edit-field > span { display: block; font-size: 11.5px; font-weight: 800; color: #555; margin-bottom: 4px; }
+  .dim-edit-field > span em { font-style: normal; color: #999; }
+  .dim-edit-field input {
+    width: 100%; box-sizing: border-box; font-family: inherit;
+    font-size: 17px; font-weight: 800; padding: 9px 10px;
+    border: 1.5px solid #d5d1c7; border-radius: 7px; background: #fff;
+  }
+  .dim-edit-field input:focus { outline: none; border-color: #2f8f4a; }
+  .dim-edit-msg { min-height: 18px; font-size: 12.5px; font-weight: 700; color: #a33; padding: 7px 0 3px; }
+
   .dim-row {
     display: flex; align-items: center; gap: 12px;
     padding: 12px 0; border-bottom: 1px solid #ece9e1;
@@ -1040,13 +1057,16 @@
         : '<span class="dim-missing">size not measured</span>';
       const skus = (r.skus && r.skus.length) ? r.skus.join(', ') : '<span class="dim-missing">no SKU recorded</span>';
       return `
-        <div class="dim-row">
+        <div class="dim-row" data-key="${escapeHtml(r.key)}">
           <div class="dim-main">
             <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.qty > 1) ? ' <span class="dim-qty">pack of ' + r.qty + '</span>' : ''}</div>
             <div class="dim-sku">${skus}</div>
             <div class="dim-figs"><b>${r.weight} kg</b> &middot; ${dims}</div>
           </div>
-          <button class="learned-btn remove" data-action="remove-dimension" data-key="${escapeHtml(r.key)}">Remove</button>
+          <div class="dim-actions">
+            <button class="learned-btn edit" data-action="edit-dimension" data-key="${escapeHtml(r.key)}">Edit</button>
+            <button class="learned-btn remove" data-action="remove-dimension" data-key="${escapeHtml(r.key)}">Remove</button>
+          </div>
         </div>`;
     }).join('');
   }
@@ -1078,6 +1098,100 @@
     };
     return [head, ...rows].map(r => r.map(esc).join(sep)).join('\n');
   }
+
+  // Saves a full set of four measurements back over an existing record.
+  async function writeDimension(key, patch) {
+    const res = await storageCollection.doc(DIMENSIONS_KEY).get();
+    const all = res.exists ? JSON.parse(res.data().value || '{}') : {};
+    if (patch === null) delete all[key];
+    else all[key] = { ...(all[key] || {}), ...patch, key };
+    await storageCollection.doc(DIMENSIONS_KEY).set({
+      value: JSON.stringify(all), shared: true, updatedAt: Date.now()
+    });
+  }
+
+  // Turns one row into an edit form in place. All four are required here
+  // too — the same rule as the warehouse screen, so a record can never be
+  // left half-filled from either end.
+  function openDimensionEditor(key) {
+    const r = dimensionRows.find(x => x.key === key);
+    const row = document.querySelector(`.dim-row[data-key="${CSS.escape(key)}"]`);
+    if (!r || !row) return;
+    row.classList.add('editing');
+    row.innerHTML = `
+      <div class="dim-edit">
+        <div class="dim-edit-title">${escapeHtml(r.product || r.key)}</div>
+        <div class="dim-edit-grid">
+          ${[['w', 'Weight', 'kg', r.weight], ['l', 'Length', 'cm', r.length],
+             ['wd', 'Width', 'cm', r.width], ['h', 'Height', 'cm', r.height]]
+            .map(([id, label, unit, val]) => `
+              <label class="dim-edit-field">
+                <span>${label} <em>${unit}</em></span>
+                <input type="number" step="0.01" min="0" data-dim="${id}" value="${val != null ? val : ''}" placeholder="—">
+              </label>`).join('')}
+        </div>
+        <div class="dim-edit-msg" data-dim-msg></div>
+        <div class="btn-row">
+          <button class="btn btn-good" data-action="save-dimension" data-key="${escapeHtml(key)}">Save</button>
+          <button class="btn btn-ghost" data-action="cancel-dimension">Cancel</button>
+        </div>
+      </div>`;
+    const first = row.querySelector('[data-dim="w"]');
+    if (first) first.focus();
+  }
+
+  document.getElementById('dimensions-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const key = btn.dataset.key;
+
+    if (action === 'edit-dimension') { openDimensionEditor(key); return; }
+    if (action === 'cancel-dimension') { renderDimensions(); return; }
+
+    if (action === 'remove-dimension') {
+      const r = dimensionRows.find(x => x.key === key);
+      const name = (r && r.product) || key;
+      if (!confirm(`Remove the measurements for "${name}"?\n\nThat product goes back to being unmeasured, and the 📏 button returns on its slots so it can be done again.`)) return;
+      btn.disabled = true;
+      try {
+        await writeDimension(key, null);
+        document.getElementById('top-status').textContent = `Removed "${name}" — it will be asked for again.`;
+      } catch (err) {
+        btn.disabled = false;
+        showRenderError('the dimensions list', err);
+        return;
+      }
+      renderDimensions();
+      return;
+    }
+
+    if (action === 'save-dimension') {
+      const row = btn.closest('.dim-row');
+      const msg = row.querySelector('[data-dim-msg]');
+      const get = (id) => {
+        const v = String(row.querySelector(`[data-dim="${id}"]`).value || '').trim();
+        const n = Number(v);
+        return (v !== '' && isFinite(n) && n > 0) ? n : null;
+      };
+      const vals = { weight: get('w'), length: get('l'), width: get('wd'), height: get('h') };
+      const missing = Object.entries(vals).filter(([, v]) => v == null).map(([k]) => k);
+      if (missing.length) {
+        msg.textContent = 'All four are needed: ' + missing.join(', ') + ' still missing.';
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await writeDimension(key, { ...vals, recordedAt: Date.now() });
+        document.getElementById('top-status').textContent = 'Measurements updated.';
+      } catch (err) {
+        btn.disabled = false;
+        msg.textContent = 'Could not save — ' + ((err && err.message) || 'try again') + '.';
+        return;
+      }
+      renderDimensions();
+    }
+  });
 
   // ---------- Joined orders ----------
   // Separate orders from the same customer merged into one slot. Correct to
@@ -1329,18 +1443,6 @@
     if (!btn) return;
     const action = btn.dataset.action;
 
-    if (action === 'remove-dimension') {
-      const key = btn.dataset.key;
-      if (!confirm(`Remove the measurements for "${key}"? The 📏 button will come back on that product so it can be measured again.`)) return;
-      try {
-        const res = await storageCollection.doc(DIMENSIONS_KEY).get();
-        const all = res.exists ? JSON.parse(res.data().value || '{}') : {};
-        delete all[key];
-        await storageCollection.doc(DIMENSIONS_KEY).set({ value: JSON.stringify(all), shared: true, updatedAt: Date.now() });
-      } catch (err) { showRenderError('the dimensions list', err); }
-      renderDimensions();
-      return;
-    }
     if (action === 'remove-approved') {
       const key = btn.dataset.key;
       if (!confirm(`Stop auto-approving "${key}"? Orders with it will come back for review.`)) return;
