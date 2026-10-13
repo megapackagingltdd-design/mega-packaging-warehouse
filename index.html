@@ -383,9 +383,24 @@
     touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .mp-tape-btn:active { background: #c65d2e; transform: scale(.92); }
+  /* ---------- Nothing may sit on top of the product text ----------
+     The label-count badge, the measuring tape and the WEBSITE ribbon are
+     all absolutely positioned on the card. Without reserving room for them
+     the product lines — the one thing a picker actually has to read — run
+     underneath. Space is reserved on BOTH sides so the text stays centred
+     rather than shifting off to one side. */
+  /* Only the customer-name line is narrowed, since that is what sits level
+     with the badge and the ribbon. The product lines keep the full width of
+     the card and are simply pushed clear of the badge's bottom edge — so
+     nothing overlaps and the products still get as much room as possible
+     before they have to wrap. */
+  .mp-order-card.has-badge .mp-card-header-line,
+  .mp-order-card.mp-web .mp-card-header-line { padding-left: 34px; padding-right: 34px; }
+  .mp-order-card.has-badge .mp-card-products { padding-top: 14px; }
+
   /* A completion time already sits bottom-right, so the chip row is given
      room rather than letting the two overlap. */
-  .mp-order-card:has(.mp-tape-btn) .mp-order-card-foot { padding-right: 40px; }
+  .mp-order-card.has-tape .mp-order-card-foot { padding-right: 40px; }
 
   /* Full screen and opaque. Nothing behind shows through, and nothing
      scrolls: every control is sized to fit the viewport so a number can't
@@ -2644,7 +2659,7 @@ This backup was generated in one click from Back End and contains:
     const headerLine = header ? `<div class="mp-card-header-line">${escapeHtml(header)}</div>` : '';
     const productLines = products.map((p, i) => `<div class="mp-card-product-line${notDone.includes(i) ? ' mp-card-product-red' : ''}">${escapeHtml(p)}</div>`).join('');
     return `
-      <div class="mp-order-card${isWebsiteOrder(o) ? ' mp-web' : ''}${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
+      <div class="mp-order-card${labelBadge ? ' has-badge' : ''}${tapeBtn ? ' has-tape' : ''}${isWebsiteOrder(o) ? ' mp-web' : ''}${o.state === 'green' ? ' state-green' : ''}${o.state === 'blue' ? ' state-blue' : ''}${o.state === 'purple' ? ' state-purple' : ''}${o.state === 'red' ? ' state-red' : ''}${o.notProcessedType ? ' notprocessed' : ''}${o._possibleCopy ? ' mp-possible-copy' : ''}" data-id="${o.id}" data-added-at="${o.addedAt || ''}"${style}>
         ${labelBadge}
         ${tapeBtn}
         ${copyWarning}
