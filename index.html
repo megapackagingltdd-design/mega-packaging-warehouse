@@ -2521,10 +2521,12 @@ This backup was generated in one click from Back End and contains:
     return { name: t, qty: 1 };
   }
 
-  // Keyed on the product alone, quantity excluded — one measurement of one
-  // unit is the useful figure, and anything else is multiplied from it.
+  // Keyed on the product line exactly as the slot shows it, quantity
+  // included. "8ply x1" and "8ply x2" go out as different physical parcels
+  // and measure differently, so each is worth its own record — knowing the
+  // single is not the same as knowing the two-pack.
   function dimensionKey(productLine) {
-    return parseProductLine(productLine).name.toLowerCase().replace(/\s+/g, ' ');
+    return String(productLine || '').trim().toLowerCase().replace(/\s+/g, ' ');
   }
 
   async function loadProductDimensions() {
@@ -2553,20 +2555,18 @@ This backup was generated in one click from Back End and contains:
     });
   }
 
-  // The one product on this slot — but only when there is exactly one
-  // product AND exactly one of it.
+  // The one product on this slot, whatever quantity of it was ordered.
   //
-  // Quantity matters as much as the product count. Measuring a box holding
-  // two of something records the wrong figure for one, and staff have no
-  // way to know they should have divided it. So the question is only ever
-  // asked where the answer is unambiguous; larger quantities are worked out
-  // from the single-unit figure instead.
+  // Quantity is NOT a reason to skip: four of something still ships as one
+  // parcel, and that parcel's real weight and size are worth recording in
+  // their own right. What makes a slot unmeasurable is two DIFFERENT
+  // products, because then staff have no way to know which one they are
+  // describing — and a measurement attributed to the wrong product is far
+  // worse than a missing one.
   function singleProductOf(order) {
     const { products } = getDisplayLines(order.raw || '');
     const real = (products || []).map(p => String(p).trim()).filter(Boolean);
-    if (real.length !== 1) return null;
-    const parsed = parseProductLine(real[0]);
-    return parsed.qty === 1 ? parsed.name : null;
+    return real.length === 1 ? real[0] : null;
   }
 
   function dimensionsKnown(productLine) {
@@ -3268,9 +3268,14 @@ This backup was generated in one click from Back End and contains:
     const key = dimensionKey(productLine);
     const result = await showDimensionsModal(productLine, productDimensions[key]);
     if (!result) return;
+    const parsed = parseProductLine(productLine);
     const record = {
       key,
       product: productLine,
+      // Split out as well, so the export can group every quantity of one
+      // product together without having to re-parse the text.
+      baseProduct: parsed.name,
+      qty: parsed.qty,
       // Whatever SKUs came with this order. On a single-product slot this
       // is normally exactly one, which is what makes the export usable.
       skus: Array.isArray(order.sourceSkus) ? order.sourceSkus : [],
