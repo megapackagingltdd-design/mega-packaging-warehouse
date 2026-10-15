@@ -227,6 +227,13 @@
     font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
     border: 1px solid #edd8ae; border-radius: 5px; padding: 1px 7px; vertical-align: 2px;
   }
+  /* Records written before the quantity was stored. The figures are real,
+     but which pack size they were taken from isn't recorded — so they are
+     marked rather than silently trusted. */
+  .dim-check {
+    font-size: 11px; font-weight: 800; color: #a3271b; background: #fdeceb;
+    border: 1px solid #f0c0ba; border-radius: 5px; padding: 1px 7px; vertical-align: 2px;
+  }
   .dim-figs { font-size: 13px; color: #444; margin-top: 4px; }
   .dim-figs b { color: #2f6b3e; font-size: 14px; }
   .dim-missing { color: #b0aaa0; font-style: italic; }
@@ -1059,7 +1066,7 @@
       return `
         <div class="dim-row" data-key="${escapeHtml(r.key)}">
           <div class="dim-main">
-            <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.qty > 1) ? ' <span class="dim-qty">pack of ' + r.qty + '</span>' : ''}</div>
+            <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.qty > 1) ? ' <span class="dim-qty">pack of ' + r.qty + '</span>' : ''}${(r.itemCount > 1) ? ' <span class="dim-qty">' + r.itemCount + ' items</span>' : ''}${r.qty == null && !r.itemCount ? ' <span class="dim-check">quantity not recorded — worth checking</span>' : ''}</div>
             <div class="dim-sku">${skus}</div>
             <div class="dim-figs"><b>${r.weight} kg</b> &middot; ${dims}</div>
           </div>
