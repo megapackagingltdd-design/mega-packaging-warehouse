@@ -415,7 +415,7 @@
   }
   /* The product name is the whole heading — there's no doubt what the
      screen is for once it's open, so a title above it was just noise. */
-  .mp-dim-bar { flex: 0 0 auto; position: relative; display: flex; align-items: center; min-height: 52px; }
+  .mp-dim-bar { flex: 0 0 auto; position: relative; display: flex; align-items: center; min-height: 52px; padding: 2px 0; }
   .mp-dim-product {
     flex: 1; min-width: 0;
     text-align: center; padding: 0 58px;
@@ -425,7 +425,14 @@
     font-size: clamp(20px, min(5vh, 6.5vw), 46px); font-weight: 900; color: #141714;
     line-height: 1.15;
     overflow: hidden;
-    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  .mp-dim-product .mp-dim-line { display: block; }
+  /* A mixed parcel has more to read, so the lines come down in size and a
+     caption makes clear the figures describe the box as a whole. */
+  .mp-dim-product.multi { font-size: clamp(15px, min(2.6vh, 3.6vw), 24px); line-height: 1.3; }
+  .mp-dim-whole {
+    display: block; font-size: 11px; font-weight: 800; letter-spacing: .07em;
+    text-transform: uppercase; color: #c65d2e; margin-bottom: 4px;
   }
   .mp-dim-close {
     position: absolute; top: 50%; right: 0; transform: translateY(-50%);
@@ -2545,12 +2552,20 @@ This backup was generated in one click from Back End and contains:
     return { name: t, qty: 1 };
   }
 
-  // Keyed on the product line exactly as the slot shows it, quantity
-  // included. "8ply x1" and "8ply x2" go out as different physical parcels
-  // and measure differently, so each is worth its own record — knowing the
-  // single is not the same as knowing the two-pack.
+  // Keyed on the parcel's full contents, quantities included. "8ply x1"
+  // and "8ply x2" go out as different physical parcels and measure
+  // differently, so each is worth its own record — knowing the single is
+  // not the same as knowing the two-pack.
+  //
+  // Sorted, so the same combination of goods is one record however the
+  // conversion happened to order the lines.
   function dimensionKey(productLine) {
-    return String(productLine || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return String(productLine || '')
+      .split('+')
+      .map(x => x.trim().toLowerCase().replace(/\s+/g, ' '))
+      .filter(Boolean)
+      .sort()
+      .join(' + ');
   }
 
   async function loadProductDimensions() {
@@ -2579,18 +2594,33 @@ This backup was generated in one click from Back End and contains:
     });
   }
 
-  // The one product on this slot, whatever quantity of it was ordered.
+  // What this slot ships as, if it ships as one measurable parcel.
   //
-  // Quantity is NOT a reason to skip: four of something still ships as one
-  // parcel, and that parcel's real weight and size are worth recording in
-  // their own right. What makes a slot unmeasurable is two DIFFERENT
-  // products, because then staff have no way to know which one they are
-  // describing — and a measurement attributed to the wrong product is far
-  // worse than a missing one.
-  function singleProductOf(order) {
+  // The thing being measured is a PARCEL, not a product. So the question
+  // that decides whether to ask is "is there exactly one parcel here?",
+  // and the label count answers it:
+  //
+  //   1 label  -> one parcel holding everything on the slot. Measurable,
+  //               whether that is one product or three, because the whole
+  //               parcel is what goes on the scales.
+  //   2+ labels -> the goods are split across parcels and nothing on the
+  //               slot says which went where. A single set of figures
+  //               could not be attributed to either, so it is not asked
+  //               for at all — a wrong measurement is worse than none.
+  //
+  // Quantity is never a reason to skip: four of something in one box is
+  // still one parcel, and its real weight and size are worth recording.
+  function measurableParcelOf(order) {
+    if ((order && Number(order.labelCount) || 1) > 1) return null;   // split across parcels
     const { products } = getDisplayLines(order.raw || '');
-    const real = (products || []).map(p => String(p).trim()).filter(Boolean);
-    return real.length === 1 ? real[0] : null;
+    const lines = (products || []).map(p => String(p).trim()).filter(Boolean);
+    if (!lines.length) return null;
+    return lines;
+  }
+
+  // The parcel as one string, in the order the slot shows it.
+  function parcelDisplay(lines) {
+    return (lines || []).join(' + ');
   }
 
   // Finds a record for this exact product line, falling back to records
@@ -2609,10 +2639,14 @@ This backup was generated in one click from Back End and contains:
   function findDimensionRecord(productLine) {
     const k = dimensionKey(productLine);
     if (k && productDimensions[k]) return productDimensions[k];
-    const parsed = parseProductLine(productLine);
-    if (parsed.qty === 1) {
-      const legacy = parsed.name.toLowerCase().replace(/\s+/g, ' ');
-      if (legacy && productDimensions[legacy]) return productDimensions[legacy];
+    // Only meaningful for a one-product parcel; a mixed parcel was never
+    // recorded under the old scheme.
+    if (!String(productLine).includes('+')) {
+      const parsed = parseProductLine(productLine);
+      if (parsed.qty === 1) {
+        const legacy = parsed.name.toLowerCase().replace(/\s+/g, ' ');
+        if (legacy && productDimensions[legacy]) return productDimensions[legacy];
+      }
     }
     return null;
   }
@@ -2621,10 +2655,10 @@ This backup was generated in one click from Back End and contains:
     return !!findDimensionRecord(productLine);
   }
 
-  // Shown only where it can actually be used: one product, not yet measured.
+  // Shown only where it can actually be used: one parcel, not yet measured.
   function needsDimensions(order) {
-    const p = singleProductOf(order);
-    return !!p && !dimensionsKnown(p);
+    const lines = measurableParcelOf(order);
+    return !!lines && !dimensionsKnown(parcelDisplay(lines));
   }
 
   // Orders placed on the Mega website carry an MP-#### order number and
@@ -3175,9 +3209,12 @@ This backup was generated in one click from Back End and contains:
   // Numbers go in through the on-screen keypad rather than the system
   // keyboard: a tablet keyboard would cover half the screen and push the
   // fields out of view, which is exactly what we're avoiding.
-  function showDimensionsModal(productLine, existing) {
+  function showDimensionsModal(productLines, existing) {
     return new Promise(resolve => {
       const e = existing || {};
+      // Every product in the parcel is listed, so there is no doubt that
+      // what is being weighed is the whole box and not one item in it.
+      const lines = Array.isArray(productLines) ? productLines : [String(productLines)];
       // Every field is required. A half-filled record is worse than none:
       // it reads as done, the measuring tape disappears, and the gap is
       // only discovered later when the figures are needed. Save stays shut
@@ -3201,7 +3238,10 @@ This backup was generated in one click from Back End and contains:
       overlay.className = 'mp-dim-screen';
       overlay.innerHTML = `
         <div class="mp-dim-bar">
-          <div class="mp-dim-product">${escapeHtml(productLine)}</div>
+          <div class="mp-dim-product${lines.length > 1 ? ' multi' : ''}">
+            ${lines.length > 1 ? '<span class="mp-dim-whole">Whole parcel &mdash; all ' + lines.length + ' items together</span>' : ''}
+            ${lines.map(l => `<span class="mp-dim-line">${escapeHtml(l)}</span>`).join('')}
+          </div>
           <button class="mp-dim-close" id="dim-cancel" aria-label="Close">&times;</button>
         </div>
 
@@ -3332,21 +3372,23 @@ This backup was generated in one click from Back End and contains:
   }
 
   async function handleMeasureRequest(order) {
-    const productLine = singleProductOf(order);
-    if (!productLine) return;
+    const lines = measurableParcelOf(order);
+    if (!lines) return;
+    const productLine = parcelDisplay(lines);
     const key = dimensionKey(productLine);
-    const result = await showDimensionsModal(productLine, findDimensionRecord(productLine));
+    const result = await showDimensionsModal(lines, findDimensionRecord(productLine));
     if (!result) return;
-    const parsed = parseProductLine(productLine);
+    // Base product and quantity only mean something for a one-product
+    // parcel. For a mixed parcel the contents ARE the thing measured, so
+    // those columns are left out rather than filled with a half-truth.
+    const parsed = lines.length === 1 ? parseProductLine(lines[0]) : null;
     const record = {
       key,
       product: productLine,
-      // Split out as well, so the export can group every quantity of one
-      // product together without having to re-parse the text.
-      baseProduct: parsed.name,
-      qty: parsed.qty,
-      // Whatever SKUs came with this order. On a single-product slot this
-      // is normally exactly one, which is what makes the export usable.
+      productLines: lines,
+      itemCount: lines.length,
+      baseProduct: parsed ? parsed.name : productLine,
+      qty: parsed ? parsed.qty : null,
       skus: Array.isArray(order.sourceSkus) ? order.sourceSkus : [],
       weight: result.weight,
       length: result.length,
