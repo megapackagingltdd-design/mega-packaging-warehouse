@@ -370,6 +370,45 @@
     .mp-order-card.mp-web, .mp-order-card.mp-web.state-purple { animation: none; }
   }
 
+  /* ---------- Measuring jobs (not orders) ----------
+     Deliberately unlike a slot. A slot is blue/green/purple and gets
+     picked, printed and scanned; this is a teal, dashed, clearly-labelled
+     job that only needs weighing. Nobody should mistake one for the other
+     on a busy board. */
+  .mp-measure-cluster {
+    border: 2.5px dashed #1a8a8a; border-radius: 10px; padding: 8px;
+    background: #f0fafa; margin-bottom: 10px;
+  }
+  .mp-measure-cluster-label {
+    font-size: 12px; font-weight: 900; letter-spacing: .04em; text-transform: uppercase;
+    color: #0f6b6b; padding: 2px 4px 8px;
+  }
+  .mp-measure-card {
+    position: relative; display: flex; flex-direction: column;
+    background: #fff; border: 3px solid #1a8a8a; border-radius: 9px;
+    padding: 10px 12px 11px; overflow: hidden;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  .mp-measure-flag {
+    align-self: center; background: #1a8a8a; color: #fff;
+    font-size: 9.5px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase;
+    padding: 2px 10px; border-radius: 4px; margin-bottom: 8px;
+  }
+  .mp-measure-main { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: center; }
+  .mp-measure-product { font-size: 19px; font-weight: 900; color: #0d2626; line-height: 1.22; }
+  .mp-measure-sku {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; color: #4a7070; margin-top: 4px; word-break: break-all;
+  }
+  .mp-measure-note { font-size: 12px; color: #5a7a7a; margin-top: 5px; line-height: 1.35; }
+  .mp-measure-btn {
+    margin-top: 10px; padding: 11px; border-radius: 9px; border: none;
+    background: #1a8a8a; color: #fff; font-family: inherit;
+    font-size: 14px; font-weight: 900; cursor: pointer;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .mp-measure-btn:active { background: #23a3a3; transform: scale(.97); }
+
   /* ---------- Measuring tape + dimensions ---------- */
   /* Bottom-right of the card, clear of the label-count badge (top-right)
      and the WEBSITE ribbon (top-left). */
@@ -2661,6 +2700,98 @@ This backup was generated in one click from Back End and contains:
     return !!lines && !dimensionsKnown(parcelDisplay(lines));
   }
 
+  // ---------- Measurement requests ----------
+  // A product can need measuring without anyone having ordered it — a new
+  // listing being prepared, or a line we simply have no figures for yet.
+  // Those are raised on the sync page, approved there, and then appear on
+  // this board as a job of their own.
+  //
+  // They are deliberately NOT slots. A slot is an order: it counts towards
+  // the day's totals, it gets printed, picked and scanned, and it is read
+  // back by the evening sweep. A measuring job is none of those things, so
+  // keeping it out of the orders array means none of that machinery has to
+  // learn about a kind of row that isn't really an order.
+  //
+  // Held in one shared document so another system — the ordering portal,
+  // or anything added later — can queue a request by appending to it,
+  // without needing a Firestore rules change.
+  const MEASURE_REQUESTS_KEY = 'measurement-requests';
+  let measureRequests = [];
+
+  async function loadMeasureRequests() {
+    try {
+      const res = await window.storage.get(MEASURE_REQUESTS_KEY, true);
+      const all = (res && res.value) ? JSON.parse(res.value) : [];
+      measureRequests = Array.isArray(all) ? all : [];
+    } catch (e) {
+      measureRequests = [];
+    }
+    return measureRequests;
+  }
+
+  // Only ones approved on the sync page and not yet measured reach the floor.
+  function openMeasureRequests() {
+    return measureRequests.filter(r => r && r.status === 'sent');
+  }
+
+  async function completeMeasureRequest(id, dims) {
+    return queueStorageWrite(MEASURE_REQUESTS_KEY, async () => {
+      let all = [];
+      try {
+        const res = await window.storage.get(MEASURE_REQUESTS_KEY, true);
+        all = (res && res.value) ? JSON.parse(res.value) : [];
+      } catch (e) { all = []; }
+      const i = all.findIndex(r => String(r.id) === String(id));
+      if (i === -1) return false;
+      all[i] = { ...all[i], status: 'measured', measuredAt: Date.now(), ...dims };
+      const ok = await window.storage.set(MEASURE_REQUESTS_KEY, JSON.stringify(all), true);
+      if (ok) measureRequests = all;
+      return !!ok;
+    });
+  }
+
+  function renderMeasureCard(r) {
+    return `
+      <div class="mp-measure-card" data-measure-req="${escapeHtml(String(r.id))}">
+        <div class="mp-measure-flag">Only for measurements</div>
+        <div class="mp-measure-main">
+          <div class="mp-measure-product">${escapeHtml(r.product || '')}</div>
+          ${r.sku ? `<div class="mp-measure-sku">${escapeHtml(r.sku)}</div>` : ''}
+          ${r.note ? `<div class="mp-measure-note">${escapeHtml(r.note)}</div>` : ''}
+        </div>
+        <button class="mp-measure-btn">📏 Measure this</button>
+      </div>`;
+  }
+
+  async function handleMeasureRequestJob(req) {
+    const result = await showDimensionsModal([req.product], req);
+    if (!result) return;
+    // Written to the same product database as an order measurement, so the
+    // export is one list regardless of how the figures were obtained.
+    const key = dimensionKey(req.product);
+    const parsed = parseProductLine(req.product);
+    const okDim = await saveProductDimension({
+      key,
+      product: req.product,
+      productLines: [req.product],
+      itemCount: 1,
+      baseProduct: parsed.name,
+      qty: parsed.qty,
+      skus: req.sku ? [req.sku] : [],
+      weight: result.weight,
+      length: result.length,
+      width: result.width,
+      height: result.height,
+      recordedAt: Date.now(),
+      // Recorded so it is obvious later that this came from a measuring
+      // job rather than a parcel that actually shipped.
+      source: 'measurement request'
+    });
+    if (!okDim) { await customAlert('Could not save those measurements — try again.'); return; }
+    await completeMeasureRequest(req.id, result);
+    loadAndRenderList();
+  }
+
   // Orders placed on the Mega website carry an MP-#### order number and
   // follow a different fulfilment process from Amazon / Sendcloud ones, so
   // they are themed separately on the board.
@@ -2933,12 +3064,23 @@ This backup was generated in one click from Back End and contains:
   async function loadAndRenderList() {
     allOrders = await getAllOrders();
     await loadProductDimensions();
+    await loadMeasureRequests();
     const todayOrders = allOrders.filter(o => o.addedAt && isToday(o.addedAt));
     checkForNewOrdersAndChime(todayOrders);
     updateSummaryBanner(todayOrders);
     const body = document.getElementById('wh-list-inner');
+
+    // Measuring jobs sit above the orders — they are quick, and leaving
+    // them to the bottom of a long day means they never get done.
+    const jobs = openMeasureRequests();
+    const measureHtml = jobs.length ? `
+      <div class="mp-measure-cluster">
+        <div class="mp-measure-cluster-label">📏 Measurements needed — ${jobs.length} (not orders)</div>
+        <div class="mp-group-cluster-grid">${jobs.map(renderMeasureCard).join('')}</div>
+      </div>` : '';
+
     if (todayOrders.length === 0) {
-      body.innerHTML = '<div class="mp-empty">No slots loaded today yet — add some in "Back End". (Older orders are still searchable.)</div>';
+      body.innerHTML = measureHtml + '<div class="mp-empty">No slots loaded today yet — add some in "Back End". (Older orders are still searchable.)</div>';
       applyWhScrollOffset(); // re-clamp now that content shrank
       return;
     }
@@ -2949,7 +3091,7 @@ This backup was generated in one click from Back End and contains:
     const clusters = clusterOrders(sorted);
     lastRenderedClusters = clusters; // so the bulk-print click handler can look items up by index
 
-    body.innerHTML = clusters.map((cluster, idx) => {
+    body.innerHTML = measureHtml + clusters.map((cluster, idx) => {
       const cardsHtml = cluster.items.map(renderOrderCard).join('');
       const clusterClass = cluster.isMixed ? 'mp-group-cluster mp-group-cluster-mixed' : 'mp-group-cluster';
       return `
@@ -3676,6 +3818,15 @@ This backup was generated in one click from Back End and contains:
   whListBody.addEventListener('click', (e) => {
     // The tape sits on top of the card, so its click has to be caught
     // before the card's own tap-to-green handler sees it.
+    // A standalone measuring job — not an order, so it has its own path.
+    const job = e.target.closest('[data-measure-req]');
+    if (job) {
+      e.stopPropagation();
+      const req = measureRequests.find(r => String(r.id) === String(job.dataset.measureReq));
+      if (req) handleMeasureRequestJob(req).catch(err => console.error('measure job failed:', err));
+      return;
+    }
+
     const tape = e.target.closest('[data-measure]');
     if (tape) {
       e.stopPropagation();
