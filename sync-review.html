@@ -263,95 +263,6 @@
     font-size: 11px; font-weight: 800; color: #8a6412; background: #fdf3e4;
     border: 1px solid #edd8ae; border-radius: 5px; padding: 1px 7px; vertical-align: 2px;
   }
-  /* Records written before the quantity was stored. The figures are real,
-     but which pack size they were taken from isn't recorded — so they are
-     marked rather than silently trusted. */
-  .dim-check {
-    font-size: 11px; font-weight: 800; color: #a3271b; background: #fdeceb;
-    border: 1px solid #f0c0ba; border-radius: 5px; padding: 1px 7px; vertical-align: 2px;
-  }
-  .dim-figs { font-size: 13px; color: #444; margin-top: 4px; }
-  .dim-figs b { color: #2f6b3e; font-size: 14px; }
-  .dim-missing { color: #b0aaa0; font-style: italic; }
-
-  .chan-chip {
-    display: inline-block; margin: 6px 0 2px; padding: 3px 10px; border-radius: 5px;
-    font-size: 11px; font-weight: 800; letter-spacing: .03em;
-    border: 1.5px solid; background: #fff;
-  }
-  .chan-amazon { color: #8a5200; border-color: #f0a830; background: #fff8ec; }
-  .chan-web    { color: #7a5c00; border-color: #e0b63c; background: #fffbe9; }
-  .chan-ebay   { color: #0b5ea8; border-color: #4a9fe0; background: #eef6fd; }
-  .chan-manual { color: #5a5a5a; border-color: #b9b9b9; background: #f5f5f5; }
-  .chan-other  { color: #3d6b45; border-color: #86b593; background: #f0f7f1; }
-
-  .joined-card { border: 2px solid #c0392b; }
-  .joined-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .joined-title { font-size: 15px; font-weight: 900; color: #a3271b; }
-  .joined-count {
-    font-size: 13px; font-weight: 900; color: #fff; background: #c0392b;
-    border-radius: 12px; padding: 2px 10px; min-width: 26px; text-align: center;
-  }
-  .joined-note { font-size: 12.5px; color: #666; line-height: 1.45; margin: 6px 0 10px; }
-  .joined-row { border-top: 1.5px solid #f0dedb; padding: 11px 0 4px; }
-  .joined-name { font-size: 15px; font-weight: 900; color: #1a1d1a; }
-  .joined-combined { font-size: 13.5px; font-weight: 700; color: #333; margin-top: 3px; }
-  .joined-part {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 11.5px; color: #666; line-height: 1.55; margin-top: 7px;
-    padding-left: 10px; border-left: 3px solid #edd8ae; word-break: break-all;
-  }
-  .joined-part b { color: #1a1d1a; font-family: inherit; }
-
-  .auto-list { max-height: 55vh; overflow-y: auto; }
-  .auto-row {
-    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
-    padding: 11px 0; border-bottom: 1px solid #ece9e1;
-  }
-  .auto-prod { font-size: 15px; font-weight: 800; color: #1a1d1a; line-height: 1.35; }
-  .auto-count {
-    font-size: 15px; font-weight: 900; color: #c65d2e; white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .auto-total { border-bottom: none; border-top: 2px solid #1a1d1a; margin-top: 4px; padding-top: 12px; }
-  .auto-total .auto-prod { text-transform: uppercase; font-size: 12px; letter-spacing: .06em; color: #777; }
-  .auto-total .auto-count { font-size: 20px; color: #1a1d1a; }
-
-  .learned-section {
-    font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
-    color: #999; margin: 14px 0 4px;
-  }
-  .learned-section:first-child { margin-top: 0; }
-  .learned-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
-  .learned-row:last-child { border-bottom: none; }
-  .learned-sku {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12.5px; font-weight: 800; color: #1a1d1a; word-break: break-all;
-  }
-  .learned-rule { font-size: 13px; color: #555; margin-top: 3px; line-height: 1.45; }
-  .learned-rule .learned-per { color: #999; }
-  /* Own sizing rather than .btn, which is width:100% and would fill the row. */
-  .learned-actions { display: flex; gap: 8px; margin-top: 8px; }
-  .learned-btn {
-    width: auto; padding: 6px 14px; border-radius: 7px; font-size: 12.5px; font-weight: 800;
-    font-family: inherit; cursor: pointer; touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent; border: 1.5px solid;
-  }
-  .learned-btn.edit { border-color: #c9c5b9; background: #fff; color: #444; }
-  .learned-btn.remove { border-color: #b03636; background: #fff; color: #b03636; }
-  .learned-btn.save { border-color: #2f6b3e; background: #2f6b3e; color: #fff; }
-  .learned-btn.cancel { border-color: #c9c5b9; background: #fff; color: #444; }
-  .learned-edit-form { margin-top: 8px; }
-  .learned-edit-form input[type="text"],
-  .learned-edit-form input[type="number"] { margin-bottom: 6px; }
-  .learned-field-label { font-size: 11.5px; font-weight: 800; color: #777; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 3px; }
-  .learned-fixed-row { display: flex; align-items: flex-start; gap: 8px; margin: 2px 0 8px; font-size: 12.5px; color: #555; line-height: 1.4; }
-  .learned-fixed-row input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #c65d2e; }
-
-  .tab-empty {
-    color: #999; font-size: 13px; text-align: center; padding: 20px 10px; line-height: 1.5;
-  }
-
   .manual-labels-list-item {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     background: #f6f5f1; border-radius: 7px; padding: 8px 10px; margin-bottom: 6px; font-size: 13px;
@@ -1091,6 +1002,41 @@
     }
   }
 
+  // Splits "wood fork full box x2" into the product and how many of it.
+  // Only a TRAILING "xN" is an order quantity — a number inside the name is
+  // part of the product ("wood spoon x200 single" is a 200-pack, one of
+  // them; "8ply 2,500" likewise), and treating those as quantities would
+  // merge genuinely different products.
+  function splitProductQty(line) {
+    const t = String(line || '').trim();
+    const m = t.match(/^(.*?)\s*x\s*(\d+)\s*$/i);
+    if (m && m[1].trim()) return { name: m[1].trim(), qty: parseInt(m[2], 10) };
+    return { name: t, qty: 1 };
+  }
+
+  // The quantity a record was measured at.
+  //
+  // Newer records store it outright. Older ones don't, but it was never
+  // actually unknown: the version that wrote them only ever offered the
+  // measuring tape at quantity 1, and anything with a trailing "xN" in its
+  // name carries the quantity in the name itself. So it is read back
+  // rather than reported as missing — the earlier "worth checking" warning
+  // was my own over-caution and told you nothing useful.
+  function recordQty(r) {
+    if (r && r.qty != null) return r.qty;
+    if (r && r.itemCount > 1) return null;          // a mixed parcel has no single quantity
+    return splitProductQty((r && (r.product || r.key)) || '').qty;
+  }
+
+  function recordBaseProduct(r) {
+    if (r && r.baseProduct) return r.baseProduct;
+    const text = (r && (r.product || r.key)) || '';
+    // A mixed parcel has no single "base product" — stripping a trailing
+    // quantity there would lop the count off the last item in the list.
+    if (r && r.itemCount > 1) return text;
+    return splitProductQty(text).name;
+  }
+
   // ---------- Product dimensions ----------
   // Written from the warehouse view, read here so the whole set can be
   // pulled out in one go and pasted into Amazon and the other channels.
@@ -1130,7 +1076,7 @@
       return `
         <div class="dim-row" data-key="${escapeHtml(r.key)}">
           <div class="dim-main">
-            <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.qty > 1) ? ' <span class="dim-qty">pack of ' + r.qty + '</span>' : ''}${(r.itemCount > 1) ? ' <span class="dim-qty">' + r.itemCount + ' items</span>' : ''}${r.qty == null && !r.itemCount ? ' <span class="dim-check">quantity not recorded — worth checking</span>' : ''}</div>
+            <div class="dim-product">${escapeHtml(r.product || r.key || '')}${(r.itemCount > 1) ? ' <span class="dim-qty">' + r.itemCount + ' products in one parcel</span>' : (recordQty(r) > 1 ? ' <span class="dim-qty">pack of ' + recordQty(r) + '</span>' : '')}</div>
             <div class="dim-sku">${skus}</div>
             <div class="dim-figs"><b>${r.weight} kg</b> &middot; ${dims}</div>
           </div>
@@ -1151,8 +1097,8 @@
     const head = ['SKU', 'Product', 'Qty', 'Full line', 'Weight (kg)', 'Length (cm)', 'Width (cm)', 'Height (cm)', 'Recorded'];
     const rows = dimensionRows.map(r => ([
       (r.skus && r.skus.length) ? r.skus.join(' / ') : '',
-      r.baseProduct || r.product || r.key || '',
-      r.qty != null ? r.qty : 1,
+      recordBaseProduct(r),
+      recordQty(r) == null ? '' : recordQty(r),
       r.product || r.key || '',
       r.weight != null ? r.weight : '',
       r.length != null ? r.length : '',
