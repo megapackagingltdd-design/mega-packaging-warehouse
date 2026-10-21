@@ -195,6 +195,42 @@
   .rep-empty { font-size: 13.5px; color: #777; line-height: 1.55; }
   .rep-note { font-size: 12px; color: #999; line-height: 1.5; margin-top: 16px; border-top: 1px solid #ece9e1; padding-top: 10px; }
 
+  .meas-form { border-bottom: 1.5px solid #ece9e1; padding-bottom: 14px; margin-bottom: 4px; }
+  .meas-form-title { font-size: 15px; font-weight: 900; color: #1a1d1a; }
+  .meas-form-sub { font-size: 12.5px; color: #777; line-height: 1.45; margin: 4px 0 12px; }
+  .meas-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  @media (max-width: 560px) { .meas-fields { grid-template-columns: minmax(0, 1fr); } }
+  .meas-field.wide { grid-column: 1 / -1; }
+  .meas-field > span { display: block; font-size: 11.5px; font-weight: 800; color: #555; margin-bottom: 4px; }
+  .meas-field > span em { font-style: normal; color: #c0392b; font-size: 10.5px; }
+  .meas-field input {
+    width: 100%; box-sizing: border-box; font-family: inherit; font-size: 15px;
+    padding: 10px 12px; border: 1.5px solid #d5d1c7; border-radius: 8px; background: #fff;
+  }
+  .meas-field input:focus { outline: none; border-color: #c65d2e; }
+  .meas-msg { min-height: 18px; font-size: 12.5px; font-weight: 700; color: #a33; padding: 8px 0 4px; }
+
+  .meas-row { display: flex; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid #ece9e1; }
+  .meas-row:last-child { border-bottom: none; }
+  .meas-main { flex: 1; min-width: 0; }
+  .meas-product { font-size: 15px; font-weight: 900; color: #1a1d1a; line-height: 1.3; }
+  .meas-sku {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px; color: #777; margin-top: 2px; word-break: break-all;
+  }
+  .meas-note { font-size: 12.5px; color: #666; margin-top: 3px; line-height: 1.4; }
+  .meas-status {
+    display: inline-block; font-size: 11px; font-weight: 800; margin-top: 6px;
+    padding: 2px 9px; border-radius: 5px; border: 1px solid;
+  }
+  .meas-status.pending { color: #8a6412; background: #fdf3e4; border-color: #edd8ae; }
+  .meas-status.sent    { color: #0f6b6b; background: #e8f6f6; border-color: #a6d9d9; }
+  .meas-status.done    { color: #2f6b3e; background: #eaf5ec; border-color: #a9d4b6; }
+  .meas-figs { font-size: 13.5px; color: #333; margin-top: 6px; }
+  .meas-figs b { color: #2f6b3e; font-size: 14.5px; }
+  .meas-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .btn.btn-sm { padding: 7px 14px; font-size: 12.5px; }
+
   .dim-actions { display: flex; gap: 6px; flex-shrink: 0; }
   .learned-btn.edit { border-color: #c65d2e; color: #c65d2e; }
 
@@ -393,6 +429,7 @@
     <button class="tab" data-tab="upload">Upload</button>
     <button class="tab" data-tab="learned">Learned</button>
     <button class="tab" data-tab="dimensions">Dimensions <span class="tab-count" id="count-dimensions">0</span></button>
+    <button class="tab" data-tab="measure">Measure <span class="tab-count" id="count-measure">0</span></button>
   </div>
 
   <div class="card tab-panel" id="panel-attention" style="display:none;">
@@ -453,6 +490,32 @@
   <div class="card tab-panel" id="panel-learned" style="display:none;">
     <div class="tab-empty" id="learned-empty" style="display:none;">Nothing learned yet. Correct a flagged order and you'll be asked to save it.</div>
     <div id="learned-list"></div>
+  </div>
+
+  <div class="card tab-panel" id="panel-measure" style="display:none;">
+    <div class="meas-form">
+      <div class="meas-form-title">Ask the warehouse to measure a product</div>
+      <div class="meas-form-sub">For a new listing, or anything we have no figures for. It is not an order — nothing gets picked, printed or scanned.</div>
+      <div class="meas-fields">
+        <label class="meas-field">
+          <span>Product name <em>required</em></span>
+          <input type="text" id="meas-product" placeholder="e.g. 8oz ripple cups x1" autocomplete="off">
+        </label>
+        <label class="meas-field">
+          <span>SKU</span>
+          <input type="text" id="meas-sku" placeholder="e.g. RIP-8OZ-1000" autocomplete="off">
+        </label>
+        <label class="meas-field wide">
+          <span>Note for the warehouse</span>
+          <input type="text" id="meas-note" placeholder="optional — where to find it, which box to use" autocomplete="off">
+        </label>
+      </div>
+      <div class="meas-msg" id="meas-msg"></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-meas-add">Add request</button>
+      </div>
+    </div>
+    <div id="measure-list"></div>
   </div>
 
   <div class="card tab-panel" id="panel-dimensions" style="display:none;">
@@ -518,6 +581,7 @@
       renderNotScanned();
       renderJoined();
       renderDimensions();
+      renderMeasure();
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -766,7 +830,7 @@
   }
 
   // ---------- Tabs ----------
-  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions'];
+  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
   let activeTab = null;
   let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
@@ -798,7 +862,7 @@
     // Dimensions is a tab you check to see what has been collected, so its
     // count stays visible at zero — a missing chip there reads as broken
     // rather than empty.
-    if (countEl) countEl.style.display = (n > 0 || tab === 'dimensions') ? '' : 'none';
+    if (countEl) countEl.style.display = (n > 0 || tab === 'dimensions' || tab === 'measure') ? '' : 'none';
   }
 
   // Most urgent thing first: flagged orders, then the queue, then duplicates.
@@ -1198,6 +1262,152 @@
       }
       renderDimensions();
     }
+  });
+
+  // ---------- Measurement requests ----------
+  // Raised here, approved here, carried out on the warehouse board.
+  //
+  // Kept in one shared document rather than its own collection, so a
+  // future system — the ordering portal, or anything else — can queue a
+  // request by appending to the same list without a rules change. The
+  // read-modify-write below is why: several writers must not clobber one
+  // another, so nothing writes the whole list from stale state.
+  const MEASURE_REQUESTS_KEY = 'measurement-requests';
+  let measureRequests = [];
+
+  async function readMeasureRequests() {
+    const res = await storageCollection.doc(MEASURE_REQUESTS_KEY).get();
+    if (!res.exists) return [];
+    try {
+      const v = JSON.parse(res.data().value || '[]');
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  async function writeMeasureRequests(mutate) {
+    const all = await readMeasureRequests();
+    const next = mutate(all);
+    await storageCollection.doc(MEASURE_REQUESTS_KEY).set({
+      value: JSON.stringify(next), shared: true, updatedAt: Date.now()
+    });
+    return next;
+  }
+
+  const MEAS_STATUS = {
+    pending:  { label: 'Waiting for your approval', cls: 'pending' },
+    sent:     { label: 'On the warehouse board',    cls: 'sent'    },
+    measured: { label: 'Measured',                  cls: 'done'    }
+  };
+
+  async function renderMeasure() {
+    try { await renderMeasureInner(); }
+    catch (e) { showRenderError('the measurement requests', e); }
+  }
+
+  async function renderMeasureInner() {
+    measureRequests = await readMeasureRequests();
+    const outstanding = measureRequests.filter(r => r.status !== 'measured');
+    setTabCount('measure', outstanding.length);
+
+    const listEl = document.getElementById('measure-list');
+    if (!measureRequests.length) {
+      listEl.innerHTML = '<div class="tab-empty">Nothing requested yet. Add one above and it goes to the warehouse once you approve it.</div>';
+      return;
+    }
+
+    // Outstanding first — a finished one is a record, not a job.
+    const order = { pending: 0, sent: 1, measured: 2 };
+    const rows = [...measureRequests].sort((a, b) =>
+      (order[a.status] ?? 3) - (order[b.status] ?? 3) || (b.requestedAt || 0) - (a.requestedAt || 0));
+
+    listEl.innerHTML = rows.map(r => {
+      const st = MEAS_STATUS[r.status] || MEAS_STATUS.pending;
+      const figures = r.status === 'measured'
+        ? `<div class="meas-figs"><b>${r.weight} kg</b> · ${r.length} × ${r.width} × ${r.height} cm</div>`
+        : '';
+      const actions = r.status === 'pending'
+        ? `<button class="btn btn-good btn-sm" data-meas="approve" data-id="${escapeHtml(String(r.id))}">Approve</button>
+           <button class="learned-btn remove" data-meas="delete" data-id="${escapeHtml(String(r.id))}">Delete</button>`
+        : r.status === 'sent'
+        ? `<button class="learned-btn" data-meas="recall" data-id="${escapeHtml(String(r.id))}">Take back</button>
+           <button class="learned-btn remove" data-meas="delete" data-id="${escapeHtml(String(r.id))}">Delete</button>`
+        : `<button class="learned-btn remove" data-meas="delete" data-id="${escapeHtml(String(r.id))}">Remove</button>`;
+      return `
+        <div class="meas-row">
+          <div class="meas-main">
+            <div class="meas-product">${escapeHtml(r.product || '')}</div>
+            ${r.sku ? `<div class="meas-sku">${escapeHtml(r.sku)}</div>` : ''}
+            ${r.note ? `<div class="meas-note">${escapeHtml(r.note)}</div>` : ''}
+            <div class="meas-status ${st.cls}">${st.label}${r.source && r.source !== 'sync page' ? ' · from ' + escapeHtml(r.source) : ''}</div>
+            ${figures}
+          </div>
+          <div class="meas-actions">${actions}</div>
+        </div>`;
+    }).join('');
+  }
+
+  document.getElementById('btn-meas-add').addEventListener('click', async () => {
+    const productEl = document.getElementById('meas-product');
+    const msg = document.getElementById('meas-msg');
+    const product = productEl.value.trim();
+    const sku = document.getElementById('meas-sku').value.trim();
+    const note = document.getElementById('meas-note').value.trim();
+    if (!product) {
+      msg.textContent = 'A product name is needed — it is what the warehouse will see.';
+      productEl.focus();
+      return;
+    }
+    const btn = document.getElementById('btn-meas-add');
+    btn.disabled = true;
+    try {
+      await writeMeasureRequests(all => [...all, {
+        id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+        product, sku, note,
+        status: 'pending',
+        source: 'sync page',
+        requestedAt: Date.now()
+      }]);
+      productEl.value = '';
+      document.getElementById('meas-sku').value = '';
+      document.getElementById('meas-note').value = '';
+      msg.textContent = '';
+      document.getElementById('top-status').textContent = `Added "${product}" — press Approve to send it to the warehouse.`;
+    } catch (e) {
+      msg.textContent = 'Could not save that — ' + ((e && e.message) || 'try again') + '.';
+    }
+    btn.disabled = false;
+    renderMeasure();
+  });
+
+  document.getElementById('measure-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-meas]');
+    if (!btn || btn.disabled) return;
+    const what = btn.dataset.meas;
+    const id = btn.dataset.id;
+    const r = measureRequests.find(x => String(x.id) === String(id));
+    const name = (r && r.product) || 'this request';
+
+    if (what === 'delete' && !confirm(`Delete the request for "${name}"?`)) return;
+    if (what === 'recall' && !confirm(`Take "${name}" back off the warehouse board? It returns to waiting for approval.`)) return;
+
+    btn.disabled = true;
+    try {
+      await writeMeasureRequests(all => {
+        if (what === 'delete') return all.filter(x => String(x.id) !== String(id));
+        return all.map(x => String(x.id) !== String(id) ? x
+          : { ...x, status: what === 'approve' ? 'sent' : 'pending',
+              approvedAt: what === 'approve' ? Date.now() : null });
+      });
+      document.getElementById('top-status').textContent =
+        what === 'approve' ? `"${name}" is on the warehouse board now.`
+        : what === 'recall' ? `"${name}" taken back off the board.`
+        : `Deleted "${name}".`;
+    } catch (err) {
+      btn.disabled = false;
+      showRenderError('the measurement requests', err);
+      return;
+    }
+    renderMeasure();
   });
 
   // ---------- Joined orders ----------
