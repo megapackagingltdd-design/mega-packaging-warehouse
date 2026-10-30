@@ -107,20 +107,31 @@
   /* ---------- Review queue tabs ---------- */
   /* Horizontally scrollable so six tabs fit a phone without shrinking to
      nothing. */
+  /* Every tab on screen at once. They used to scroll sideways, which meant
+     Dimensions and Measure were off the end and easy to forget — so the row
+     wraps onto a second line instead of hiding anything, and the tabs share
+     the width rather than each taking what they want. */
+  /* A grid rather than a flex row: every tab gets an equal share, so the
+     row divides evenly instead of leaving one tab stranded on a line of
+     its own when they wrap. auto-fit means a quiet day with fewer tabs
+     still uses one row. */
   .tabs {
-    display: flex; gap: 4px; margin: 0 0 12px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 1px; margin: 0 0 12px;
     border-bottom: 1.5px solid #e6e3da;
-    overflow-x: auto; -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
   }
-  .tabs::-webkit-scrollbar { display: none; }
   .tab {
-    flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 5px;
-    padding: 10px 12px; font-size: 13px; font-weight: 800; font-family: inherit;
-    white-space: nowrap;
+    min-width: 0;
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    padding: 10px 6px; font-size: 12.5px; font-weight: 800; font-family: inherit;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     background: none; border: none; border-bottom: 3px solid transparent;
     color: #999; cursor: pointer; touch-action: manipulation;
     -webkit-tap-highlight-color: transparent; margin-bottom: -1.5px;
+  }
+  @media (max-width: 560px) {
+    .tab { font-size: 11.5px; padding: 9px 4px; gap: 3px; }
+    .tab .tab-count { font-size: 10px; padding: 0 5px; }
   }
   .tab.attention { color: #a33; }
   .tab.attention.active { border-bottom-color: #c0392b; }
@@ -333,7 +344,6 @@
        something in that tab. -->
   <div class="tabs" id="main-tabs">
     <button class="tab attention" data-tab="attention" style="display:none;">Attention <span class="tab-count" id="count-attention">0</span></button>
-    <button class="tab" data-tab="eightply">8ply x1 <span class="tab-count" id="count-eightply">0</span></button>
     <button class="tab" data-tab="other">Other <span class="tab-count" id="count-other">0</span></button>
     <button class="tab" data-tab="skipped">Duplicates <span class="tab-count" id="count-skipped">0</span></button>
     <button class="tab warn" data-tab="notscanned" style="display:none;">Not scanned <span class="tab-count" id="count-notscanned">0</span></button>
@@ -347,6 +357,10 @@
     <div id="attention-list"></div>
   </div>
 
+  <!-- The 8ply x1 tab was retired: those orders approve themselves on sync,
+       so the tab was only taking up space. This panel stays in the page but
+       is never shown — the auto-approve reads the cards from it, and the
+       list has to exist for that to work. -->
   <div class="card tab-panel" id="panel-eightply" style="display:none;">
     <div class="tab-empty" id="eightply-empty" style="display:none;">No 8ply x1 orders.</div>
     <!-- Same actions top and bottom, so a long list doesn't have to be
@@ -741,7 +755,7 @@
   }
 
   // ---------- Tabs ----------
-  const ALL_TABS = ['attention', 'eightply', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
+  const ALL_TABS = ['attention', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
   let activeTab = null;
   let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
@@ -779,9 +793,14 @@
   // Most urgent thing first: flagged orders, then the queue, then duplicates.
   function chooseDefaultTab() {
     if (userPickedTab && activeTab) { setTab(activeTab); return; }
-    const n = (id) => parseInt(document.getElementById('count-' + id).textContent, 10) || 0;
+    // Null-safe: a tab can be retired (the 8ply one was), and reading
+    // .textContent off a missing element would throw here and stop the
+    // page rendering at all.
+    const n = (id) => {
+      const el = document.getElementById('count-' + id);
+      return el ? (parseInt(el.textContent, 10) || 0) : 0;
+    };
     if (n('attention') > 0) return setTab('attention');
-    if (n('eightply') > 0) return setTab('eightply');
     if (n('other') > 0) return setTab('other');
     if (n('skipped') > 0) return setTab('skipped');
     if (n('notscanned') > 0) return setTab('notscanned');
@@ -1479,11 +1498,18 @@
 
     if (btn.dataset.action === 'ns-slot') {
       const header = item.postcode ? `${item.name} (${item.postcode})` : item.name;
-      if (!confirm(`Add ${item.name} back as a slot to be re-done today?`)) return;
+      // A slot's text is the header line PLUS the products underneath —
+      // passing only the header produced a nameless, productless card that
+      // staff could not pick from. The products come back from Sendcloud
+      // with the not-scanned list, so they go in here.
+      const raw = item.products ? `${header}\n${item.products}` : header;
+      if (!confirm(`Add ${item.name} back as a slot to be re-done today?\n\n${item.products || '(no product details came back — you will need to type them)'}`)) return;
       try {
-        await addOrderAsSlot(header, item.orderNumber ? [item.orderNumber] : (item.shipmentId ? [item.shipmentId] : null),
+        await addOrderAsSlot(raw, item.orderNumber ? [item.orderNumber] : (item.shipmentId ? [item.shipmentId] : null),
                              false, false, item.trackingNumber ? [item.trackingNumber] : null);
-        statusEl.textContent = `${item.name} added as a slot — edit the products on the warehouse list.`;
+        statusEl.textContent = item.products
+          ? `${item.name} added as a slot with their products.`
+          : `${item.name} added as a slot — no products came back, so add them on the warehouse list.`;
       } catch (err) {
         statusEl.textContent = 'Could not add that slot — ' + ((err && err.message) || 'try again') + '.';
       }
