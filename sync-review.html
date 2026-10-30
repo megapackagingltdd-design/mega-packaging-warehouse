@@ -41,7 +41,23 @@
   /* ---------- Main page ---------- */
   #page { display: none; padding: 14px; padding-bottom: 60px; max-width: 720px; margin: 0 auto; }
   #page.active { display: block; }
+  /* Title on the left, whoever is signed in on the right. The sign-out
+     control lives up here because signing out is now the ONLY thing that
+     ends a session — closing the tab no longer does. */
+  .page-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .page-title { font-size: 19px; font-weight: 900; margin: 4px 0 4px; }
+  .who { display: flex; align-items: center; gap: 7px; font-size: 12px; color: #777; }
+  .who-name {
+    font-weight: 800; color: #444; max-width: 110px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .btn-signout {
+    font-family: inherit; font-size: 11.5px; font-weight: 800; letter-spacing: .03em;
+    padding: 5px 10px; border-radius: 7px; border: 1.5px solid #e0ddd4;
+    background: #fff; color: #a33; cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-signout:active { background: #f7eceb; }
   .page-subtitle { font-size: 12.5px; color: #777; margin: 0 0 16px; line-height: 1.4; }
 
   .card {
@@ -318,7 +334,13 @@
 </div>
 
 <div id="page">
-  <div class="page-title">Sendcloud Sync</div>
+  <div class="page-head">
+    <div class="page-title">Sendcloud Sync</div>
+    <div class="who" id="who" style="display:none;">
+      <span class="who-name" id="who-name"></span>
+      <button class="btn-signout" id="btn-signout">Sign out</button>
+    </div>
+  </div>
 
   <div class="card joined-card" id="joined-card" style="display:none;">
     <div class="joined-head">
@@ -479,17 +501,66 @@
   }
 
   // ---------- PIN gate — same multi-user PIN system as the summary page ----------
-  async function checkPin(pin) {
+  // The sign-in survives closing the tab. On a phone that matters: this page
+  // gets opened, used for one order and closed again a dozen times a day, and
+  // re-entering the PIN each time was the slowest part of making a label.
+  // Only the Sign out button ends a session now.
+  //
+  // What lands on the device is the PIN record's id — never the four digits.
+  // Every load checks that id back against the live PIN list, so deleting a
+  // PIN or unticking Active in Back End locks that device out the next time
+  // it opens the page. A remembered session can't outlive the PIN behind it.
+  const SESSION_KEY = 'sync-signed-in';
+
+  function readSession() {
+    try {
+      const raw = localStorage.getItem(SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }   // private window, blocked storage, or bad JSON
+  }
+  function writeSession(record) {
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        id: record.id, label: record.label || '', at: Date.now()
+      }));
+    } catch (e) { /* storage unavailable — they just enter the PIN next time */ }
+  }
+  function clearSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+  }
+
+  async function loadPins() {
     const value = await storageGet('summary-pins');
-    if (!value) return { ok: false, reason: 'No PINs have been configured yet — set one up in Back End first.' };
-    let pins;
-    try { pins = JSON.parse(value); } catch (e) { pins = []; }
+    if (!value) return null;
+    try { return JSON.parse(value); } catch (e) { return []; }
+  }
+
+  async function checkPin(pin) {
+    const pins = await loadPins();
+    if (!pins) return { ok: false, reason: 'No PINs have been configured yet — set one up in Back End first.' };
     const match = pins.find(p => p.pin === pin && p.active);
-    return match ? { ok: true } : { ok: false, reason: 'Incorrect or inactive PIN.' };
+    return match ? { ok: true, record: match } : { ok: false, reason: 'Incorrect or inactive PIN.' };
   }
 
   const pinInput = document.getElementById('pin-input');
   const pinError = document.getElementById('pin-error');
+
+  // Everything that happens once you're through the gate, in one place, so the
+  // PIN path and the remembered-session path can't drift apart.
+  function enterApp(record) {
+    document.getElementById('pin-screen').style.display = 'none';
+    document.getElementById('page').classList.add('active');
+    document.getElementById('who-name').textContent = (record && record.label) || '';
+    document.getElementById('who').style.display = 'flex';
+    renderManualLabelsList();
+    renderReviewQueue();
+    renderSkippedList();
+    loadAutoApprove().then(renderLearnedList);
+    renderNotScanned();
+    renderJoined();
+    renderDimensions();
+    renderMeasure();
+  }
 
   async function submitPin() {
     const pin = pinInput.value.trim();
@@ -497,16 +568,9 @@
     pinError.textContent = 'Checking…';
     const result = await checkPin(pin);
     if (result.ok) {
-      document.getElementById('pin-screen').style.display = 'none';
-      document.getElementById('page').classList.add('active');
-      renderManualLabelsList();
-      renderReviewQueue();
-      renderSkippedList();
-      loadAutoApprove().then(renderLearnedList);
-      renderNotScanned();
-      renderJoined();
-      renderDimensions();
-      renderMeasure();
+      writeSession(result.record);
+      pinError.textContent = '';
+      enterApp(result.record);
     } else {
       pinError.textContent = result.reason;
       pinInput.value = '';
@@ -515,7 +579,34 @@
   document.getElementById('pin-ok').addEventListener('click', submitPin);
   pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
   pinInput.addEventListener('input', () => { if (pinInput.value.length === 4) submitPin(); });
-  pinInput.focus();
+
+  document.getElementById('btn-signout').addEventListener('click', () => {
+    if (!confirm('Sign out of the sync page? You will need your PIN to get back in.')) return;
+    clearSession();
+    location.reload();
+  });
+
+  // Try the remembered session before asking for anything. The PIN box stays
+  // on screen while this runs, so a missing or stale session just leaves the
+  // normal gate exactly where it was.
+  (async function restoreSession() {
+    const saved = readSession();
+    if (!saved || !saved.id) { pinInput.focus(); return; }
+    pinError.textContent = 'Signing you back in…';
+    try {
+      const pins = await loadPins();
+      const match = pins && pins.find(p => p.id === saved.id && p.active);
+      if (match) { pinError.textContent = ''; enterApp(match); return; }
+      // The PIN was deleted or switched off while this device was away.
+      clearSession();
+      pinError.textContent = 'That PIN is no longer active — enter a current one.';
+    } catch (e) {
+      // Offline, or Firestore unreachable. Don't let them in on a sign-in we
+      // couldn't verify, but keep the saved session so it works once back online.
+      pinError.textContent = 'Could not check your sign-in — enter your PIN.';
+    }
+    pinInput.focus();
+  })();
 
   // ---------- Add an approved order as a real slot (same format as the main app) ----------
   function monthKeyFor(ts) {
