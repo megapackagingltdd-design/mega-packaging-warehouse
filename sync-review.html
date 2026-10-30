@@ -131,39 +131,42 @@
      row divides evenly instead of leaving one tab stranded on a line of
      its own when they wrap. auto-fit means a quiet day with fewer tabs
      still uses one row. */
+  /* Solid blocks rather than text with a thin underline. On a phone a tab
+     has to be hittable with a thumb without looking, so each one fills its
+     whole cell, the label is heavy, and the active tab is a filled colour
+     instead of a 3px line that's easy to miss. */
   .tabs {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    gap: 1px; margin: 0 0 12px;
-    border-bottom: 1.5px solid #e6e3da;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(106px, 1fr));
+    gap: 6px; margin: 0 0 14px;
   }
   .tab {
-    min-width: 0;
-    display: flex; align-items: center; justify-content: center; gap: 4px;
-    padding: 10px 6px; font-size: 12.5px; font-weight: 800; font-family: inherit;
+    min-width: 0; width: 100%;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 15px 8px; font-size: 14.5px; font-weight: 900; font-family: inherit;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    background: none; border: none; border-bottom: 3px solid transparent;
-    color: #999; cursor: pointer; touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent; margin-bottom: -1.5px;
+    background: #efece4; border: 1.5px solid #e2ded4; border-radius: 10px;
+    color: #6b665d; cursor: pointer; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
-  @media (max-width: 560px) {
-    .tab { font-size: 11.5px; padding: 9px 4px; gap: 3px; }
-    .tab .tab-count { font-size: 10px; padding: 0 5px; }
+  .tab:active { filter: brightness(0.95); }
+  @media (max-width: 420px) {
+    .tab { font-size: 13.5px; padding: 14px 5px; gap: 4px; }
   }
-  .tab.attention { color: #a33; }
-  .tab.attention.active { border-bottom-color: #c0392b; }
+  .tab.attention { color: #a33; background: #fbeeec; border-color: #f0d6d1; }
+  .tab.attention.active { background: #c0392b; border-color: #c0392b; color: #fff; }
   .tab.attention .tab-count { background: #f3dcd8; color: #a33; }
-  .tab.attention.active .tab-count { background: #c0392b; color: #fff; }
-  .tab.warn { color: #a3701c; }
-  .tab.warn.active { border-bottom-color: #d99b1c; }
+  .tab.attention.active .tab-count { background: #fff; color: #c0392b; }
+  .tab.warn { color: #a3701c; background: #fdf6e8; border-color: #efe1c4; }
+  .tab.warn.active { background: #d99b1c; border-color: #d99b1c; color: #fff; }
   .tab.warn .tab-count { background: #f7ecd6; color: #a3701c; }
-  .tab.warn.active .tab-count { background: #d99b1c; color: #fff; }
-  .tab.active { color: #1a1d1a; border-bottom-color: #c65d2e; }
+  .tab.warn.active .tab-count { background: #fff; color: #a3701c; }
+  .tab.active { background: #c65d2e; border-color: #c65d2e; color: #fff; }
   .tab-count {
     display: inline-flex; align-items: center; justify-content: center;
-    min-width: 20px; padding: 2px 6px; border-radius: 10px;
-    background: #ece9e1; color: #777; font-size: 11.5px; font-weight: 800;
+    min-width: 22px; padding: 2px 7px; border-radius: 11px;
+    background: #e2ded4; color: #6b665d; font-size: 12px; font-weight: 900;
   }
-  .tab.active .tab-count { background: #c65d2e; color: #fff; }
+  .tab.active .tab-count { background: #fff; color: #c65d2e; }
   .other-type-row {
     display: flex; gap: 10px; align-items: flex-start;
     background: #f4f1e9; border: 1.5px solid #e6e3da; border-radius: 8px;
@@ -201,7 +204,6 @@
   }
   /* Friday: the button calls attention to itself, since a weekly report
      nobody remembers to open is worthless. Other days it stays quiet. */
-  #btn-pattern.is-friday { background: #f2c200; border-color: #d9ae00; color: #241d00; font-weight: 900; }
 
   .rep-title { font-size: 16px; font-weight: 900; margin-bottom: 12px; }
   .rep-stats { font-size: 13.5px; line-height: 1.9; color: #444; margin-bottom: 14px; }
@@ -320,6 +322,156 @@
     display: flex; flex-direction: column; gap: 10px;
   }
   .modal-box p { margin: 0 0 4px; font-size: 14px; font-weight: 700; text-align: center; }
+
+  /* ---------- Phone-first main actions ---------- */
+  /* Sync is pressed dozens of times a day, usually one-handed on a phone,
+     so it takes most of the width and a much bigger tap target. Clear All
+     sits beside it as the second main button but stays the smaller of the
+     two, because pressing it by accident costs real work. */
+  .main-actions { display: grid; grid-template-columns: 1.6fr 1fr; gap: 9px; }
+  .btn-main {
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    min-height: 70px; padding: 14px 12px; border-radius: 12px; border: none;
+    font-family: inherit; font-size: 18px; font-weight: 900; line-height: 1.2;
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-main.sync { background: #c65d2e; color: #fff; }
+  .btn-main.clear { background: #a33; color: #fff; font-size: 15.5px; }
+  .btn-main:active { filter: brightness(0.92); }
+  @media (max-width: 400px) {
+    .btn-main { min-height: 64px; font-size: 16px; }
+    .btn-main.clear { font-size: 14.5px; }
+  }
+
+  /* ---------- Settings ---------- */
+  .btn-gear {
+    font-family: inherit; font-size: 19px; line-height: 1;
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1.5px solid #e0ddd4; background: #fff; color: #555;
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .btn-gear:active { background: #efece4; }
+  .sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 800;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .sheet {
+    background: #fff; width: min(460px, 100%); border-radius: 16px 16px 0 0;
+    padding: 8px 10px calc(14px + env(safe-area-inset-bottom)); max-height: 86vh; overflow-y: auto;
+  }
+  @media (min-width: 560px) { .sheet-overlay { align-items: center; } .sheet { border-radius: 16px; } }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 10px; }
+  .sheet-title { font-size: 16px; font-weight: 900; }
+  .sheet-close {
+    font-family: inherit; font-size: 26px; line-height: 1; width: 40px; height: 40px;
+    border: none; background: none; color: #777; cursor: pointer;
+  }
+  .sheet-item {
+    display: flex; align-items: center; gap: 12px; width: 100%; text-align: left;
+    padding: 14px 10px; border: none; background: none; border-radius: 10px;
+    font-family: inherit; cursor: pointer; touch-action: manipulation;
+  }
+  .sheet-item:active { background: #f3f1ea; }
+  .si-icon { font-size: 20px; width: 26px; text-align: center; flex: 0 0 auto; }
+  .si-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .si-text b { font-size: 15.5px; font-weight: 900; color: #1a1d1a; }
+  .si-text small { font-size: 12px; color: #857f74; line-height: 1.35; }
+  .sheet-item.danger .si-text b { color: #a33; }
+  .sheet-rule { height: 1px; background: #ece9e1; margin: 6px 10px; }
+  .sheet-item.is-friday .si-text b::after {
+    content: ' \2022 new'; color: #a67c00; font-size: 12px; font-weight: 800;
+  }
+
+  .back-bar {
+    display: flex; align-items: center; gap: 10px; margin: 0 0 12px;
+  }
+  .back-btn {
+    font-family: inherit; font-size: 14px; font-weight: 900;
+    padding: 11px 15px; border-radius: 10px;
+    border: 1.5px solid #e0ddd4; background: #fff; color: #444;
+    cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  }
+  .back-btn:active { background: #efece4; }
+  .back-title { font-size: 15px; font-weight: 900; color: #1a1d1a; }
+
+  /* ---------- Yes / No confirmation ---------- */
+  /* A real pair of buttons rather than the browser's own OK/Cancel box,
+     which on a phone is small, easy to mis-tap, and gives no room to show
+     what is about to happen. */
+  .ask-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 900; display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .ask-box { background: #fff; border-radius: 14px; padding: 20px; max-width: 420px; width: 100%; box-shadow: 0 12px 40px rgba(0,0,0,.25); max-height: 84vh; overflow-y: auto; }
+  .ask-title { font-size: 17px; font-weight: 900; margin-bottom: 8px; }
+  .ask-body { font-size: 14px; color: #555; line-height: 1.55; margin-bottom: 14px; white-space: pre-wrap; }
+  .ask-body b { color: #1a1d1a; }
+  .ask-check { display: flex; align-items: center; gap: 9px; font-size: 13.5px; font-weight: 700; margin-bottom: 14px; cursor: pointer; }
+  .ask-check input { width: 20px; height: 20px; }
+  .ask-actions { display: flex; gap: 9px; }
+  .ask-actions .btn { flex: 1; justify-content: center; min-height: 52px; font-size: 16px; }
+
+  /* ---------- Incoming orders ---------- */
+  .demo-banner {
+    font-size: 12.5px; line-height: 1.5; color: #7a5c00;
+    background: #fffbe9; border: 1.5px solid #e9d898; border-radius: 9px;
+    padding: 10px 12px; margin-bottom: 14px;
+  }
+  .demo-banner b { display: block; color: #5c4500; margin-bottom: 2px; }
+  .inc-card { border:1.5px solid #e2ded4; border-radius:11px; margin-bottom:12px; overflow:hidden; background:#fff; }
+  .inc-card.flag-attention { border-color:#e0a63c; }
+  .inc-card.flag-stop { border-color:#c0392b; }
+  .inc-card.done { border-color:#87c79b; }
+  .inc-banner { font-size:12.5px; font-weight:800; padding:9px 12px; line-height:1.45; }
+  .inc-banner.attention { background:#fdf3e4; color:#8a5200; }
+  .inc-banner.stop { background:#fdeceb; color:#a3271b; }
+  .inc-banner.ok { background:#eaf5ec; color:#2f6b3e; }
+  .inc-body { padding:12px; }
+  .inc-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+  .inc-name { font-size:16.5px; font-weight:900; }
+  .inc-chan { font-size:11px; font-weight:800; padding:2px 9px; border-radius:5px; border:1.5px solid; white-space:nowrap; }
+  .chan-amazon { color:#8a5200; border-color:#f0a830; background:#fff8ec; }
+  .chan-web { color:#7a5c00; border-color:#e0b63c; background:#fffbe9; }
+  .chan-ebay { color:#0b5ea8; border-color:#4a9fe0; background:#eef6fd; }
+  .inc-meta { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:#777; margin-top:3px; word-break:break-all; }
+  .inc-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
+  @media (max-width:620px){ .inc-cols{grid-template-columns:minmax(0,1fr);} }
+  .inc-col-label { font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#999; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; }
+  .inc-col-label button { font-size:11px; font-weight:800; border:1px solid #c65d2e; background:#fff; color:#c65d2e; border-radius:5px; padding:3px 10px; cursor:pointer; font-family:inherit; letter-spacing:0; text-transform:none; }
+  .src-line { border:1px solid #e6e3da; border-radius:7px; padding:7px 9px; margin-bottom:5px; background:#fbfaf7; }
+  .src-line:last-child { margin-bottom:0; }
+  .src-sku { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; font-weight:800; color:#1a1d1a; word-break:break-all; }
+  .src-desc { font-size:11.5px; color:#777; margin-top:2px; line-height:1.35; }
+  .src-foot { display:flex; gap:8px; margin-top:4px; flex-wrap:wrap; }
+  .src-tag { font-size:10.5px; font-weight:800; background:#efece4; color:#666; border-radius:4px; padding:1px 7px; }
+  .conv-box { border:1.5px solid #d5d1c7; border-radius:7px; padding:10px; font-size:15px; font-weight:800; line-height:1.4; min-height:46px; cursor:pointer; background:#fff; }
+  .conv-box.bad { border-color:#c0392b; color:#a3271b; background:#fffafa; }
+  .conv-edit { width:100%; box-sizing:border-box; font-family:inherit; font-size:15px; font-weight:800; padding:10px; border:2px solid #c65d2e; border-radius:7px; min-height:66px; resize:vertical; }
+  .conv-actions { display:flex; gap:6px; margin-top:6px; }
+  .conv-actions .btn { flex:1; justify-content:center; padding:9px 10px; font-size:13px; }
+  .inc-ship { margin-top:12px; border-top:1px solid #ece9e1; padding-top:11px; display:grid; grid-template-columns:auto 1fr; gap:10px 14px; align-items:center; }
+  @media (max-width:620px){ .inc-ship{grid-template-columns:minmax(0,1fr);} }
+  .inc-ship-k { font-size:11.5px; font-weight:800; color:#666; }
+  .inc-ship-v { font-size:13.5px; }
+  .stepper { display:inline-flex; align-items:center; border:2px solid #c65d2e; border-radius:9px; overflow:hidden; vertical-align:middle; }
+  .stepper button { width:48px; height:48px; border:none; background:#fff; color:#c65d2e; font-size:26px; font-weight:900; font-family:inherit; cursor:pointer; line-height:1; touch-action:manipulation; }
+  .stepper button:active { background:#c65d2e; color:#fff; }
+  .stepper button:disabled { color:#d9cfc6; cursor:default; }
+  .stepper .val { min-width:54px; text-align:center; font-size:21px; font-weight:900; }
+  .suggest { display:inline-flex; align-items:center; gap:7px; margin-left:10px; background:#eef6fd; border:1.5px solid #9ec9ef; border-radius:7px; padding:5px 9px; }
+  .suggest-txt { font-size:11.5px; font-weight:700; color:#0b5ea8; }
+  .suggest button { font-size:12px; font-weight:800; border:none; background:#1a6fc4; color:#fff; border-radius:5px; padding:6px 12px; cursor:pointer; font-family:inherit; }
+  .parcel-known { font-size:12px; color:#2f6b3e; font-weight:700; margin-top:8px; }
+  .parcel-unknown { font-size:12px; color:#8a5200; font-weight:700; margin-top:8px; }
+  .cost { font-weight:900; }
+  .cost.normal { color:#2f6b3e; }
+  .cost.high { color:#a3271b; }
+  .cost-note { font-size:11.5px; font-weight:700; color:#a3271b; margin-left:6px; }
+  .cost-base { font-size:11.5px; color:#999; margin-left:6px; }
+  .inc-actions { margin-top:12px; display:flex; gap:8px; flex-wrap:wrap; }
+  .inc-actions .btn { flex:1 1 auto; justify-content:center; min-height:50px; font-size:15px; }
+  .btn-stop { background:#fff; border:1.5px solid #c0392b; color:#c0392b; }
+  .btn-hold { background:#f0efe9; color:#555; }
+  .ready-bar { position:sticky; bottom:0; background:#fff; border-top:1.5px solid #e2ded4; padding:12px 0 2px; margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .ready-sum { font-size:13.5px; font-weight:900; }
+  .ready-sum span { font-weight:700; color:#857f74; }
 </style>
 </head>
 <body>
@@ -338,8 +490,32 @@
     <div class="page-title">Sendcloud Sync</div>
     <div class="who" id="who" style="display:none;">
       <span class="who-name" id="who-name"></span>
-      <button class="btn-signout" id="btn-signout">Sign out</button>
+      <button class="btn-gear" id="btn-settings" aria-label="Settings">&#9881;</button>
     </div>
+  </div>
+
+  <!-- Opened from the gear beside your name. Everything in here is
+       occasional: a weekly read, a reference list, or signing out. -->
+  <div class="sheet-overlay" id="settings-sheet" style="display:none;">
+    <div class="sheet">
+      <div class="sheet-head">
+        <span class="sheet-title">Settings</span>
+        <button class="sheet-close" id="settings-close" aria-label="Close">&times;</button>
+      </div>
+      <button class="sheet-item" data-settings="pattern"><span class="si-icon">&#128202;</span><span class="si-text"><b id="settings-pattern-label">Weekly report</b><small>What you chose on two-label orders</small></span></button>
+      <button class="sheet-item" data-settings="learned"><span class="si-icon">&#129504;</span><span class="si-text"><b>Learned</b><small>SKU corrections and always-approve</small></span></button>
+      <button class="sheet-item" data-settings="dimensions"><span class="si-icon">&#128207;</span><span class="si-text"><b>Dimensions</b><small>Weights and box sizes collected so far</small></span></button>
+      <button class="sheet-item" data-settings="measure"><span class="si-icon">&#128208;</span><span class="si-text"><b>Measure</b><small>Ask staff to measure a product</small></span></button>
+      <div class="sheet-rule"></div>
+      <button class="sheet-item danger" data-settings="signout"><span class="si-icon">&#8617;</span><span class="si-text"><b>Sign out</b><small>You'll need your PIN to get back in</small></span></button>
+    </div>
+  </div>
+
+  <!-- Shown above a panel that was opened from Settings, so there is always
+       a way back to the normal tabs. -->
+  <div class="back-bar" id="back-bar" style="display:none;">
+    <button class="back-btn" id="back-btn">&#8592; Back</button>
+    <span class="back-title" id="back-title"></span>
   </div>
 
   <div class="card joined-card" id="joined-card" style="display:none;">
@@ -352,10 +528,9 @@
   </div>
 
   <div class="card">
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-sync">Sync from Sendcloud</button>
-      <button class="btn btn-danger" data-bulk="clear-everything">Clear All</button>
-      <button class="btn btn-ghost" id="btn-pattern">📊 <span id="pattern-label">Patterns</span></button>
+    <div class="main-actions">
+      <button class="btn-main sync" id="btn-sync">Sync from Sendcloud</button>
+      <button class="btn-main clear" data-bulk="clear-everything">Clear All</button>
     </div>
     <div class="status-line" id="sync-status"></div>
     <div class="status-line" id="top-status"></div>
@@ -366,17 +541,36 @@
        something in that tab. -->
   <div class="tabs" id="main-tabs">
     <button class="tab attention" data-tab="attention" style="display:none;">Attention <span class="tab-count" id="count-attention">0</span></button>
+    <button class="tab" data-tab="incoming">Incoming <span class="tab-count" id="count-incoming">0</span></button>
     <button class="tab" data-tab="other">Other <span class="tab-count" id="count-other">0</span></button>
     <button class="tab" data-tab="skipped">Duplicates <span class="tab-count" id="count-skipped">0</span></button>
     <button class="tab warn" data-tab="notscanned" style="display:none;">Not scanned <span class="tab-count" id="count-notscanned">0</span></button>
     <button class="tab" data-tab="upload">Upload</button>
-    <button class="tab" data-tab="learned">Learned</button>
-    <button class="tab" data-tab="dimensions">Dimensions <span class="tab-count" id="count-dimensions">0</span></button>
-    <button class="tab" data-tab="measure">Measure <span class="tab-count" id="count-measure">0</span></button>
+    <!-- Learned, Dimensions and Measure moved into Settings: they're things
+         you look at occasionally, and on a phone they were crowding out the
+         tabs used on every order. Their panels stay in the page and are
+         opened from the settings menu with a Back bar above them. -->
   </div>
 
   <div class="card tab-panel" id="panel-attention" style="display:none;">
     <div id="attention-list"></div>
+  </div>
+
+  <!-- INCOMING ORDERS — DEMO DATA ONLY.
+       These six cards are made up. They are here so the layout and the
+       buttons can be judged on a phone before the live feed is wired in.
+       Nothing on this panel talks to Sendcloud. -->
+  <div class="card tab-panel" id="panel-incoming" style="display:none;">
+    <div class="demo-banner">
+      <b>Demo — these are not real orders.</b>
+      Made-up examples covering the six situations worth deciding on now.
+      Nothing here reaches Sendcloud; the buttons only change what's on screen.
+    </div>
+    <div id="inc-list"></div>
+    <div class="ready-bar">
+      <div class="ready-sum" id="inc-readysum"></div>
+      <button class="btn btn-primary" id="inc-sendall" style="width:auto; padding:11px 18px;">Send ready orders</button>
+    </div>
   </div>
 
   <!-- The 8ply x1 tab was retired: those orders approve themselves on sync,
@@ -560,7 +754,296 @@
     renderJoined();
     renderDimensions();
     renderMeasure();
+    incRenderAll();
   }
+
+
+  // ---------- Incoming orders (DEMO DATA) ----------
+  // Six made-up orders covering the situations worth agreeing on before the
+  // live feed goes in. None of this touches Sendcloud: every button only
+  // changes what's on screen, so the layout and the wording can be judged on
+  // a phone first. When the real feed lands this whole block is replaced by
+  // the same rendering driven from Firestore.
+  const INC_DEMO = {
+    c1: { name:'Kerry Eccles', postcode:'LS29 8HQ', order:'205-7411027-9938705', channel:'Amazon', chanCls:'chan-amazon',
+          src:[{sku:'serviettes-1Ply-500', desc:'Mega Packaging 1 Ply Serviettes 500pk', qty:10, price:'34.50'}],
+          conv:'1ply full box x1', dims:{w:5.2,l:40,wd:30,h:25},
+          service:'Evri Next Day 2-15kg', cost:4.12, base:4.12, labels:1, suggest:null, state:'ready' },
+
+    c2: { name:'GASTRO BISTRO', postcode:'HA2 7SJ', order:'MP-1041', channel:'Mega website', chanCls:'chan-web',
+          src:[{sku:'1000mlkraft-box', desc:'1000ml Kraft Bowl', qty:4, price:'88.00'},
+               {sku:'RND03', desc:'Lids for round 750/1000ml', qty:4, price:'22.00'}],
+          conv:'1000 bowl only x4 + lids for round x4', dims:{w:11.4,l:60,wd:40,h:40},
+          service:'Evri Next Day 2-15kg', cost:6.80, base:6.80, labels:1,
+          suggest:{n:2, seen:9, of:9}, state:'ready' },
+
+    c3: { name:'Priya Shah', postcode:'ST7 8HA', order:'206-8281119-7899560', channel:'Amazon', chanCls:'chan-amazon',
+          src:[{sku:'8oz-ripple-1000', desc:'8oz Ripple Wall Cups 1000', qty:1, price:'52.00'}],
+          conv:'8oz ripple cups x1', dims:null,
+          service:'Evri Next Day 2-15kg', cost:4.12, base:4.12, labels:1, suggest:null, state:'attention' },
+
+    c4: { name:'Hamish Bruce', postcode:'IV27 4JY', order:'203-5912463-3823569', channel:'Amazon', chanCls:'chan-amazon',
+          src:[{sku:'WF1000', desc:'Wooden Forks 1000', qty:1, price:'29.00'}],
+          conv:'wood fork full box x1', dims:{w:4.5,l:40,wd:30,h:25},
+          service:'Evri Next Day 2-15kg', cost:13.95, base:4.12, labels:1, suggest:null, state:'stop' },
+
+    c5: { name:'Woody Grill', postcode:'WD6 1AD', order:'206-9935930-3268326', channel:'eBay', chanCls:'chan-ebay',
+          src:[{sku:'CHILLI-STK-NEW', desc:'Chilli Sticker Roll 500', qty:2, price:'14.00'}],
+          conv:null, dims:null,
+          service:'Evri Standard 0-1kg', cost:2.95, base:2.95, labels:1, suggest:null, state:'attention' },
+
+    c6: { name:'Essex County Fire And Rescue Services Limited', postcode:'CM8 3HB',
+          order:'206-6215186-9705155', channel:'Amazon', chanCls:'chan-amazon',
+          src:[{sku:'KV-GEFW-V8FD', desc:'Paper Bags with Handles 250 Medium Brown', qty:2, price:'42.98'}],
+          conv:'paper bag medium x2', dims:{w:3.2,l:45,wd:35,h:30},
+          service:'Evri Next Day 2-15kg', cost:3.52, base:3.52, labels:1, suggest:null, state:'toolong',
+          longField:'Company name', longOriginal:'Essex County Fire And Rescue Services Limited',
+          longFixed:'Essex County Fire & Rescue', longLimit:32 }
+  };
+  let incEditing = null;
+  const incMoney = (n) => '£' + n.toFixed(2);
+
+  function incSrcHtml(o) {
+    return o.src.map(l =>
+      '<div class="src-line">' +
+        '<div class="src-sku">' + escapeHtml(l.sku) + '</div>' +
+        '<div class="src-desc">' + escapeHtml(l.desc) + '</div>' +
+        '<div class="src-foot"><span class="src-tag">qty ' + l.qty + '</span>' +
+        '<span class="src-tag">£' + l.price + '</span></div></div>').join('');
+  }
+
+  function incRender(id) {
+    const o = INC_DEMO[id];
+    const el = document.getElementById('inc-' + id);
+    if (!el) return;
+    let banner = '', cls = '';
+
+    if (o.state === 'attention') {
+      cls = 'flag-attention';
+      banner = '<div class="inc-banner attention">' + (o.conv === null
+        ? '⚠ <b>' + escapeHtml(o.src[0].sku) + '</b> is not recognised — fill in what it converts to before this can go'
+        : '⚠ No weight or size on record — Sendcloud will estimate, which is where surcharges come from') + '</div>';
+    } else if (o.state === 'toolong') {
+      cls = 'flag-attention';
+      banner = '<div class="inc-banner attention">⚠ ' + escapeHtml(o.longField) +
+        ' is ' + o.longOriginal.length + ' characters, over the ' + o.longLimit +
+        ' the carrier takes. Suggested: <b>' + escapeHtml(o.longFixed) + '</b></div>';
+    } else if (o.state === 'stop') {
+      cls = 'flag-stop';
+      banner = '<div class="inc-banner stop">⛔ ' + incMoney(o.cost) + ' against a standard rate of ' +
+        incMoney(o.base) + ' for this service. Held back — worth pricing on Amazon.</div>';
+    } else if (o.state === 'failed') {
+      cls = 'flag-stop';
+      banner = '<div class="inc-banner stop">❌ Sendcloud refused it: ' + escapeHtml(o.failMsg) +
+        ' <b>Nothing was charged.</b></div>';
+    } else if (o.state === 'sent') {
+      cls = 'done';
+      banner = '<div class="inc-banner ok">✓ ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') +
+        ' created — on the warehouse board now.</div>';
+    } else if (o.state === 'held') {
+      banner = '<div class="inc-banner attention">On hold — nothing will be sent.</div>';
+    }
+
+    const costCls = o.cost > o.base ? 'high' : 'normal';
+    const costNote = o.cost > o.base
+      ? '<span class="cost-note">' + incMoney(o.cost - o.base) + ' over standard</span>'
+      : '<span class="cost-base">standard rate</span>';
+
+    const convInner = incEditing === id
+      ? '<textarea class="conv-edit" id="inc-edit-' + id + '">' + escapeHtml(o.conv || '') + '</textarea>' +
+        '<div class="conv-actions"><button class="btn btn-good" data-inc="savetext" data-id="' + id + '">Save</button>' +
+        '<button class="btn btn-ghost" data-inc="canceltext" data-id="' + id + '">Cancel</button></div>'
+      : '<div class="conv-box' + (o.conv === null ? ' bad' : '') + '" data-inc="edit" data-id="' + id + '">' +
+        (o.conv === null ? 'Not recognised — tap to fill in' : escapeHtml(o.conv)) + '</div>';
+
+    // The address correction sits under the converted column, because that
+    // is the "what we are actually sending" side of the card.
+    const addressFix = o.state === 'toolong'
+      ? '<div class="inc-col-label" style="margin-top:10px;"><span>' + escapeHtml(o.longField) + '</span></div>' +
+        '<div class="src-line"><div class="src-desc">As it came in (' + o.longOriginal.length + ')</div>' +
+        '<div class="src-sku">' + escapeHtml(o.longOriginal) + '</div></div>' +
+        '<div class="conv-box" data-inc="editlong" data-id="' + id + '">' + escapeHtml(o.longFixed) +
+        ' <span style="font-weight:700;color:#857f74;font-size:12px;">(' + o.longFixed.length + ')</span></div>'
+      : '';
+
+    const suggestHtml = (o.suggest && o.labels !== o.suggest.n)
+      ? '<span class="suggest"><span class="suggest-txt">Usually ' + o.suggest.n + ' labels (' +
+        o.suggest.seen + ' of ' + o.suggest.of + ')</span>' +
+        '<button data-inc="applysuggest" data-id="' + id + '">Use ' + o.suggest.n + '</button></span>'
+      : '';
+
+    const parcelLine = o.dims
+      ? '<div class="parcel-known">On record: ' + o.dims.w + ' kg · ' + o.dims.l + '×' + o.dims.wd +
+        '×' + o.dims.h + ' cm — sent with the order</div>'
+      : '<div class="parcel-unknown">Nothing on record for this product — Sendcloud will estimate</div>';
+
+    let actions;
+    if (o.state === 'sent') actions = '<button class="btn btn-ghost" disabled>Sent</button>';
+    else if (o.state === 'held') actions = '<button class="btn btn-ghost" data-inc="unhold" data-id="' + id + '">Put back</button>';
+    else if (o.state === 'failed') actions =
+        '<button class="btn btn-primary" data-inc="retry" data-id="' + id + '">Retry as ' + escapeHtml(o.altService) + ' — ' + incMoney(o.altCost) + '</button>' +
+        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Leave it</button>';
+    else if (o.state === 'stop') actions =
+        '<button class="btn btn-stop" data-inc="hold" data-id="' + id + '">Keep on hold</button>' +
+        '<button class="btn btn-ghost" data-inc="send" data-id="' + id + '">Send anyway</button>';
+    else if (o.state === 'toolong') actions =
+        '<button class="btn btn-good" data-inc="applylong" data-id="' + id + '">Use the shorter version &amp; process</button>' +
+        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
+    else if (o.conv === null) actions =
+        '<button class="btn btn-ghost" disabled>Fill in the conversion first</button>' +
+        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
+    else actions =
+        '<button class="btn btn-good" data-inc="send" data-id="' + id + '">Process — create label</button>' +
+        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
+
+    el.innerHTML =
+      '<div class="inc-card ' + cls + '">' + banner +
+        '<div class="inc-body">' +
+          '<div class="inc-top"><div>' +
+            '<div class="inc-name">' + escapeHtml(o.name) + ' (' + escapeHtml(o.postcode) + ')</div>' +
+            '<div class="inc-meta">Order ' + escapeHtml(o.order) + '</div></div>' +
+            '<span class="inc-chan ' + o.chanCls + '">' + escapeHtml(o.channel) + '</span></div>' +
+          '<div class="inc-cols">' +
+            '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + incSrcHtml(o) + '</div>' +
+            '<div><div class="inc-col-label"><span>Converted for us</span>' +
+              (incEditing === id ? '' : '<button data-inc="edit" data-id="' + id + '">Edit</button>') +
+              '</div>' + convInner + addressFix + '</div>' +
+          '</div>' +
+          '<div class="inc-ship">' +
+            '<div class="inc-ship-k">Labels</div>' +
+            '<div><span class="stepper">' +
+              '<button data-inc="minus" data-id="' + id + '"' + (o.labels <= 1 ? ' disabled' : '') + '>−</button>' +
+              '<span class="val">' + o.labels + '</span>' +
+              '<button data-inc="plus" data-id="' + id + '"' + (o.labels >= 6 ? ' disabled' : '') + '>+</button>' +
+            '</span>' + suggestHtml + parcelLine + '</div>' +
+            '<div class="inc-ship-k">Service</div>' +
+            '<div class="inc-ship-v">' + escapeHtml(o.service) + ' · <span class="cost ' + costCls + '">' +
+              incMoney(o.cost) + '</span>' + costNote + '</div>' +
+          '</div>' +
+          '<div class="inc-actions">' + actions + '</div>' +
+        '</div></div>';
+  }
+
+  function incRenderAll() {
+    const list = document.getElementById('inc-list');
+    if (!list) return;
+    if (!list.children.length) {
+      list.innerHTML = Object.keys(INC_DEMO).map(k => '<div id="inc-' + k + '"></div>').join('');
+    }
+    Object.keys(INC_DEMO).forEach(incRender);
+    incUpdateBar();
+    setTabCount('incoming', Object.values(INC_DEMO).filter(o => o.state !== 'sent' && o.state !== 'held').length);
+  }
+
+  function incUpdateBar() {
+    const v = Object.values(INC_DEMO);
+    const ready = v.filter(o => o.state === 'ready' && o.conv !== null).length;
+    const need = v.filter(o => o.state === 'attention' || o.state === 'stop' || o.state === 'failed' || o.state === 'toolong').length;
+    const held = v.filter(o => o.state === 'held').length;
+    const sent = v.filter(o => o.state === 'sent').length;
+    document.getElementById('inc-readysum').innerHTML =
+      ready + ' ready <span>· ' + need + ' need you · ' + held + ' on hold · ' + sent + ' sent</span>';
+    document.getElementById('inc-sendall').disabled = ready === 0;
+  }
+
+  // Scoped to the panel rather than the document, so these demo buttons can
+  // never intercept a click anywhere else on the page.
+  document.getElementById('panel-incoming').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-inc]');
+    if (!b) return;
+    const id = b.dataset.id, o = INC_DEMO[id], act = b.dataset.inc;
+    if (!o) return;
+
+    if (act === 'edit') { incEditing = id; incRender(id); const t = document.getElementById('inc-edit-' + id); if (t) t.focus(); return; }
+    if (act === 'canceltext') { incEditing = null; incRender(id); return; }
+
+    if (act === 'savetext') {
+      const val = document.getElementById('inc-edit-' + id).value.trim();
+      if (!val) return;
+      const r = await askYesNo({
+        title: 'Save this change?',
+        body: 'This order will go through as:<br><br><b>' + escapeHtml(val) + '</b>',
+        check: 'Remember it, so <b>' + escapeHtml(o.src[0].sku) + '</b> converts this way from now on',
+        yes: 'Save'
+      });
+      if (!r) return;
+      o.conv = val;
+      if (o.state === 'attention' && o.dims !== null) o.state = 'ready';
+      incEditing = null;
+      incRenderAll();
+      return;
+    }
+
+    if (act === 'editlong') {
+      const r = await askYesNo({
+        title: 'Shorten the ' + o.longField.toLowerCase() + '?',
+        body: 'As it came in:<br><b>' + escapeHtml(o.longOriginal) + '</b> (' + o.longOriginal.length + ')<br><br>' +
+              'On the label:<br><b>' + escapeHtml(o.longFixed) + '</b> (' + o.longFixed.length + ')',
+        check: 'Remember this for ' + escapeHtml(o.name.split(' ').slice(0, 3).join(' ')) + ' next time',
+        yes: 'Use the shorter one'
+      });
+      if (!r) return;
+      o.state = 'ready';
+      incRenderAll();
+      return;
+    }
+
+    if (act === 'applylong') {
+      const r = await askYesNo({
+        title: 'Process this order?',
+        body: '<b>' + escapeHtml(o.longFixed) + '</b> goes on the label instead of the full name, ' +
+              'and ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') + ' will be created.',
+        yes: 'Yes, process'
+      });
+      if (!r) return;
+      o.state = 'sent';
+      incRenderAll();
+      return;
+    }
+
+    if (act === 'plus' || act === 'minus') {
+      const next = act === 'plus' ? o.labels + 1 : o.labels - 1;
+      const r = await askYesNo({
+        title: 'Change to ' + next + ' label' + (next > 1 ? 's' : '') + '?',
+        body: '<b>' + escapeHtml(o.name) + '</b><br>' + escapeHtml(o.conv || '') + '<br><br>Sendcloud will be asked for ' +
+              next + ' label' + (next > 1 ? 's' : '') + ' on this order.',
+        yes: 'Yes, ' + next
+      });
+      if (!r) return;
+      o.labels = next; incRenderAll(); return;
+    }
+
+    if (act === 'applysuggest') { o.labels = o.suggest.n; incRenderAll(); return; }
+    if (act === 'hold') { o.state = 'held'; incRenderAll(); return; }
+    if (act === 'unhold') { o.state = o.conv === null ? 'attention' : 'ready'; incRenderAll(); return; }
+    if (act === 'retry') { o.service = o.altService; o.cost = o.altCost; o.base = o.altCost; o.state = 'sent'; incRenderAll(); return; }
+
+    if (act === 'send') {
+      const r = await askYesNo({
+        title: 'Create ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') + '?',
+        body: '<b>' + escapeHtml(o.name) + '</b><br>' + escapeHtml(o.conv || '') + '<br><br>' +
+              escapeHtml(o.service) + ' · ' + incMoney(o.cost) + '. This is chargeable.',
+        yes: 'Yes, create'
+      });
+      if (!r) return;
+      o.state = 'sent'; incRenderAll(); return;
+    }
+  });
+
+  document.getElementById('inc-sendall').addEventListener('click', async () => {
+    const ready = Object.keys(INC_DEMO).filter(k => INC_DEMO[k].state === 'ready' && INC_DEMO[k].conv !== null);
+    if (!ready.length) return;
+    const total = ready.reduce((a, k) => a + INC_DEMO[k].labels, 0);
+    const r = await askYesNo({
+      title: 'Send ' + ready.length + ' order' + (ready.length > 1 ? 's' : '') + ' to Sendcloud?',
+      body: 'This creates <b>' + total + ' label' + (total > 1 ? 's' : '') + '</b> and is chargeable. ' +
+            'Anything on hold or needing attention is left alone.',
+      yes: 'Send ' + ready.length
+    });
+    if (!r) return;
+    ready.forEach(k => { INC_DEMO[k].state = 'sent'; });
+    incRenderAll();
+  });
 
   async function submitPin() {
     const pin = pinInput.value.trim();
@@ -580,10 +1063,93 @@
   pinInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
   pinInput.addEventListener('input', () => { if (pinInput.value.length === 4) submitPin(); });
 
-  document.getElementById('btn-signout').addEventListener('click', () => {
-    if (!confirm('Sign out of the sync page? You will need your PIN to get back in.')) return;
-    clearSession();
-    location.reload();
+  // ---------- Yes / No confirmation ----------
+  // Used anywhere a mis-tap would cost real work. Returns null for No, or
+  // { remember } for Yes, so a caller can offer a "remember this" tickbox.
+  function askYesNo(opts) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'ask-overlay';
+      ov.innerHTML =
+        '<div class="ask-box">' +
+          '<div class="ask-title">' + (opts.title || 'Are you sure?') + '</div>' +
+          '<div class="ask-body">' + (opts.body || '') + '</div>' +
+          (opts.check ? '<label class="ask-check"><input type="checkbox" id="askchk"' +
+             (opts.checked === false ? '' : ' checked') + '><span>' + opts.check + '</span></label>' : '') +
+          '<div class="ask-actions">' +
+            '<button class="btn btn-ghost" id="askno">' + (opts.no || 'No') + '</button>' +
+            '<button class="btn ' + (opts.danger ? 'btn-danger' : 'btn-good') + '" id="askyes">' +
+              (opts.yes || 'Yes') + '</button>' +
+          '</div></div>';
+      document.body.appendChild(ov);
+      const done = (val) => { ov.remove(); resolve(val); };
+      ov.querySelector('#askno').onclick = () => done(null);
+      ov.querySelector('#askyes').onclick = () => {
+        const chk = ov.querySelector('#askchk');
+        done({ remember: chk ? chk.checked : false });
+      };
+      // Tapping the dark area is the same as No — never the same as Yes.
+      ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
+    });
+  }
+
+  // ---------- Settings menu ----------
+  const settingsSheet = document.getElementById('settings-sheet');
+  const backBar = document.getElementById('back-bar');
+  const SETTINGS_PANELS = {
+    learned: 'Learned',
+    dimensions: 'Dimensions',
+    measure: 'Measure'
+  };
+  // Remembers which tab you were on, so Back returns you there rather than
+  // guessing.
+  let tabBeforeSettings = null;
+
+  function openSettings() { settingsSheet.style.display = 'flex'; }
+  function closeSettings() { settingsSheet.style.display = 'none'; }
+
+  function showSettingsPanel(tab) {
+    tabBeforeSettings = activeTab;
+    closeSettings();
+    document.getElementById('main-tabs').style.display = 'none';
+    backBar.style.display = 'flex';
+    document.getElementById('back-title').textContent = SETTINGS_PANELS[tab] || '';
+    setTab(tab, true);
+  }
+
+  function leaveSettingsPanel() {
+    backBar.style.display = 'none';
+    document.getElementById('main-tabs').style.display = '';
+    setTab(tabBeforeSettings && tabBeforeSettings !== null ? tabBeforeSettings : 'other', true);
+  }
+
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('settings-close').addEventListener('click', closeSettings);
+  settingsSheet.addEventListener('click', (e) => { if (e.target === settingsSheet) closeSettings(); });
+  document.getElementById('back-btn').addEventListener('click', leaveSettingsPanel);
+
+  settingsSheet.addEventListener('click', async (e) => {
+    const item = e.target.closest('[data-settings]');
+    if (!item) return;
+    const what = item.dataset.settings;
+    if (what === 'signout') {
+      closeSettings();
+      const ok = await askYesNo({
+        title: 'Sign out?',
+        body: 'You will need your PIN to get back into the sync page.',
+        yes: 'Sign out', danger: true
+      });
+      if (!ok) return;
+      clearSession();
+      location.reload();
+      return;
+    }
+    if (what === 'pattern') {
+      closeSettings();
+      showPatternReport().catch(err => showRenderError('the pattern report', err));
+      return;
+    }
+    if (SETTINGS_PANELS[what]) showSettingsPanel(what);
   });
 
   // Try the remembered session before asking for anything. The PIN box stays
@@ -715,14 +1281,12 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
-  document.getElementById('btn-pattern').addEventListener('click', () => {
-    showPatternReport().catch(e => showRenderError('the pattern report', e));
-  });
-  // Friday only — highlighted and named, so it's a prompt rather than a
-  // button you'd have to remember exists.
+
+  // Friday only — the settings entry is marked, so the report is a prompt
+  // rather than something you'd have to remember is in there.
   if (new Date().getDay() === 5) {
-    document.getElementById('btn-pattern').classList.add('is-friday');
-    document.getElementById('pattern-label').textContent = 'Weekly report';
+    const item = document.querySelector('[data-settings="pattern"]');
+    if (item) item.classList.add('is-friday');
   }
 
   document.getElementById('btn-sync').addEventListener('click', async () => {
@@ -846,7 +1410,7 @@
   }
 
   // ---------- Tabs ----------
-  const ALL_TABS = ['attention', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
+  const ALL_TABS = ['attention', 'incoming', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
   let activeTab = null;
   let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
@@ -1594,7 +2158,17 @@
       // staff could not pick from. The products come back from Sendcloud
       // with the not-scanned list, so they go in here.
       const raw = item.products ? `${header}\n${item.products}` : header;
-      if (!confirm(`Add ${item.name} back as a slot to be re-done today?\n\n${item.products || '(no product details came back — you will need to type them)'}`)) return;
+      const ok = await askYesNo({
+        title: 'Add this back as a slot?',
+        body: '<b>' + escapeHtml(item.name) + '</b>' +
+              (item.postcode ? ' (' + escapeHtml(item.postcode) + ')' : '') + '<br><br>' +
+              (item.products
+                ? escapeHtml(item.products).replace(/\n/g, '<br>')
+                : 'No product details came back — you will have to type them on the warehouse board.') +
+              '<br><br>It goes onto today\u2019s warehouse board to be re-done.',
+        yes: 'Yes, add it'
+      });
+      if (!ok) return;
       try {
         await addOrderAsSlot(raw, item.orderNumber ? [item.orderNumber] : (item.shipmentId ? [item.shipmentId] : null),
                              false, false, item.trackingNumber ? [item.trackingNumber] : null);
@@ -2716,6 +3290,18 @@
     const btn = e.target.closest('button[data-id]');
     if (!btn) return;
     const docId = btn.dataset.id;
+    // This one had no confirmation at all, and it sits directly under a
+    // scrollable list — the easiest button on the page to hit by accident.
+    const item = btn.closest('.skipped-item');
+    const who = item ? (item.querySelector('.skipped-name') || {}).textContent || '' : '';
+    const okDup = await askYesNo({
+      title: 'Not a duplicate?',
+      body: (who ? '<b>' + escapeHtml(who.trim()) + '</b><br><br>' : '') +
+            'This order was skipped as a repeat of one already in the system. ' +
+            'Saying yes puts it back through as a separate order to review.',
+      yes: 'Yes, add it'
+    });
+    if (!okDup) return;
     btn.disabled = true;
     btn.textContent = 'Adding…';
     try {
