@@ -518,6 +518,18 @@
   .fix-how { font-size:11.5px; color:#8a5200; margin-top:3px; line-height:1.4; }
   .fix-row.lossy .fix-how { color:#a3271b; font-weight:700; }
   .inc-readonly { font-size:12px; color:#6b665d; background:#f7f5f0; border:1.5px solid #e2ded4; border-radius:8px; padding:9px 11px; margin-top:10px; line-height:1.5; }
+  /* Loud on purpose. Shipping one of these costs a refund, a return and
+     possibly a metric, so it should be impossible to scroll past. */
+  .inc-card.cancelled { border:2.5px solid #c0392b; box-shadow:0 0 0 4px #fbe3e0; }
+  .inc-banner-row.cancelled .hazard { background:#c0392b; color:#fff; font-size:19px; width:38px; }
+  .inc-banner.cancelled {
+    background:#c0392b; color:#fff; font-size:13.5px; font-weight:900; padding:11px 12px;
+  }
+  .inc-banner.cancelled .why { display:block; font-weight:700; font-size:12.5px; margin-top:3px; opacity:.95; }
+  .cancel-link {
+    display:inline-block; margin-top:8px; font-size:13px; font-weight:900;
+    color:#fff; background:#8c251a; border-radius:7px; padding:9px 14px; text-decoration:none;
+  }
   .inc-when { font-size:12px; color:#857f74; font-weight:700; margin-top:2px; }
   .inc-addr { font-size:13px; color:#444; line-height:1.4; margin-top:4px; }
   .src-line { position:relative; }
@@ -1232,11 +1244,17 @@
         '</div>';
       }).join('');
     const needing = items.filter(i => (i.fixes || []).length || i.needsCustoms).length;
+    const cancels = items.filter(i => i.cancelRequested).length;
     return '<div class="inc-summary">' +
       '<div class="inc-sum-head">' +
         '<span class="inc-sum-total">' + items.length + ' waiting for a label</span>' +
         '<span class="inc-sum-sub">' + (needing ? needing + ' need something first' : 'none need attention') + '</span>' +
       '</div>' +
+      (cancels
+        ? '<div style="background:#c0392b; color:#fff; font-weight:900; font-size:13px; ' +
+          'border-radius:8px; padding:9px 11px; margin-bottom:8px;">⚠ ' + cancels +
+          ' order' + (cancels > 1 ? 's' : '') + ' the buyer has asked to cancel — at the top of the list.</div>'
+        : '') +
       '<div class="inc-sum-grid">' + cells + '</div>' +
       (incChannelFilter
         ? '<div class="inc-filter-note">Showing ' + escapeHtml(incChannelFilter) +
@@ -1285,7 +1303,16 @@
     const lossy = fixes.some(f => f.lossy);
     let banner = '';
     let cls = '';
-    if (o.needsCustoms) {
+    if (o.cancelRequested) {
+      cls = 'flag-stop cancelled';
+      const when = o.cancelRequestedAt ? ' on ' + incWhen(new Date(o.cancelRequestedAt).toISOString()) : '';
+      banner = '<div class="inc-banner cancelled">THE BUYER HAS ASKED TO CANCEL THIS ORDER' + escapeHtml(when) +
+        '. DO NOT SHIP IT.' +
+        (o.cancelReason ? '<span class="why">Their reason: ' + escapeHtml(o.cancelReason) + '</span>' : '') +
+        '<a class="cancel-link" target="_blank" rel="noopener" href="https://sellercentral.amazon.co.uk/orders-v3/order/' +
+          encodeURIComponent(o.orderNumber || '') + '">Open it in Seller Central \u2192</a>' +
+        '</div>';
+    } else if (o.needsCustoms) {
       cls = 'flag-stop';
       banner = '<div class="inc-banner stop">🌍 Going to ' + escapeHtml(addr.countryCode || 'abroad') +
         ' — needs customs data.' +
@@ -1350,7 +1377,7 @@
       : '<span style="color:#857f74;">no estimate</span>';
 
     const labels = incReadLabels()[key] || 1;
-    const blocked = convBad || lossy || o.needsCustoms;
+    const blocked = o.cancelRequested || convBad || lossy || o.needsCustoms;
     const stepper =
       '<div class="inc-ship-k">Labels</div>' +
       '<div><span class="stepper">' +
@@ -1363,7 +1390,8 @@
       '<div class="inc-actions">' +
         (blocked
           ? '<button class="btn btn-ghost" disabled>' +
-              (o.needsCustoms ? 'Needs customs data first'
+              (o.cancelRequested ? 'Cancellation requested \u2014 do not create a label'
+                : o.needsCustoms ? 'Needs customs data first'
                 : lossy ? 'Check the address first'
                 : 'Fill in the conversion first') + '</button>'
           : '<button class="btn btn-good" data-live="process" data-key="' + escapeHtml(key) + '">' +
@@ -1373,7 +1401,8 @@
     // A hazard block down the left edge of the warning, so a card that needs
     // you is recognisable before you have read a word of it.
     const bannerRow = banner
-      ? '<div class="inc-banner-row ' + (cls === 'flag-stop' ? 'stop' : 'attention') + '">' +
+      ? '<div class="inc-banner-row ' +
+          (o.cancelRequested ? 'cancelled' : cls === 'flag-stop' ? 'stop' : 'attention') + '">' +
           '<span class="hazard">⚠</span>' + banner + '</div>'
       : '';
 
@@ -1465,7 +1494,10 @@
     wrap.dataset.loaded = '1';
     // The summary always counts every channel, so the totals stay checkable
     // against Sendcloud even while the list below is narrowed to one shop.
-    const shown = incChannelFilter ? items.filter(o => (o.channel || 'Unknown') === incChannelFilter) : items;
+    // Cancellation requests go to the very top whatever their date, because
+    // the cost of missing one is a parcel that should never have left.
+    const ordered = items.slice().sort((a, b) => (b.cancelRequested ? 1 : 0) - (a.cancelRequested ? 1 : 0));
+    const shown = incChannelFilter ? ordered.filter(o => (o.channel || 'Unknown') === incChannelFilter) : ordered;
     const body = shown.length
       ? shown.map(incLiveCard).join('')
       : '<div class="inc-empty"><b>Nothing waiting for ' + escapeHtml(incChannelFilter || '') + '</b>' +
