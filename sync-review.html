@@ -1607,14 +1607,22 @@
     }
 
     if (act === 'measure') {
-      // Goes into the same Measure list the warehouse already works from,
-      // so there is one queue, not two.
-      const names = [...new Set((order.items || []).map(i => i.name || i.sku).filter(Boolean))];
+      // Staff get the name THEY use, and nothing else.
+      //
+      // It used to send the shop's own product title plus the SKU, the order
+      // number and the customer's name. None of that means anything on the
+      // warehouse floor — the name they recognise is the converted one, the
+      // same wording that appears on a slot. Everything else was clutter
+      // around the one line that matters.
       const skus = [...new Set((order.items || []).map(i => i.sku).filter(Boolean))];
-      const product = names.join(' + ') || (order.converted || key);
+      const product = (incReadOverrides()[key])
+        || incApplyLocalRules(order)
+        || order.converted
+        || [...new Set((order.items || []).map(i => i.name || i.sku).filter(Boolean))].join(' + ')
+        || key;
       const ok = await askYesNo({
         title: 'Ask the warehouse to measure this?',
-        body: '<b>' + escapeHtml(product) + '</b><br><br>' +
+        body: 'They will see:<br><br><b>' + escapeHtml(product) + '</b><br><br>' +
               'It goes straight onto the warehouse board. Staff weigh and measure ' +
               'it, and once that is saved the right service shows here automatically ' +
               'and the product is measured everywhere else too.<br><br>' +
@@ -1626,9 +1634,11 @@
         await writeMeasureRequests(all => [...all, {
           id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
           product,
+          // Kept on the record so the Dimensions table can be matched up
+          // later, but deliberately not shown to the warehouse.
           sku: skus.join(', '),
-          note: 'No weight on record. Needed for order ' + (order.orderNumber || key) +
-                (order.address && order.address.name ? ' (' + order.address.name + ')' : ''),
+          hideDetail: true,
+          note: '',
           status: 'sent',
           source: 'incoming orders',
           requestedAt: Date.now()
