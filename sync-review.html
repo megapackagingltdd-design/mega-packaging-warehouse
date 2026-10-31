@@ -469,6 +469,21 @@
   .inc-actions .btn { flex:1 1 auto; justify-content:center; min-height:50px; font-size:15px; }
   .btn-stop { background:#fff; border:1.5px solid #c0392b; color:#c0392b; }
   .btn-hold { background:#f0efe9; color:#555; }
+  .inc-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px; }
+  .inc-age { font-size:12px; color:#857f74; font-weight:700; }
+  .inc-age.stale { color:#a3271b; }
+  .inc-empty { text-align:center; color:#857f74; font-size:13.5px; line-height:1.6; padding:26px 10px; }
+  .inc-empty b { display:block; color:#1a1d1a; font-size:15px; margin-bottom:5px; }
+  .inc-status { font-size:11px; font-weight:800; padding:2px 9px; border-radius:5px; border:1.5px solid #d5d1c7; color:#6b665d; background:#f7f5f0; white-space:nowrap; }
+  .fix-row { border:1px solid #e9d898; background:#fffbe9; border-radius:7px; padding:8px 10px; margin-bottom:6px; }
+  .fix-row.lossy { border-color:#e3b4ad; background:#fdf2f0; }
+  .fix-field { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#8a5200; }
+  .fix-row.lossy .fix-field { color:#a3271b; }
+  .fix-was { font-size:12px; color:#777; margin-top:3px; word-break:break-word; }
+  .fix-now { font-size:14px; font-weight:800; color:#1a1d1a; margin-top:2px; word-break:break-word; }
+  .fix-how { font-size:11.5px; color:#8a5200; margin-top:3px; line-height:1.4; }
+  .fix-row.lossy .fix-how { color:#a3271b; font-weight:700; }
+  .inc-readonly { font-size:12px; color:#6b665d; background:#f7f5f0; border:1.5px solid #e2ded4; border-radius:8px; padding:9px 11px; margin-top:10px; line-height:1.5; }
   .ready-bar { position:sticky; bottom:0; background:#fff; border-top:1.5px solid #e2ded4; padding:12px 0 2px; margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .ready-sum { font-size:13.5px; font-weight:900; }
   .ready-sum span { font-weight:700; color:#857f74; }
@@ -561,15 +576,23 @@
        buttons can be judged on a phone before the live feed is wired in.
        Nothing on this panel talks to Sendcloud. -->
   <div class="card tab-panel" id="panel-incoming" style="display:none;">
-    <div class="demo-banner">
-      <b>Demo — these are not real orders.</b>
-      Made-up examples covering the six situations worth deciding on now.
-      Nothing here reaches Sendcloud; the buttons only change what's on screen.
+    <div class="inc-bar">
+      <button class="btn btn-ghost" id="inc-refresh" style="width:auto; padding:10px 16px;">&#8635; Refresh</button>
+      <span class="inc-age" id="inc-age"></span>
+      <button class="btn btn-ghost" id="inc-demo-toggle" style="width:auto; padding:10px 16px; margin-left:auto;">Show demo examples</button>
     </div>
-    <div id="inc-list"></div>
-    <div class="ready-bar">
-      <div class="ready-sum" id="inc-readysum"></div>
-      <button class="btn btn-primary" id="inc-sendall" style="width:auto; padding:11px 18px;">Send ready orders</button>
+    <div id="inc-live"></div>
+    <div id="inc-demo-wrap" style="display:none;">
+      <div class="demo-banner">
+        <b>Demo — these are not real orders.</b>
+        Made-up examples covering the six situations worth deciding on.
+        Nothing here reaches Sendcloud; the buttons only change what's on screen.
+      </div>
+      <div id="inc-list"></div>
+      <div class="ready-bar">
+        <div class="ready-sum" id="inc-readysum"></div>
+        <button class="btn btn-primary" id="inc-sendall" style="width:auto; padding:11px 18px;">Send ready orders</button>
+      </div>
     </div>
   </div>
 
@@ -754,7 +777,7 @@
     renderJoined();
     renderDimensions();
     renderMeasure();
-    incRenderAll();
+    renderIncomingLive().catch(e => showRenderError('the incoming orders', e));
   }
 
 
@@ -1043,6 +1066,184 @@
     if (!r) return;
     ready.forEach(k => { INC_DEMO[k].state = 'sent'; });
     incRenderAll();
+  });
+
+
+  // ---------- Incoming orders (LIVE, read-only) ----------
+  // Reads what the backend watcher on PC 2 parked in Firestore. Nothing here
+  // writes anything or talks to Sendcloud — this is the "check it matches the
+  // panel" stage, before any button creates a label.
+  let incShowDemo = false;
+
+  function incAgeText(ms) {
+    if (!ms) return 'never';
+    const mins = Math.round((Date.now() - ms) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins === 1) return '1 minute ago';
+    if (mins < 60) return mins + ' minutes ago';
+    const hrs = Math.round(mins / 60);
+    return hrs === 1 ? '1 hour ago' : hrs + ' hours ago';
+  }
+
+  function incChannelClass(channel) {
+    const c = String(channel || '').toLowerCase();
+    if (c.includes('amazon')) return 'chan-amazon';
+    if (c.includes('bay')) return 'chan-ebay';
+    return 'chan-web';
+  }
+
+  function incFixHtml(fix) {
+    return '<div class="fix-row' + (fix.lossy ? ' lossy' : '') + '">' +
+      '<div class="fix-field">' + escapeHtml(fix.field) + ' — ' + fix.original.length +
+        ' characters, limit ' + fix.limit + '</div>' +
+      '<div class="fix-was">' + escapeHtml(fix.original) + '</div>' +
+      '<div class="fix-now">→ ' + escapeHtml(fix.corrected) +
+        (fix.movedToLine2 ? '<br/><span style="font-size:12px;font-weight:700;color:#6b665d;">line 2: ' +
+          escapeHtml(fix.movedToLine2) + '</span>' : '') + '</div>' +
+      '<div class="fix-how">' + escapeHtml(fix.how || '') + '</div>' +
+    '</div>';
+  }
+
+  function incLiveCard(o) {
+    const addr = o.address || {};
+    const who = o.address && o.address.name ? o.address.name : (o.customerName || 'No name');
+    const items = (o.items || []).map(it =>
+      '<div class="src-line">' +
+        '<div class="src-sku">' + escapeHtml(it.sku || '(no SKU)') + '</div>' +
+        '<div class="src-desc">' + escapeHtml(it.name || '') + '</div>' +
+        '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
+          (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
+          (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
+        '</div></div>').join('') || '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
+
+    const fixes = (o.fixes || []);
+    const lossy = fixes.some(f => f.lossy);
+    let banner = '';
+    let cls = '';
+    if (o.needsCustoms) {
+      cls = 'flag-stop';
+      banner = '<div class="inc-banner stop">🌍 Going to ' + escapeHtml(addr.countryCode || 'abroad') +
+        ' — needs customs data.' +
+        ((o.missingHsCodes || []).length ? ' Missing an HS code for: ' +
+          escapeHtml(o.missingHsCodes.join(', ')) + '.' : '') +
+        ' Worth pricing on Amazon first.</div>';
+    } else if (lossy) {
+      cls = 'flag-stop';
+      banner = '<div class="inc-banner stop">⚠ An address line is too long and cannot be split — ' +
+        'the suggestion below drops part of it. Check it before this goes.</div>';
+    } else if (fixes.length) {
+      cls = 'flag-attention';
+      banner = '<div class="inc-banner attention">⚠ ' + fixes.length + ' field' +
+        (fixes.length > 1 ? 's are' : ' is') + ' over the limit. Suggested wording below.</div>';
+    } else if (o.statusGroup === 'unknown') {
+      cls = 'flag-attention';
+      banner = '<div class="inc-banner attention">⚠ Status "' + escapeHtml(o.statusCode || '') +
+        '" is not recognised, so this is being shown just in case.</div>';
+    }
+
+    const price = o.estimatedShipping != null
+      ? '<span class="cost normal">£' + Number(o.estimatedShipping).toFixed(2) + '</span>'
+      : '<span style="color:#857f74;">no estimate</span>';
+
+    return '<div class="inc-card ' + cls + '">' + banner +
+      '<div class="inc-body">' +
+        '<div class="inc-top"><div>' +
+          '<div class="inc-name">' + escapeHtml(who) +
+            (addr.postcode ? ' (' + escapeHtml(addr.postcode) + ')' : '') + '</div>' +
+          '<div class="inc-meta">Order ' + escapeHtml(o.orderNumber || o.orderId || '?') + '</div></div>' +
+          '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">' +
+            '<span class="inc-status">' + escapeHtml(o.statusCode || 'no status') + '</span>' +
+            '<span class="inc-chan ' + incChannelClass(o.channel) + '">' +
+              escapeHtml(o.channel || 'unknown') + '</span>' +
+          '</div></div>' +
+        '<div class="inc-cols">' +
+          '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + items +
+            '<div class="src-line" style="margin-top:6px;"><div class="src-desc">' +
+              escapeHtml([addr.companyName, addr.line1, addr.line2, addr.city, addr.postcode]
+                .filter(Boolean).join(', ')) + '</div></div>' +
+          '</div>' +
+          '<div><div class="inc-col-label"><span>' +
+            (fixes.length ? 'Needs changing before it goes' : 'Nothing to change') + '</span></div>' +
+            (fixes.length ? fixes.map(incFixHtml).join('')
+              : '<div class="conv-box" style="cursor:default; color:#2f6b3e;">✓ All fields fit</div>') +
+          '</div>' +
+        '</div>' +
+        '<div class="inc-ship">' +
+          '<div class="inc-ship-k">Shipping</div>' +
+          '<div class="inc-ship-v">' + (o.shippingOptionCode ? escapeHtml(o.shippingOptionCode) + ' · ' : '') +
+            price + (o.weightKg ? ' · ' + o.weightKg + ' kg' : '') + '</div>' +
+        '</div>' +
+      '</div></div>';
+  }
+
+  async function renderIncomingLive() {
+    const wrap = document.getElementById('inc-live');
+    const ageEl = document.getElementById('inc-age');
+    let doc;
+    try {
+      doc = await db.collection('print-watcher-control').doc('incoming-orders').get();
+    } catch (e) {
+      wrap.innerHTML = '<div class="inc-empty"><b>Could not reach the database</b>' +
+        escapeHtml((e && e.message) || 'Try Refresh in a moment.') + '</div>';
+      return;
+    }
+
+    if (!doc.exists) {
+      ageEl.textContent = '';
+      setTabCount('incoming', 0);
+      wrap.innerHTML = '<div class="inc-empty"><b>Nothing from the backend yet</b>' +
+        'The watcher on PC 2 has not written any orders. Check it is running ' +
+        '(start-backend.bat) — it reads Sendcloud every few minutes.</div>';
+      return;
+    }
+
+    const data = doc.data() || {};
+    let items = [];
+    try { items = JSON.parse(data.itemsJson || '[]'); } catch (e) { items = []; }
+    const updated = Number(data.updatedAt || 0);
+
+    // A stale timestamp is the signal that PC 2 has stopped, and it matters
+    // more than an empty list: an empty list looks the same either way.
+    const stale = updated && (Date.now() - updated) > 20 * 60 * 1000;
+    ageEl.textContent = 'Updated ' + incAgeText(updated);
+    ageEl.className = 'inc-age' + (stale ? ' stale' : '');
+    if (stale) ageEl.textContent += ' — is PC 2 running?';
+
+    setTabCount('incoming', items.length);
+
+    if (!items.length) {
+      wrap.innerHTML = '<div class="inc-empty"><b>No orders waiting</b>' +
+        'Everything Sendcloud has from the last couple of weeks is already shipped or cancelled.</div>';
+      return;
+    }
+
+    const needing = items.filter(i => (i.fixes || []).length || i.needsCustoms).length;
+    const head = '<div class="inc-readonly">' +
+      '<b>' + items.length + ' order' + (items.length > 1 ? 's' : '') + ' waiting for a label</b>' +
+      (needing ? ', ' + needing + ' needing something before they can go' : '') + '. ' +
+      'This is read-only for now — nothing here creates a label. Check it against ' +
+      'Sendcloud’s Incoming orders screen; once it matches, the Process buttons go in.' +
+      '</div>';
+
+    wrap.innerHTML = head + items.map(incLiveCard).join('');
+  }
+
+  document.getElementById('inc-refresh').addEventListener('click', async () => {
+    const btn = document.getElementById('inc-refresh');
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = 'Refreshing…';
+    try { await renderIncomingLive(); } catch (e) { showRenderError('the incoming orders', e); }
+    btn.textContent = was;
+    btn.disabled = false;
+  });
+
+  document.getElementById('inc-demo-toggle').addEventListener('click', () => {
+    incShowDemo = !incShowDemo;
+    document.getElementById('inc-demo-wrap').style.display = incShowDemo ? 'block' : 'none';
+    document.getElementById('inc-demo-toggle').textContent =
+      incShowDemo ? 'Hide demo examples' : 'Show demo examples';
+    if (incShowDemo) incRenderAll();
   });
 
   async function submitPin() {
