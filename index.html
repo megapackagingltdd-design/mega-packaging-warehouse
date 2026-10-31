@@ -2735,13 +2735,19 @@ This backup was generated in one click from Back End and contains:
   }
 
   function renderMeasureCard(r) {
+    // The product name is the whole card. A request can carry a SKU and a
+    // note for the office's own records, but hideDetail keeps them off the
+    // warehouse board: a shop's product code and an order number mean
+    // nothing to someone holding a box, and burying the one line that does
+    // matter underneath them makes the card slower to read.
+    const showDetail = !r.hideDetail;
     return `
       <div class="mp-measure-card" data-measure-req="${escapeHtml(String(r.id))}">
         <div class="mp-measure-flag">Only for measurements</div>
         <div class="mp-measure-main">
           <div class="mp-measure-product">${escapeHtml(r.product || '')}</div>
-          ${r.sku ? `<div class="mp-measure-sku">${escapeHtml(r.sku)}</div>` : ''}
-          ${r.note ? `<div class="mp-measure-note">${escapeHtml(r.note)}</div>` : ''}
+          ${showDetail && r.sku ? `<div class="mp-measure-sku">${escapeHtml(r.sku)}</div>` : ''}
+          ${showDetail && r.note ? `<div class="mp-measure-note">${escapeHtml(r.note)}</div>` : ''}
         </div>
         <button class="mp-measure-btn">📏 Measure this</button>
       </div>`;
