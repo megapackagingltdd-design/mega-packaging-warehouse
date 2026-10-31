@@ -887,7 +887,13 @@
   let incEditingLive = null;       // order number currently being edited
   let incChannelFilter = null;     // null = all channels
   let incAmazonState = {};         // order key -> the Amazon request's state
-  let incMeasureAsked = new Set(); // orders a measurement has been asked for
+  // Which orders already have a measurement request outstanding.
+  //
+  // This used to be a plain Set in memory, so refreshing the page lost it
+  // and the button offered to ask all over again. It is now read back from
+  // the measurement list itself — the only copy that is actually true, and
+  // one that clears itself the moment staff measure the product.
+  let incMeasureByOrder = new Map();   // order key -> request record
   let incExpanded = new Set();     // order keys whose product descriptions are open
   let incItemsCache = [];          // last rendered live items, for the editor
 
@@ -1248,7 +1254,7 @@
       : '';
 
     // A typed weight stands in until the product is measured properly.
-    o.measureAsked = incMeasureAsked.has(key);
+    o.measureReq = incMeasureByOrder.get(key) || null;
     const typedKg = incReadWeights()[key];
     const kg = typedKg != null ? typedKg : o.weightKg;
     const kgIsMine = typedKg != null;
@@ -1273,8 +1279,9 @@
           ? '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">' +
               '<button class="svc-add" data-live="typekg" data-key="' + escapeHtml(key) + '">' +
                 (kgIsMine ? 'Change the weight' : 'Type a weight') + '</button>' +
-              (o.measureAsked
-                ? '<span class="svc-add" style="border-style:dashed; cursor:default;">Measurement asked for</span>'
+              (o.measureReq
+                ? '<span class="svc-add" style="border-style:dashed; cursor:default; color:#8a5200; border-color:#e0c08a;">' +
+                  '⏳ Waiting for the warehouse to measure ' + escapeHtml(o.measureReq.product || 'it') + '</span>'
                 : '<button class="svc-add" data-live="measure" data-key="' + escapeHtml(key) + '">' +
                   'Ask staff to measure it</button>') +
             '</div>'
@@ -1403,6 +1410,14 @@
 
     // Any Amazon label requests already in flight, so the cards can show
     // where each one got to rather than offering the button again.
+    // Outstanding measurement requests, keyed by the order that asked.
+    incMeasureByOrder = new Map();
+    try {
+      for (const r of await readMeasureRequests()) {
+        if (r && r.orderKey && r.status !== 'measured') incMeasureByOrder.set(r.orderKey, r);
+      }
+    } catch (e) { /* list unreadable — the button simply offers again */ }
+
     incAmazonState = {};
     try {
       const reqs = await db.collection('amazon-label-requests')
@@ -1426,6 +1441,11 @@
     if (stale) ageEl.textContent += ' — is PC 2 running?';
 
     setTabCount('incoming', items.length);
+    // The default tab is chosen while the page is still loading, before this
+    // read has come back, so Incoming always looked empty at that moment and
+    // the page settled on Upload. Now that the real count is known, pick
+    // again — unless you have already chosen a tab yourself.
+    if (!userPickedTab) chooseDefaultTab();
 
     if (!items.length) {
       wrap.dataset.loaded = '1';
@@ -1635,15 +1655,16 @@
           id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
           product,
           // Kept on the record so the Dimensions table can be matched up
-          // later, but deliberately not shown to the warehouse.
+          // later, and so this page can tell which order is waiting on it.
+          // Neither is shown to the warehouse.
           sku: skus.join(', '),
+          orderKey: key,
           hideDetail: true,
           note: '',
           status: 'sent',
           source: 'incoming orders',
           requestedAt: Date.now()
         }]);
-        incMeasureAsked.add(key);
         document.getElementById('top-status').textContent =
           'Sent to the warehouse board. It also appears under Settings → Measure.';
         await renderIncomingLive();
