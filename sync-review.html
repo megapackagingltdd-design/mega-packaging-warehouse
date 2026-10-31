@@ -1050,9 +1050,16 @@
     'uk_royalmailsecondclassstandard': 'Royal Mail 2nd class',
     'uk_royalmailfirstclassstandard': 'Royal Mail 1st class'
   };
+  // The actual Evri bands on this account, confirmed from the price list:
+  // 0.001-1.001, 1.001-2.001 and 2.001-15.001 kg. The old version had no
+  // 1-2kg band at all, so a 1.5kg parcel was labelled 2-15kg and priced
+  // against the wrong rate.
   function incWeightBand(kg) {
     if (kg == null) return '';
-    return kg <= 1 ? '0-1kg' : kg <= 15 ? '2-15kg' : 'over 15kg';
+    if (kg <= 1.001) return '0-1kg';
+    if (kg <= 2.001) return '1-2kg';
+    if (kg <= 15.001) return '2-15kg';
+    return 'over 15kg';
   }
 
   function incSpeedName(indicator) {
@@ -1065,9 +1072,8 @@
     // Even with no service named, the weight band is worth showing: it is
     // what decides the price, and it is the thing a typed weight changes.
     if (!raw) {
-      const b = weightKg == null ? '' : (weightKg <= 1 ? ' (0-1kg band)' :
-                 weightKg <= 15 ? ' (2-15kg band)' : ' (over 15kg)');
-      return 'No service requested' + b;
+      const b = incWeightBand(weightKg);
+      return 'No service requested' + (b ? ' (' + b + ' band)' : '');
     }
     const known = SERVICE_NAMES[raw.toLowerCase()];
     const name = known || raw
@@ -1308,12 +1314,32 @@
 
     // Named individually, because "the price is a bit high" is not
     // actionable and "a 75p seasonal surcharge" is.
+    // Every Evri method carries a 4% fuel surcharge, so flagging it in
+    // amber on every single card would train you to ignore the box. It is
+    // still shown, just quietly; the box only goes amber when there is
+    // something on top of it that might actually be avoidable.
+    //
+    // avoidableTotal is worked out by the watcher, but a record written by an
+    // older watcher won't have it — and defaulting a missing value to zero
+    // would silently downgrade every real surcharge to the quiet grey line.
+    // So when the field is absent, work it out here from the list instead.
+    const avoidable = (o.avoidableTotal == null)
+      ? (o.surcharges || []).reduce((sum, x) =>
+          sum + (x.unavoidable || /fuel/i.test(x.label || '') ? 0 : Number(x.value) || 0), 0)
+      : Number(o.avoidableTotal) || 0;
+    const hasAvoidable = avoidable > 0;
     const surchargeHtml = (o.surcharges && o.surcharges.length)
-      ? '<div class="surcharge-box"><b>£' + Number(o.surchargeTotal).toFixed(2) +
-        ' of that is surcharges</b>' +
-        o.surcharges.map(x => '<div class="surcharge-row"><span>' + escapeHtml(x.label) +
-          '</span><span>£' + Number(x.value).toFixed(2) + '</span></div>').join('') +
-        '</div>'
+      ? (hasAvoidable
+          ? '<div class="surcharge-box"><b>£' + avoidable.toFixed(2) +
+            ' of this looks avoidable</b>' +
+            o.surcharges.map(x => '<div class="surcharge-row"><span>' + escapeHtml(x.label) +
+              (x.unavoidable || /fuel/i.test(x.label || '')
+                ? ' <span style="opacity:.6;">(on every parcel)</span>' : '') +
+              '</span><span>£' + Number(x.value).toFixed(2) + '</span></div>').join('') +
+            '</div>'
+          : '<div class="quote-guess">includes ' +
+            o.surcharges.map(x => escapeHtml(x.label) + ' £' + Number(x.value).toFixed(2)).join(', ') +
+            '</div>')
       : '';
 
     // Only offered when nothing is on record. A product already measured
