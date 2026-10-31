@@ -1028,6 +1028,31 @@
     'evri:standard': 'Evri Standard',
     'evri:standard_delivery': 'Evri Standard'
   };
+
+  // What the buyer chose in the shop. A Sendcloud order has no carrier
+  // service on it, so this is the real signal for how fast it has to go —
+  // and the thing that should decide Next Day against Standard.
+  const DELIVERY_SPEEDS = {
+    'standard': 'Standard delivery',
+    'expedited': 'Express delivery',
+    'nextday': 'Next day',
+    'next_day': 'Next day',
+    'secondday': 'Two day',
+    'uk_othercourier48': '48-hour courier',
+    'uk_othercourier24': '24-hour courier',
+    'uk_royalmailsecondclassstandard': 'Royal Mail 2nd class',
+    'uk_royalmailfirstclassstandard': 'Royal Mail 1st class'
+  };
+  function incWeightBand(kg) {
+    if (kg == null) return '';
+    return kg <= 1 ? '0-1kg' : kg <= 15 ? '2-15kg' : 'over 15kg';
+  }
+
+  function incSpeedName(indicator) {
+    const k = String(indicator || '').trim().toLowerCase();
+    if (!k) return '';
+    return DELIVERY_SPEEDS[k] || String(indicator).replace(/[_:]+/g, ' ');
+  }
   function incServiceName(code, weightKg) {
     const raw = String(code || '').trim();
     // Even with no service named, the weight band is worth showing: it is
@@ -1259,9 +1284,13 @@
     const kg = typedKg != null ? typedKg : o.weightKg;
     const kgIsMine = typedKg != null;
 
-    const price = o.estimatedShipping != null
+    // Sendcloud works the shipping price out from your rules when it draws
+    // its own screen; it is not stored on the order, and comes back as zero
+    // or missing here. Saying "priced when the label is made" is honest;
+    // showing £0.00 would not be.
+    const price = (o.estimatedShipping != null && Number(o.estimatedShipping) > 0)
       ? '<span class="cost normal">£' + Number(o.estimatedShipping).toFixed(2) + '</span>'
-      : '<span style="color:#857f74;">no estimate yet</span>';
+      : '<span style="color:#857f74;">priced when the label is made</span>';
 
     // Only offered when nothing is on record. A product already measured
     // doesn't need measuring again.
@@ -1269,7 +1298,12 @@
       '<div class="inc-ship-k">Weight</div>' +
       '<div class="inc-ship-v">' +
         (kg != null
-          ? '<b>' + kg + ' kg</b>' + (kgIsMine
+          ? '<b>' + kg + ' kg</b>' +
+            // The band is what the carrier actually prices on, so it belongs
+            // beside the weight rather than buried in the service name.
+            ' <span style="font-size:11.5px;color:#6b665d;font-weight:700;">' +
+              escapeHtml(incWeightBand(kg)) + ' band</span>' +
+            (kgIsMine
               ? ' <span style="font-size:11.5px;color:#1d6b4f;font-weight:700;">(you typed this) ' +
                 '<a href="#" data-live="clearkg" data-key="' + escapeHtml(key) + '">clear</a></span>'
               : ' <span style="font-size:11.5px;color:#857f74;">on record</span>')
@@ -1365,7 +1399,12 @@
         '<div class="inc-ship">' + stepper + weightRow +
           '<div class="inc-ship-k">Shipping</div>' +
           '<div class="inc-ship-v">' +
-            '<span class="svc-name">' + escapeHtml(incServiceName(o.shippingOptionCode, kg)) + '</span>' +
+            '<span class="svc-name">' +
+              escapeHtml(incSpeedName(o.deliveryIndicator) || incServiceName(o.shippingOptionCode, kg)) +
+            '</span>' +
+            (o.deliveryIndicator
+              ? ' <span style="font-size:11.5px;color:#857f74;">what the buyer chose</span>'
+              : '') +
             ' · ' + price +
             (o.fallbackTo
               ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
