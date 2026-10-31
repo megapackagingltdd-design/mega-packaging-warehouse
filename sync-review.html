@@ -409,12 +409,6 @@
   .ask-actions .btn { flex: 1; justify-content: center; min-height: 52px; font-size: 16px; }
 
   /* ---------- Incoming orders ---------- */
-  .demo-banner {
-    font-size: 12.5px; line-height: 1.5; color: #7a5c00;
-    background: #fffbe9; border: 1.5px solid #e9d898; border-radius: 9px;
-    padding: 10px 12px; margin-bottom: 14px;
-  }
-  .demo-banner b { display: block; color: #5c4500; margin-bottom: 2px; }
   .inc-card { border:1.5px solid #e2ded4; border-radius:11px; margin-bottom:12px; overflow:hidden; background:#fff; }
   .inc-card.flag-attention { border-color:#e0a63c; }
   .inc-card.flag-stop { border-color:#c0392b; }
@@ -605,9 +599,6 @@
   .inc-sum-cell.dim { opacity:.4; }
   .inc-sum-cell.picked { box-shadow:0 0 0 2.5px #1a1d1a inset; }
   .inc-filter-note { font-size:12px; font-weight:800; color:#c65d2e; margin-top:8px; }
-  .ready-bar { position:sticky; bottom:0; background:#fff; border-top:1.5px solid #e2ded4; padding:12px 0 2px; margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-  .ready-sum { font-size:13.5px; font-weight:900; }
-  .ready-sum span { font-weight:700; color:#857f74; }
 </style>
 </head>
 <body>
@@ -700,21 +691,8 @@
     <div class="inc-bar">
       <button class="btn btn-ghost" id="inc-refresh" style="width:auto; padding:10px 16px;">&#8635; Refresh</button>
       <span class="inc-age" id="inc-age"></span>
-      <button class="btn btn-ghost" id="inc-demo-toggle" style="width:auto; padding:10px 16px; margin-left:auto;">Show demo examples</button>
     </div>
     <div id="inc-live"></div>
-    <div id="inc-demo-wrap" style="display:none;">
-      <div class="demo-banner">
-        <b>Demo — these are not real orders.</b>
-        Made-up examples covering the six situations worth deciding on.
-        Nothing here reaches Sendcloud; the buttons only change what's on screen.
-      </div>
-      <div id="inc-list"></div>
-      <div class="ready-bar">
-        <div class="ready-sum" id="inc-readysum"></div>
-        <button class="btn btn-primary" id="inc-sendall" style="width:auto; padding:11px 18px;">Send ready orders</button>
-      </div>
-    </div>
   </div>
 
   <!-- The 8ply x1 tab was retired: those orders approve themselves on sync,
@@ -902,299 +880,10 @@
   }
 
 
-  // ---------- Incoming orders (DEMO DATA) ----------
-  // Six made-up orders covering the situations worth agreeing on before the
-  // live feed goes in. None of this touches Sendcloud: every button only
-  // changes what's on screen, so the layout and the wording can be judged on
-  // a phone first. When the real feed lands this whole block is replaced by
-  // the same rendering driven from Firestore.
-  const INC_DEMO = {
-    c1: { name:'Kerry Eccles', postcode:'LS29 8HQ', order:'205-7411027-9938705', channel:'Amazon', chanCls:'chan-amazon',
-          src:[{sku:'serviettes-1Ply-500', desc:'Mega Packaging 1 Ply Serviettes 500pk', qty:10, price:'34.50'}],
-          conv:'1ply full box x1', dims:{w:5.2,l:40,wd:30,h:25},
-          service:'Evri Next Day 2-15kg', cost:4.12, base:4.12, labels:1, suggest:null, state:'ready' },
-
-    c2: { name:'GASTRO BISTRO', postcode:'HA2 7SJ', order:'MP-1041', channel:'Mega website', chanCls:'chan-web',
-          src:[{sku:'1000mlkraft-box', desc:'1000ml Kraft Bowl', qty:4, price:'88.00'},
-               {sku:'RND03', desc:'Lids for round 750/1000ml', qty:4, price:'22.00'}],
-          conv:'1000 bowl only x4 + lids for round x4', dims:{w:11.4,l:60,wd:40,h:40},
-          service:'Evri Next Day 2-15kg', cost:6.80, base:6.80, labels:1,
-          suggest:{n:2, seen:9, of:9}, state:'ready' },
-
-    c3: { name:'Priya Shah', postcode:'ST7 8HA', order:'206-8281119-7899560', channel:'Amazon', chanCls:'chan-amazon',
-          src:[{sku:'8oz-ripple-1000', desc:'8oz Ripple Wall Cups 1000', qty:1, price:'52.00'}],
-          conv:'8oz ripple cups x1', dims:null,
-          service:'Evri Next Day 2-15kg', cost:4.12, base:4.12, labels:1, suggest:null, state:'attention' },
-
-    c4: { name:'Hamish Bruce', postcode:'IV27 4JY', order:'203-5912463-3823569', channel:'Amazon', chanCls:'chan-amazon',
-          src:[{sku:'WF1000', desc:'Wooden Forks 1000', qty:1, price:'29.00'}],
-          conv:'wood fork full box x1', dims:{w:4.5,l:40,wd:30,h:25},
-          service:'Evri Next Day 2-15kg', cost:13.95, base:4.12, labels:1, suggest:null, state:'stop' },
-
-    c5: { name:'Woody Grill', postcode:'WD6 1AD', order:'206-9935930-3268326', channel:'eBay', chanCls:'chan-ebay',
-          src:[{sku:'CHILLI-STK-NEW', desc:'Chilli Sticker Roll 500', qty:2, price:'14.00'}],
-          conv:null, dims:null,
-          service:'Evri Standard 0-1kg', cost:2.95, base:2.95, labels:1, suggest:null, state:'attention' },
-
-    c6: { name:'Essex County Fire And Rescue Services Limited', postcode:'CM8 3HB',
-          order:'206-6215186-9705155', channel:'Amazon', chanCls:'chan-amazon',
-          src:[{sku:'KV-GEFW-V8FD', desc:'Paper Bags with Handles 250 Medium Brown', qty:2, price:'42.98'}],
-          conv:'paper bag medium x2', dims:{w:3.2,l:45,wd:35,h:30},
-          service:'Evri Next Day 2-15kg', cost:3.52, base:3.52, labels:1, suggest:null, state:'toolong',
-          longField:'Company name', longOriginal:'Essex County Fire And Rescue Services Limited',
-          longFixed:'Essex County Fire & Rescue', longLimit:32 }
-  };
-  let incEditing = null;
-  const incMoney = (n) => '£' + n.toFixed(2);
-
-  function incSrcHtml(o) {
-    return o.src.map(l =>
-      '<div class="src-line">' +
-        '<div class="src-sku">' + escapeHtml(l.sku) + '</div>' +
-        '<div class="src-desc">' + escapeHtml(l.desc) + '</div>' +
-        '<div class="src-foot"><span class="src-tag">qty ' + l.qty + '</span>' +
-        '<span class="src-tag">£' + l.price + '</span></div></div>').join('');
-  }
-
-  function incRender(id) {
-    const o = INC_DEMO[id];
-    const el = document.getElementById('inc-' + id);
-    if (!el) return;
-    let banner = '', cls = '';
-
-    if (o.state === 'attention') {
-      cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">' + (o.conv === null
-        ? '⚠ <b>' + escapeHtml(o.src[0].sku) + '</b> is not recognised — fill in what it converts to before this can go'
-        : '⚠ No weight or size on record — Sendcloud will estimate, which is where surcharges come from') + '</div>';
-    } else if (o.state === 'toolong') {
-      cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">' + escapeHtml(o.longField) +
-        ' is ' + o.longOriginal.length + ' characters, over the ' + o.longLimit +
-        ' the carrier takes. Suggested: <b>' + escapeHtml(o.longFixed) + '</b></div>';
-    } else if (o.state === 'stop') {
-      cls = 'flag-stop';
-      banner = '<div class="inc-banner stop">' + incMoney(o.cost) + ' against a standard rate of ' +
-        incMoney(o.base) + ' for this service. Held back — worth pricing on Amazon.</div>';
-    } else if (o.state === 'failed') {
-      cls = 'flag-stop';
-      banner = '<div class="inc-banner stop">❌ Sendcloud refused it: ' + escapeHtml(o.failMsg) +
-        ' <b>Nothing was charged.</b></div>';
-    } else if (o.state === 'sent') {
-      cls = 'done';
-      banner = '<div class="inc-banner ok">✓ ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') +
-        ' created — on the warehouse board now.</div>';
-    } else if (o.state === 'held') {
-      banner = '<div class="inc-banner attention">On hold — nothing will be sent.</div>';
-    }
-
-    const costCls = o.cost > o.base ? 'high' : 'normal';
-    const costNote = o.cost > o.base
-      ? '<span class="cost-note">' + incMoney(o.cost - o.base) + ' over standard</span>'
-      : '<span class="cost-base">standard rate</span>';
-
-    const convInner = incEditing === id
-      ? '<textarea class="conv-edit" id="inc-edit-' + id + '">' + escapeHtml(o.conv || '') + '</textarea>' +
-        '<div class="conv-actions"><button class="btn btn-good" data-inc="savetext" data-id="' + id + '">Save</button>' +
-        '<button class="btn btn-ghost" data-inc="canceltext" data-id="' + id + '">Cancel</button></div>'
-      : '<div class="conv-box' + (o.conv === null ? ' bad' : '') + '" data-inc="edit" data-id="' + id + '">' +
-        (o.conv === null ? 'Not recognised — tap to fill in' : escapeHtml(o.conv)) + '</div>';
-
-    // The address correction sits under the converted column, because that
-    // is the "what we are actually sending" side of the card.
-    const addressFix = o.state === 'toolong'
-      ? '<div class="inc-col-label" style="margin-top:10px;"><span>' + escapeHtml(o.longField) + '</span></div>' +
-        '<div class="src-line"><div class="src-desc">As it came in (' + o.longOriginal.length + ')</div>' +
-        '<div class="src-sku">' + escapeHtml(o.longOriginal) + '</div></div>' +
-        '<div class="conv-box" data-inc="editlong" data-id="' + id + '">' + escapeHtml(o.longFixed) +
-        ' <span style="font-weight:700;color:#857f74;font-size:12px;">(' + o.longFixed.length + ')</span></div>'
-      : '';
-
-    const suggestHtml = (o.suggest && o.labels !== o.suggest.n)
-      ? '<span class="suggest"><span class="suggest-txt">Usually ' + o.suggest.n + ' labels (' +
-        o.suggest.seen + ' of ' + o.suggest.of + ')</span>' +
-        '<button data-inc="applysuggest" data-id="' + id + '">Use ' + o.suggest.n + '</button></span>'
-      : '';
-
-    const parcelLine = o.dims
-      ? '<div class="parcel-known">On record: ' + o.dims.w + ' kg · ' + o.dims.l + '×' + o.dims.wd +
-        '×' + o.dims.h + ' cm — sent with the order</div>'
-      : '<div class="parcel-unknown">Nothing on record for this product — Sendcloud will estimate</div>';
-
-    let actions;
-    if (o.state === 'sent') actions = '<button class="btn btn-ghost" disabled>Sent</button>';
-    else if (o.state === 'held') actions = '<button class="btn btn-ghost" data-inc="unhold" data-id="' + id + '">Put back</button>';
-    else if (o.state === 'failed') actions =
-        '<button class="btn btn-primary" data-inc="retry" data-id="' + id + '">Retry as ' + escapeHtml(o.altService) + ' — ' + incMoney(o.altCost) + '</button>' +
-        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Leave it</button>';
-    else if (o.state === 'stop') actions =
-        '<button class="btn btn-stop" data-inc="hold" data-id="' + id + '">Keep on hold</button>' +
-        '<button class="btn btn-ghost" data-inc="send" data-id="' + id + '">Send anyway</button>';
-    else if (o.state === 'toolong') actions =
-        '<button class="btn btn-good" data-inc="applylong" data-id="' + id + '">Use the shorter version &amp; process</button>' +
-        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
-    else if (o.conv === null) actions =
-        '<button class="btn btn-ghost" disabled>Fill in the conversion first</button>' +
-        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
-    else actions =
-        '<button class="btn btn-good" data-inc="send" data-id="' + id + '">Process — create label</button>' +
-        '<button class="btn btn-hold" data-inc="hold" data-id="' + id + '">Hold</button>';
-
-    el.innerHTML =
-      '<div class="inc-card ' + cls + '">' + banner +
-        '<div class="inc-body">' +
-          '<div class="inc-top"><div>' +
-            '<div class="inc-name">' + escapeHtml(o.name) + ' (' + escapeHtml(o.postcode) + ')</div>' +
-            '<div class="inc-meta">Order ' + escapeHtml(o.order) + '</div></div>' +
-            '<span class="inc-chan ' + o.chanCls + '">' + escapeHtml(o.channel) + '</span></div>' +
-          '<div class="inc-cols">' +
-            '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + incSrcHtml(o) + '</div>' +
-            '<div><div class="inc-col-label"><span>Converted for us</span>' +
-              (incEditing === id ? '' : '<button data-inc="edit" data-id="' + id + '">Edit</button>') +
-              '</div>' + convInner + addressFix + '</div>' +
-          '</div>' +
-          '<div class="inc-ship">' +
-            '<div class="inc-ship-k">Labels</div>' +
-            '<div><span class="stepper">' +
-              '<button data-inc="minus" data-id="' + id + '"' + (o.labels <= 1 ? ' disabled' : '') + '>−</button>' +
-              '<span class="val">' + o.labels + '</span>' +
-              '<button data-inc="plus" data-id="' + id + '"' + (o.labels >= 6 ? ' disabled' : '') + '>+</button>' +
-            '</span>' + suggestHtml + parcelLine + '</div>' +
-            '<div class="inc-ship-k">Service</div>' +
-            '<div class="inc-ship-v">' + escapeHtml(o.service) + ' · <span class="cost ' + costCls + '">' +
-              incMoney(o.cost) + '</span>' + costNote + '</div>' +
-          '</div>' +
-          '<div class="inc-actions">' + actions + '</div>' +
-        '</div></div>';
-  }
-
-  function incRenderAll() {
-    const list = document.getElementById('inc-list');
-    if (!list) return;
-    if (!list.children.length) {
-      list.innerHTML = Object.keys(INC_DEMO).map(k => '<div id="inc-' + k + '"></div>').join('');
-    }
-    Object.keys(INC_DEMO).forEach(incRender);
-    incUpdateBar();
-    setTabCount('incoming', Object.values(INC_DEMO).filter(o => o.state !== 'sent' && o.state !== 'held').length);
-  }
-
-  function incUpdateBar() {
-    const v = Object.values(INC_DEMO);
-    const ready = v.filter(o => o.state === 'ready' && o.conv !== null).length;
-    const need = v.filter(o => o.state === 'attention' || o.state === 'stop' || o.state === 'failed' || o.state === 'toolong').length;
-    const held = v.filter(o => o.state === 'held').length;
-    const sent = v.filter(o => o.state === 'sent').length;
-    document.getElementById('inc-readysum').innerHTML =
-      ready + ' ready <span>· ' + need + ' need you · ' + held + ' on hold · ' + sent + ' sent</span>';
-    document.getElementById('inc-sendall').disabled = ready === 0;
-  }
-
-  // Scoped to the panel rather than the document, so these demo buttons can
-  // never intercept a click anywhere else on the page.
-  document.getElementById('panel-incoming').addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-inc]');
-    if (!b) return;
-    const id = b.dataset.id, o = INC_DEMO[id], act = b.dataset.inc;
-    if (!o) return;
-
-    if (act === 'edit') { incEditing = id; incRender(id); const t = document.getElementById('inc-edit-' + id); if (t) t.focus(); return; }
-    if (act === 'canceltext') { incEditing = null; incRender(id); return; }
-
-    if (act === 'savetext') {
-      const val = document.getElementById('inc-edit-' + id).value.trim();
-      if (!val) return;
-      const r = await askYesNo({
-        title: 'Save this change?',
-        body: 'This order will go through as:<br><br><b>' + escapeHtml(val) + '</b>',
-        check: 'Remember it, so <b>' + escapeHtml(o.src[0].sku) + '</b> converts this way from now on',
-        yes: 'Save'
-      });
-      if (!r) return;
-      o.conv = val;
-      if (o.state === 'attention' && o.dims !== null) o.state = 'ready';
-      incEditing = null;
-      incRenderAll();
-      return;
-    }
-
-    if (act === 'editlong') {
-      const r = await askYesNo({
-        title: 'Shorten the ' + o.longField.toLowerCase() + '?',
-        body: 'As it came in:<br><b>' + escapeHtml(o.longOriginal) + '</b> (' + o.longOriginal.length + ')<br><br>' +
-              'On the label:<br><b>' + escapeHtml(o.longFixed) + '</b> (' + o.longFixed.length + ')',
-        check: 'Remember this for ' + escapeHtml(o.name.split(' ').slice(0, 3).join(' ')) + ' next time',
-        yes: 'Use the shorter one'
-      });
-      if (!r) return;
-      o.state = 'ready';
-      incRenderAll();
-      return;
-    }
-
-    if (act === 'applylong') {
-      const r = await askYesNo({
-        title: 'Process this order?',
-        body: '<b>' + escapeHtml(o.longFixed) + '</b> goes on the label instead of the full name, ' +
-              'and ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') + ' will be created.',
-        yes: 'Yes, process'
-      });
-      if (!r) return;
-      o.state = 'sent';
-      incRenderAll();
-      return;
-    }
-
-    if (act === 'plus' || act === 'minus') {
-      const next = act === 'plus' ? o.labels + 1 : o.labels - 1;
-      const r = await askYesNo({
-        title: 'Change to ' + next + ' label' + (next > 1 ? 's' : '') + '?',
-        body: '<b>' + escapeHtml(o.name) + '</b><br>' + escapeHtml(o.conv || '') + '<br><br>Sendcloud will be asked for ' +
-              next + ' label' + (next > 1 ? 's' : '') + ' on this order.',
-        yes: 'Yes, ' + next
-      });
-      if (!r) return;
-      o.labels = next; incRenderAll(); return;
-    }
-
-    if (act === 'applysuggest') { o.labels = o.suggest.n; incRenderAll(); return; }
-    if (act === 'hold') { o.state = 'held'; incRenderAll(); return; }
-    if (act === 'unhold') { o.state = o.conv === null ? 'attention' : 'ready'; incRenderAll(); return; }
-    if (act === 'retry') { o.service = o.altService; o.cost = o.altCost; o.base = o.altCost; o.state = 'sent'; incRenderAll(); return; }
-
-    if (act === 'send') {
-      const r = await askYesNo({
-        title: 'Create ' + o.labels + ' label' + (o.labels > 1 ? 's' : '') + '?',
-        body: '<b>' + escapeHtml(o.name) + '</b><br>' + escapeHtml(o.conv || '') + '<br><br>' +
-              escapeHtml(o.service) + ' · ' + incMoney(o.cost) + '. This is chargeable.',
-        yes: 'Yes, create'
-      });
-      if (!r) return;
-      o.state = 'sent'; incRenderAll(); return;
-    }
-  });
-
-  document.getElementById('inc-sendall').addEventListener('click', async () => {
-    const ready = Object.keys(INC_DEMO).filter(k => INC_DEMO[k].state === 'ready' && INC_DEMO[k].conv !== null);
-    if (!ready.length) return;
-    const total = ready.reduce((a, k) => a + INC_DEMO[k].labels, 0);
-    const r = await askYesNo({
-      title: 'Send ' + ready.length + ' order' + (ready.length > 1 ? 's' : '') + ' to Sendcloud?',
-      body: 'This creates <b>' + total + ' label' + (total > 1 ? 's' : '') + '</b> and is chargeable. ' +
-            'Anything on hold or needing attention is left alone.',
-      yes: 'Send ' + ready.length
-    });
-    if (!r) return;
-    ready.forEach(k => { INC_DEMO[k].state = 'sent'; });
-    incRenderAll();
-  });
-
-
   // ---------- Incoming orders (LIVE, read-only) ----------
   // Reads what the backend watcher on PC 2 parked in Firestore. Nothing here
   // writes anything or talks to Sendcloud — this is the "check it matches the
   // panel" stage, before any button creates a label.
-  let incShowDemo = false;
   let incEditingLive = null;       // order number currently being edited
   let incChannelFilter = null;     // null = all channels
   let incAmazonState = {};         // order key -> the Amazon request's state
@@ -1926,10 +1615,11 @@
       const ok = await askYesNo({
         title: 'Ask the warehouse to measure this?',
         body: '<b>' + escapeHtml(product) + '</b><br><br>' +
-              'It goes on the Measure list. Staff weigh and measure it, and once ' +
-              'that is saved the right service shows here automatically.<br><br>' +
+              'It goes straight onto the warehouse board. Staff weigh and measure ' +
+              'it, and once that is saved the right service shows here automatically ' +
+              'and the product is measured everywhere else too.<br><br>' +
               'This order waits until then — or type a weight yourself to send it now.',
-        yes: 'Add to the Measure list'
+        yes: 'Send it to the warehouse'
       });
       if (!ok) return;
       try {
@@ -1939,13 +1629,13 @@
           sku: skus.join(', '),
           note: 'No weight on record. Needed for order ' + (order.orderNumber || key) +
                 (order.address && order.address.name ? ' (' + order.address.name + ')' : ''),
-          status: 'pending',
+          status: 'sent',
           source: 'incoming orders',
           requestedAt: Date.now()
         }]);
         incMeasureAsked.add(key);
         document.getElementById('top-status').textContent =
-          'Added to the Measure list. Approve it in Settings → Measure to send it to the warehouse.';
+          'Sent to the warehouse board. It also appears under Settings → Measure.';
         await renderIncomingLive();
       } catch (err) {
         document.getElementById('top-status').textContent =
@@ -2214,13 +1904,6 @@
     btn.disabled = false;
   });
 
-  document.getElementById('inc-demo-toggle').addEventListener('click', () => {
-    incShowDemo = !incShowDemo;
-    document.getElementById('inc-demo-wrap').style.display = incShowDemo ? 'block' : 'none';
-    document.getElementById('inc-demo-toggle').textContent =
-      incShowDemo ? 'Hide demo examples' : 'Show demo examples';
-    if (incShowDemo) incRenderAll();
-  });
 
   async function submitPin() {
     const pin = pinInput.value.trim();
