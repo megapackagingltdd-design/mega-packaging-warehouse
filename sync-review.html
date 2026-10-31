@@ -518,6 +518,29 @@
   .fix-how { font-size:11.5px; color:#8a5200; margin-top:3px; line-height:1.4; }
   .fix-row.lossy .fix-how { color:#a3271b; font-weight:700; }
   .inc-readonly { font-size:12px; color:#6b665d; background:#f7f5f0; border:1.5px solid #e2ded4; border-radius:8px; padding:9px 11px; margin-top:10px; line-height:1.5; }
+  .inc-when { font-size:12px; color:#857f74; font-weight:700; margin-top:2px; }
+  .inc-addr { font-size:13px; color:#444; line-height:1.4; margin-top:4px; }
+  .src-line { position:relative; }
+  .src-head { display:flex; align-items:center; gap:8px; }
+  .src-more {
+    flex:0 0 auto; width:26px; height:26px; border-radius:6px; border:1.5px solid #d5d1c7;
+    background:#fff; color:#6b665d; font-size:16px; font-weight:900; line-height:1;
+    font-family:inherit; cursor:pointer; touch-action:manipulation;
+  }
+  .src-more:active { background:#efece4; }
+  .src-detail { margin-top:6px; }
+  .hazard {
+    display:inline-flex; align-items:center; justify-content:center; flex:0 0 auto;
+    width:30px; align-self:stretch; font-size:16px;
+  }
+  .inc-banner-row { display:flex; align-items:stretch; }
+  .inc-banner-row .inc-banner { flex:1; }
+  .inc-banner-row.attention .hazard { background:#f7e3bf; color:#8a5200; }
+  .inc-banner-row.stop .hazard { background:#f6cfca; color:#a3271b; }
+  .inc-sum-cell { cursor:pointer; }
+  .inc-sum-cell.dim { opacity:.4; }
+  .inc-sum-cell.picked { box-shadow:0 0 0 2.5px #1a1d1a inset; }
+  .inc-filter-note { font-size:12px; font-weight:800; color:#c65d2e; margin-top:8px; }
   .ready-bar { position:sticky; bottom:0; background:#fff; border-top:1.5px solid #e2ded4; padding:12px 0 2px; margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
   .ready-sum { font-size:13.5px; font-weight:900; }
   .ready-sum span { font-weight:700; color:#857f74; }
@@ -882,12 +905,12 @@
         : '⚠ No weight or size on record — Sendcloud will estimate, which is where surcharges come from') + '</div>';
     } else if (o.state === 'toolong') {
       cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">⚠ ' + escapeHtml(o.longField) +
+      banner = '<div class="inc-banner attention">' + escapeHtml(o.longField) +
         ' is ' + o.longOriginal.length + ' characters, over the ' + o.longLimit +
         ' the carrier takes. Suggested: <b>' + escapeHtml(o.longFixed) + '</b></div>';
     } else if (o.state === 'stop') {
       cls = 'flag-stop';
-      banner = '<div class="inc-banner stop">⛔ ' + incMoney(o.cost) + ' against a standard rate of ' +
+      banner = '<div class="inc-banner stop">' + incMoney(o.cost) + ' against a standard rate of ' +
         incMoney(o.base) + ' for this service. Held back — worth pricing on Amazon.</div>';
     } else if (o.state === 'failed') {
       cls = 'flag-stop';
@@ -1109,11 +1132,28 @@
   // panel" stage, before any button creates a label.
   let incShowDemo = false;
   let incEditingLive = null;       // order number currently being edited
+  let incChannelFilter = null;     // null = all channels
+  let incExpanded = new Set();     // order keys whose product descriptions are open
   let incItemsCache = [];          // last rendered live items, for the editor
 
   // A one-off wording change for a single order, kept on this device until the
   // order is processed. Teaching the system permanently is a separate,
   // explicit choice (the tickbox) that writes a real SKU correction instead.
+  // How many labels to make for an order. Kept per order on this device
+  // until it is processed; one label unless you say otherwise.
+  const INC_LABELS_KEY = 'incoming-label-counts';
+  function incReadLabels() {
+    try { return JSON.parse(localStorage.getItem(INC_LABELS_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteLabels(key, n) {
+    try {
+      const all = incReadLabels();
+      if (n === null || n === 1) delete all[key]; else all[key] = n;
+      localStorage.setItem(INC_LABELS_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
+
   const INC_OVERRIDES_KEY = 'incoming-converted-overrides';
   function incReadOverrides() {
     try { return JSON.parse(localStorage.getItem(INC_OVERRIDES_KEY) || '{}'); }
@@ -1125,6 +1165,21 @@
       if (text === null) delete all[orderNumber]; else all[orderNumber] = text;
       localStorage.setItem(INC_OVERRIDES_KEY, JSON.stringify(all));
     } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
+
+  // When the order actually arrived — today shows the time, older shows the
+  // date, because on a phone the date is what tells you if it is urgent.
+  function incWhen(iso) {
+    if (!iso) return 'date unknown';
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return 'date unknown';
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const today = new Date();
+    const sameDay = d.toDateString() === today.toDateString();
+    const yesterday = new Date(today.getTime() - 86400000).toDateString() === d.toDateString();
+    if (sameDay) return 'Today ' + time;
+    if (yesterday) return 'Yesterday ' + time;
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' + time;
   }
 
   function incAgeText(ms) {
@@ -1166,7 +1221,11 @@
         const breakdown = [...e.statuses.entries()]
           .sort((a, b) => b[1] - a[1])
           .map(([st, n]) => n + ' ' + escapeHtml(st)).join('<br/>');
-        return '<div class="inc-sum-cell ' + incChannelKind(name) + '">' +
+        const picked = incChannelFilter === name;
+        const dim = incChannelFilter && !picked;
+        return '<div class="inc-sum-cell ' + incChannelKind(name) +
+            (picked ? ' picked' : '') + (dim ? ' dim' : '') +
+            '" data-live="channel" data-key="' + escapeHtml(name) + '">' +
           '<span class="inc-sum-n">' + e.n + '</span>' +
           '<span class="inc-sum-name">' + escapeHtml(name) + '</span>' +
           '<span class="inc-sum-status">' + breakdown + '</span>' +
@@ -1179,6 +1238,10 @@
         '<span class="inc-sum-sub">' + (needing ? needing + ' need something first' : 'none need attention') + '</span>' +
       '</div>' +
       '<div class="inc-sum-grid">' + cells + '</div>' +
+      (incChannelFilter
+        ? '<div class="inc-filter-note">Showing ' + escapeHtml(incChannelFilter) +
+          ' only · <a href="#" data-live="channel" data-key="">show all</a></div>'
+        : '') +
     '</div>';
   }
 
@@ -1197,14 +1260,26 @@
   function incLiveCard(o) {
     const addr = o.address || {};
     const who = o.address && o.address.name ? o.address.name : (o.customerName || 'No name');
+    // SKU and quantity are all that's needed nine times out of ten, so the
+    // description only appears when you ask for it. A multi-product order
+    // then stays short enough to take in on a phone.
+    const openKey = o.orderNumber || o.id;
+    const isOpen = incExpanded.has(openKey);
     const items = (o.items || []).map(it =>
       '<div class="src-line">' +
-        '<div class="src-sku">' + escapeHtml(it.sku || '(no SKU)') + '</div>' +
-        '<div class="src-desc">' + escapeHtml(it.name || '') + '</div>' +
-        '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
-          (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
-          (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
-        '</div></div>').join('') || '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
+        '<div class="src-head">' +
+          '<div style="flex:1; min-width:0;">' +
+            '<div class="src-sku">' + escapeHtml(it.sku || '(no SKU)') + '</div>' +
+            '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
+              (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
+              (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
+            '</div>' +
+          '</div>' +
+          (it.name ? '<button class="src-more" data-live="expand" data-key="' + escapeHtml(openKey) +
+            '">' + (isOpen ? '−' : '+') + '</button>' : '') +
+        '</div>' +
+        (isOpen && it.name ? '<div class="src-desc src-detail">' + escapeHtml(it.name) + '</div>' : '') +
+      '</div>').join('') || '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
 
     const fixes = (o.fixes || []);
     const lossy = fixes.some(f => f.lossy);
@@ -1223,15 +1298,15 @@
         'the suggestion below drops part of it. Check it before this goes.</div>';
     } else if (fixes.length) {
       cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">⚠ ' + fixes.length + ' field' +
+      banner = '<div class="inc-banner attention">' + fixes.length + ' field' +
         (fixes.length > 1 ? 's are' : ' is') + ' over the limit. Suggested wording below.</div>';
     } else if (o.convertedNeedsReview && !incReadOverrides()[o.orderNumber || o.id]) {
       cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">⚠ The products could not be worked out — ' +
+      banner = '<div class="inc-banner attention">The products could not be worked out — ' +
         'fill in what this converts to before it can go.</div>';
     } else if (o.statusGroup === 'unknown') {
       cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">⚠ Status "' + escapeHtml(o.statusCode || '') +
+      banner = '<div class="inc-banner attention">Status "' + escapeHtml(o.statusCode || '') +
         '" is not recognised, so this is being shown just in case.</div>';
     }
 
@@ -1274,36 +1349,72 @@
       ? '<span class="cost normal">£' + Number(o.estimatedShipping).toFixed(2) + '</span>'
       : '<span style="color:#857f74;">no estimate</span>';
 
-    return '<div class="inc-card ' + cls + '">' + banner +
+    const labels = incReadLabels()[key] || 1;
+    const blocked = convBad || lossy || o.needsCustoms;
+    const stepper =
+      '<div class="inc-ship-k">Labels</div>' +
+      '<div><span class="stepper">' +
+        '<button data-live="minus" data-key="' + escapeHtml(key) + '"' + (labels <= 1 ? ' disabled' : '') + '>−</button>' +
+        '<span class="val">' + labels + '</span>' +
+        '<button data-live="plus" data-key="' + escapeHtml(key) + '"' + (labels >= 6 ? ' disabled' : '') + '>+</button>' +
+      '</span></div>';
+
+    const actions =
+      '<div class="inc-actions">' +
+        (blocked
+          ? '<button class="btn btn-ghost" disabled>' +
+              (o.needsCustoms ? 'Needs customs data first'
+                : lossy ? 'Check the address first'
+                : 'Fill in the conversion first') + '</button>'
+          : '<button class="btn btn-good" data-live="process" data-key="' + escapeHtml(key) + '">' +
+              'Process — create ' + labels + ' label' + (labels > 1 ? 's' : '') + '</button>') +
+      '</div>';
+
+    // A hazard block down the left edge of the warning, so a card that needs
+    // you is recognisable before you have read a word of it.
+    const bannerRow = banner
+      ? '<div class="inc-banner-row ' + (cls === 'flag-stop' ? 'stop' : 'attention') + '">' +
+          '<span class="hazard">⚠</span>' + banner + '</div>'
+      : '';
+
+    return '<div class="inc-card ' + cls + '">' + bannerRow +
       '<div class="inc-body">' +
-        '<div class="inc-top"><div>' +
-          '<div class="inc-name">' + escapeHtml(who) +
-            (addr.postcode ? ' (' + escapeHtml(addr.postcode) + ')' : '') + '</div>' +
+        '<div class="inc-top"><div style="min-width:0;">' +
+          '<div class="inc-name">' + escapeHtml(who) + '</div>' +
+          '<div class="inc-when">' + escapeHtml(incWhen(o.orderCreatedAt)) + '</div>' +
+          '<div class="inc-addr">' + escapeHtml(
+            [addr.companyName, addr.line1, addr.houseNumber, addr.line2, addr.city, addr.postcode]
+              .filter(Boolean).join(', ')) + '</div>' +
           '<div class="inc-meta">Order ' + escapeHtml(o.orderNumber || o.orderId || '?') + '</div></div>' +
           '<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">' +
-            '<span class="inc-status">' + escapeHtml(o.statusCode || 'no status') + '</span>' +
+            '<span class="inc-status">' + escapeHtml(o.statusCode || 'no status') +
+              (o.paymentStatus ? ' · ' + escapeHtml(o.paymentStatus) : '') + '</span>' +
             '<span class="inc-chan ' + incChannelClass(o.channel) + '">' +
               escapeHtml(o.channel || 'unknown') + '</span>' +
           '</div></div>' +
         '<div class="inc-cols">' +
           '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + items +
-            '<div class="src-line" style="margin-top:6px;"><div class="src-desc">' +
-              escapeHtml([addr.companyName, addr.line1, addr.line2, addr.city, addr.postcode]
-                .filter(Boolean).join(', ')) + '</div></div>' +
           '</div>' +
           '<div>' + convertedHtml + fixesHtml + '</div>' +
         '</div>' +
-        '<div class="inc-ship">' +
+        '<div class="inc-ship">' + stepper +
           '<div class="inc-ship-k">Shipping</div>' +
           '<div class="inc-ship-v">' + (o.shippingOptionCode ? escapeHtml(o.shippingOptionCode) + ' · ' : '') +
             price + (o.weightKg ? ' · ' + o.weightKg + ' kg' : '') + '</div>' +
-        '</div>' +
+        '</div>' + actions +
       '</div></div>';
   }
 
   async function renderIncomingLive() {
     const wrap = document.getElementById('inc-live');
     const ageEl = document.getElementById('inc-age');
+    // Reading from Firestore takes a moment, and on a phone that moment is
+    // long enough to look like an empty tab. Say so instead of showing blank,
+    // but only on the first read — a refresh keeps the current list on screen
+    // so it doesn't flicker.
+    if (!wrap.dataset.loaded) {
+      wrap.innerHTML = '<div class="inc-empty">Reading orders\u2026</div>';
+    }
     let doc;
     try {
       doc = await db.collection('print-watcher-control').doc('incoming-orders').get();
@@ -1316,6 +1427,7 @@
     if (!doc.exists) {
       ageEl.textContent = '';
       setTabCount('incoming', 0);
+      wrap.dataset.loaded = '1';
       wrap.innerHTML = '<div class="inc-empty"><b>Nothing from the backend yet</b>' +
         'The watcher on PC 2 has not written any orders. Check it is running ' +
         '(start-backend.bat) — it reads Sendcloud every few minutes.</div>';
@@ -1337,6 +1449,7 @@
     setTabCount('incoming', items.length);
 
     if (!items.length) {
+      wrap.dataset.loaded = '1';
       wrap.innerHTML = '<div class="inc-empty"><b>No orders waiting</b>' +
         'Everything Sendcloud has from the last couple of weeks is already shipped or cancelled.</div>';
       return;
@@ -1349,7 +1462,15 @@
       '</div>';
 
     incItemsCache = items;
-    wrap.innerHTML = incSummaryHtml(items) + note + items.map(incLiveCard).join('');
+    wrap.dataset.loaded = '1';
+    // The summary always counts every channel, so the totals stay checkable
+    // against Sendcloud even while the list below is narrowed to one shop.
+    const shown = incChannelFilter ? items.filter(o => (o.channel || 'Unknown') === incChannelFilter) : items;
+    const body = shown.length
+      ? shown.map(incLiveCard).join('')
+      : '<div class="inc-empty"><b>Nothing waiting for ' + escapeHtml(incChannelFilter || '') + '</b>' +
+        'Tap the channel again to show everything.</div>';
+    wrap.innerHTML = incSummaryHtml(items) + note + body;
   }
 
 
@@ -1361,6 +1482,54 @@
     const key = b.dataset.key;
     const act = b.dataset.live;
     const order = incItemsCache.find(o => (o.orderNumber || o.id) === key);
+
+    if (act === 'channel') {
+      // Tapping the channel you are already filtered to clears the filter,
+      // so one button both narrows and widens and there is nothing to hunt for.
+      incChannelFilter = (!key || incChannelFilter === key) ? null : key;
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'expand') {
+      if (incExpanded.has(key)) incExpanded.delete(key); else incExpanded.add(key);
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'plus' || act === 'minus') {
+      const now = incReadLabels()[key] || 1;
+      const next = act === 'plus' ? now + 1 : now - 1;
+      if (next < 1 || next > 6) return;
+      const ok = await askYesNo({
+        title: 'Change to ' + next + ' label' + (next > 1 ? 's' : '') + '?',
+        body: '<b>' + escapeHtml((order && order.address && order.address.name) || key) + '</b><br>' +
+              escapeHtml((order && order.converted) || '') + '<br><br>' +
+              'Sendcloud will be asked for ' + next + ' label' + (next > 1 ? 's' : '') + ' on this order.',
+        yes: 'Yes, ' + next
+      });
+      if (!ok) return;
+      incWriteLabels(key, next);
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'process') {
+      // Deliberately not wired to Sendcloud yet. A button that spends money
+      // goes in only once the list it sits on is known to be right, and the
+      // channel filtering is still being checked against the panel.
+      const n = incReadLabels()[key] || 1;
+      await askYesNo({
+        title: 'Not connected yet',
+        body: 'This would create <b>' + n + ' label' + (n > 1 ? 's' : '') + '</b> for<br>' +
+              '<b>' + escapeHtml((order && order.address && order.address.name) || key) + '</b><br>' +
+              escapeHtml((order && order.converted) || '') + '<br><br>' +
+              'Label creation is switched off until the channel counts here match ' +
+              'the Sendcloud panel. Nothing has been sent.',
+        yes: 'Understood', no: 'Close'
+      });
+      return;
+    }
 
     if (act === 'edit') {
       incEditingLive = key;
