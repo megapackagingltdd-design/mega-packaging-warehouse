@@ -1715,12 +1715,11 @@
                     : '') +
                   surchargeHtml +
                 '</div>'
-              // An avoidable surcharge is the one thing that still shouts,
-              // because it is the only part of this worth acting on.
-              // hasAvoidable, not the raw field: a record from the watcher
-              // PC 2 is running today carries no avoidableTotal, and reading
-              // the field directly would hide a real surcharge behind the +.
-              : (hasAvoidable ? surchargeHtml : '')) +
+              // Nothing about surcharges on the face of the card. Even an
+              // avoidable one is something to look into afterwards, not
+              // while scanning the list, so it sits behind the + with the
+              // rest of the shipping detail.
+              : '') +
             (o.fallbackTo
               ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
                 ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
@@ -1915,7 +1914,9 @@
           '<div class="ask-body">' +
             'SKU <b>' + escapeHtml(sku) + '</b><br><br>' +
             'Give the product name on its own. Leave the quantity out — it is ' +
-            'worked out from each order.' +
+            'worked out from each order. Check the sums underneath before you ' +
+            'save: <b>Remember it</b> fixes this product on every order, ' +
+            '<b>Just this order</b> changes only this one.' +
           '</div>' +
           '<label class="teach-l">Product name</label>' +
           '<input class="teach-i" id="teach-name" value="' + escapeHtml(suggestedName) + '" />' +
@@ -2259,7 +2260,12 @@
         ? (pAll[idx] != null ? pAll[idx]
            : (incApplyLocalRulesToText(parts[idx].text) || parts[idx].text))
         : (incReadOverrides()[key] || (order && order.converted) || key);
-      const skus = (parts && parts[idx] && parts[idx].skus) ? parts[idx].skus.join(', ') : '';
+      // Falls back to the order's own SKUs: a record written before the
+      // watcher started sending parts has none on the part, and dropping
+      // the SKU leaves the Dimensions table nothing to match on later.
+      const skus = (parts && parts[idx] && parts[idx].skus && parts[idx].skus.length)
+        ? parts[idx].skus.join(', ')
+        : [...new Set(((order && order.items) || []).map(i => i.sku).filter(Boolean))].join(', ');
       const ok = await askYesNo({
         title: 'Ask the warehouse to measure this?',
         body: 'They will see:<br><br><b>' + escapeHtml(product) + '</b><br><br>' +
@@ -2305,13 +2311,21 @@
       if (!val) return;
       const idx = Number(b.dataset.part);
       const part = (order && order.convertedParts || [])[idx];
-      const unknown = !!(part && part.needsReview);
       const skus = [...new Set(((part && part.skus) || []).filter(Boolean))];
       const single = skus.length === 1 ? skus[0] : null;
 
       incEditingLive = null;
 
-      if (!unknown || !single) {
+      // Every edit of a single-product line goes through the confirmation,
+      // recognised or not. It shows the arithmetic and what the same
+      // product looks like at other quantities, so a wrong pack size is
+      // caught here rather than on next week's order — and confirming it
+      // writes the correction to the shared table so the fix holds
+      // everywhere, not just on this one order.
+      //
+      // A line fed by two SKUs cannot be taught: there is no way to know
+      // which of them the new wording belongs to, so it stays a one-off.
+      if (!single) {
         incWritePartOverride(key, idx, val);
         await renderIncomingLive();
         return;
