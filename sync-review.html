@@ -494,6 +494,11 @@
   .src-desc { font-size:11.5px; color:#777; margin-top:2px; line-height:1.35; }
   .src-foot { display:flex; gap:8px; margin-top:4px; flex-wrap:wrap; }
   .src-tag { font-size:10.5px; font-weight:800; background:#efece4; color:#666; border-radius:4px; padding:1px 7px; }
+  /* A missing weight is the thing to act on, so it is red and it is a
+     button — tapping it asks the warehouse to weigh that product. */
+  button.src-tag.none { background:#fdecea; color:#a3271b; border:1px solid #e8b4ad;
+                        font-family:inherit; cursor:pointer; padding:1px 7px; }
+  .src-tag.waiting { background:#fdf3e2; color:#8a5200; }
   .conv-box { border:1.5px solid #d5d1c7; border-radius:7px; padding:10px; font-size:15px; font-weight:800; line-height:1.4; min-height:46px; cursor:pointer; background:#fff; }
   .conv-box.bad { border-color:#c0392b; color:#a3271b; background:#fffafa; }
   .conv-edit { width:100%; box-sizing:border-box; font-family:inherit; font-size:15px; font-weight:800; padding:10px; border:2px solid #c65d2e; border-radius:7px; min-height:66px; resize:vertical; }
@@ -935,6 +940,8 @@
   // the measurement list itself — the only copy that is actually true, and
   // one that clears itself the moment staff measure the product.
   let incMeasureByOrder = new Map();   // order key -> request record
+  let incMeasureByProduct = new Map(); // product wording -> request record
+  const incProductKey = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   let incExpanded = new Set();     // order keys whose product descriptions are open
   let incItemsCache = [];          // last rendered live items, for the editor
 
@@ -1281,6 +1288,15 @@
     // order, because then the order weight IS that product's weight. It
     // belongs beside the product rather than repeated on its own line.
     const onePart = !Array.isArray(o.convertedParts) || o.convertedParts.length <= 1;
+    // The wording the warehouse knows a product by — the converted name,
+    // after any local edit, which is the same text that appears on a slot.
+    const partName = (num) => {
+      const ov = incReadPartOverrides()[openKey] || {};
+      if (ov[num - 1] != null) return ov[num - 1];
+      const p = Array.isArray(o.convertedParts) ? o.convertedParts[num - 1] : null;
+      if (p && p.text) return incApplyLocalRulesToText(p.text) || p.text;
+      return onePart ? (incReadOverrides()[openKey] || o.converted || '') : '';
+    };
     const partKg = (num) => {
       const m = Array.isArray(o.partMeasures) ? o.partMeasures[num - 1] : null;
       if (m && m.weightKg != null) return m.weightKg;
@@ -1308,9 +1324,17 @@
               escapeHtml(it.sku || '(no SKU)') + '</div>' +
             '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
               (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
+              // No weight is the thing to act on, so it is the button.
+              // Tapping it asks the warehouse to measure THAT product, by
+              // the name they know it as — which is how a product with
+              // several pack sizes gets weighed separately.
               (partKg(partNo) != null
                 ? '<span class="src-tag kg">' + partKg(partNo) + ' kg</span>'
-                : '<span class="src-tag none">no kg</span>') +
+                : incMeasureByProduct.has(incProductKey(partName(partNo)))
+                ? '<span class="src-tag waiting">⏳ being measured</span>'
+                : '<button class="src-tag none" data-live="measurepart" ' +
+                    'data-key="' + escapeHtml(openKey) + '" data-part="' + (partNo - 1) + '">' +
+                    'no kg — ask staff</button>') +
               (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
             '</div>' +
           '</div>' +
@@ -1404,10 +1428,9 @@
     const editingPart = (i) => incEditingLive === key + '#' + i;
     const anyPartEditing = rawParts ? rawParts.some((p, i) => editingPart(i)) : false;
 
+    // No Edit button and no heading: tapping the box edits it, which is
+    // what the button did anyway.
     const convertedHtml =
-      '<div class="inc-col-label"><span>Converted for us</span>' +
-        (editing ? '' : '<button data-live="edit" data-key="' + escapeHtml(key) + '">Edit</button>') +
-      '</div>' +
       (editing
         ? '<textarea class="conv-edit" id="live-edit-' + escapeHtml(key) + '">' + escapeHtml(convText) + '</textarea>' +
           '<div class="conv-actions">' +
@@ -1486,8 +1509,6 @@
               : taught
               ? '<div class="fix-how" style="color:#1d6b4f;">Using the product you just taught. ' +
                 'PC 2 picks it up within a few minutes.</div>'
-              : part.needsReview
-              ? '<div class="fix-how">Tap to say what this is.</div>'
               : '');
         return '<div class="pair-side">' + mine.map(it => srcLineHtml(it, n, n)).join('') + '</div>' +
           '<div class="pair-link"></div>' +
@@ -1563,38 +1584,25 @@
         'data-live="band" data-band="' + escapeHtml(b) + '" data-key="' + escapeHtml(key) + '">' +
         escapeHtml(b) + '</button>').join('');
 
-    // Only offered when nothing is on record. A product already measured
-    // doesn't need measuring again.
+    // Just the bands. Everything that used to be written here — the number,
+    // "on record", "shown per product", "no weight on record, using X by
+    // default" — is already visible: the kilos sit on each product, and the
+    // band that is lit says which one is being used.
     const weightRow =
       '<div class="inc-ship-k">Weight</div>' +
       '<div class="inc-ship-v">' +
         (kg != null
-          // Already shown next to every product, so it is not repeated as
-          // a number here — just how it can be changed.
-          ? (kgShownPerProduct && !kgIsMine
-              ? '<span style="font-size:12px;color:#857f74;">shown per product</span>'
-              : '<b>' + kg + ' kg</b>') +
+          ? (kgShownPerProduct && !kgIsMine ? '' : '<b>' + kg + ' kg</b>') +
             (kgIsMine
               ? ' <span style="font-size:11.5px;color:#1d6b4f;font-weight:700;">(you typed this) ' +
                 '<a href="#" data-live="clearkg" data-key="' + escapeHtml(key) + '">clear</a></span>'
-              : o.weightFromMeasurements
-              ? ' <span style="font-size:11.5px;color:#857f74;">added up from the measured products</span>'
-              : kgShownPerProduct ? ''
-              : ' <span style="font-size:11.5px;color:#857f74;">on record</span>')
-          : '<span style="color:#8a5200;font-weight:700;">No weight on record — using ' +
-            escapeHtml(bandNow) + (chosenBand ? '' : ' by default') + '</span>' +
-            '<div class="band-row">' + bandButtons + '</div>') +
-        (kg == null || kgIsMine
-          ? '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">' +
-              '<button class="svc-add" data-live="typekg" data-key="' + escapeHtml(key) + '">' +
-                (kgIsMine ? 'Change the weight' : 'Type a weight') + '</button>' +
-              (o.measureReq
-                ? '<span class="svc-add" style="border-style:dashed; cursor:default; color:#8a5200; border-color:#e0c08a;">' +
-                  '⏳ Waiting for the warehouse to measure ' + escapeHtml(o.measureReq.product || 'it') + '</span>'
-                : '<button class="svc-add" data-live="measure" data-key="' + escapeHtml(key) + '">' +
-                  'Ask staff to measure it</button>') +
-            '</div>'
-          : '') +
+              : '')
+          : '<div class="band-row">' + bandButtons + '</div>') +
+        // No "Type a weight" and no order-wide "Ask staff" button: weighing
+        // is the warehouse's job, and the request is made per product by
+        // tapping that product's "no kg" above. An order-wide button could
+        // only ask about the order as a whole, which is the wrong unit when
+        // two products on it need weighing separately.
       '</div>';
 
     const labels = incReadLabels()[key] || 1;
@@ -1667,19 +1675,12 @@
               escapeHtml(o.channel || 'unknown') + '</span>' +
           '</div></div>' +
         (canPair
-          ? '<div class="pair-grid">' +
-              '<div class="inc-col-label pair-hdr"><span>Exactly as it came in</span></div>' +
-              '<div class="pair-hdr"></div>' +
-              // No Edit button here: every line is tappable on its own, and
-              // a whole-order editor is what put two products in one box.
-              '<div class="inc-col-label pair-hdr"><span>Converted for us</span>' +
-                '<span style="font-weight:600;letter-spacing:0;text-transform:none;font-size:11px;">' +
-                'tap a line to change it</span></div>' +
-              pairsHtml +
-            '</div>' + convFoot() + fixesHtml
+          // No column headings and no hint text. The two columns are
+          // self-evident once the rule joins them, and the words were
+          // taking up more of the card than the order did.
+          ? '<div class="pair-grid">' + pairsHtml + '</div>' + convFoot() + fixesHtml
           : '<div class="inc-cols">' +
-              '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + items +
-              '</div>' +
+              '<div>' + items + '</div>' +
               '<div>' + convertedHtml + fixesHtml + '</div>' +
             '</div>') +
         '<div class="inc-ship">' +
@@ -1725,8 +1726,10 @@
                 ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
                 (o.fallbackNote ? ' (' + escapeHtml(o.fallbackNote) + ')' : '') + '. ' +
                 'Use <b>' + escapeHtml(incServiceName(o.fallbackTo, o.weightKg)) + '</b> instead.</span>'
-              : '<button class="svc-add" data-live="fallback" data-key="' + escapeHtml(key) + '">' +
-                'This area needs a different service</button>') +
+              // No button to declare it by hand. The watcher records an
+              // area when a label actually comes back refused, which is the
+              // only moment anybody reliably knows it.
+              : '') +
           '</div>' +
         '</div>' + actions +
       '</div></div>';
@@ -1765,9 +1768,15 @@
     // where each one got to rather than offering the button again.
     // Outstanding measurement requests, keyed by the order that asked.
     incMeasureByOrder = new Map();
+    incMeasureByProduct = new Map();
     try {
       for (const r of await readMeasureRequests()) {
-        if (r && r.orderKey && r.status !== 'measured') incMeasureByOrder.set(r.orderKey, r);
+        if (!r || r.status === 'measured') continue;
+        if (r.orderKey) incMeasureByOrder.set(r.orderKey, r);
+        // Also indexed by the product itself: once a product is out for
+        // measuring, every order containing it should say so, not just the
+        // one that happened to ask.
+        if (r.product) incMeasureByProduct.set(incProductKey(r.product), r);
       }
     } catch (e) { /* list unreadable — the button simply offers again */ }
 
@@ -1878,7 +1887,25 @@
   // as x1. This asks for the three things that actually define it — the name,
   // how many singles come in one ordered item, and how many make a full box —
   // and the quantity is then worked out fresh each time.
-  function askTeachSku(sku, suggestedName, qty) {
+  // Reads the pack size straight out of what was typed.
+  //
+  // "375 salad x100 single" on a qty-1 order means one of these holds 100
+  // singles. Asking for that number again, with the box defaulted to 1,
+  // was how "x100 single" came back as "x1" — the figure was sitting in
+  // the text and being thrown away.
+  //
+  // The text describes THIS order, so it is divided by the quantity: the
+  // same wording on a qty-2 order means 50 to a pack.
+  function incGuessPerItem(text, qty) {
+    const m = String(text || '').match(/\bx\s*(\d+)(\s+single)?\s*$/i);
+    if (!m) return null;
+    const total = Number(m[1]);
+    const q = Math.max(1, Number(qty) || 1);
+    if (!total || total % q !== 0) return null;
+    return Math.max(1, total / q);
+  }
+
+  function askTeachSku(sku, suggestedName, qty, typedText) {
     return new Promise(resolve => {
       const ov = document.createElement('div');
       ov.className = 'ask-overlay';
@@ -1893,7 +1920,8 @@
           '<label class="teach-l">Product name</label>' +
           '<input class="teach-i" id="teach-name" value="' + escapeHtml(suggestedName) + '" />' +
           '<label class="teach-l">How many singles in ONE of these? (a 100-pack is 100)</label>' +
-          '<input class="teach-i" id="teach-per" type="number" inputmode="numeric" min="1" value="1" />' +
+          '<input class="teach-i" id="teach-per" type="number" inputmode="numeric" min="1" value="' +
+            (incGuessPerItem(typedText, qty) || 1) + '" />' +
           // This used to ask how many SINGLES make a box. The natural
           // answer to "how many make a box" is the number of packs — five,
           // not five hundred — and answering it that way put "x5" on the
@@ -2219,6 +2247,47 @@
       return;
     }
 
+    // Asking for ONE product to be weighed, by the name the warehouse knows
+    // it as. Per product rather than per order: an order with two products
+    // needs each weighed separately, and the order total says nothing about
+    // either of them.
+    if (act === 'measurepart') {
+      const idx = Number(b.dataset.part);
+      const parts = (order && order.convertedParts) || null;
+      const pAll = incReadPartOverrides()[key] || {};
+      const product = (parts && parts[idx])
+        ? (pAll[idx] != null ? pAll[idx]
+           : (incApplyLocalRulesToText(parts[idx].text) || parts[idx].text))
+        : (incReadOverrides()[key] || (order && order.converted) || key);
+      const skus = (parts && parts[idx] && parts[idx].skus) ? parts[idx].skus.join(', ') : '';
+      const ok = await askYesNo({
+        title: 'Ask the warehouse to measure this?',
+        body: 'They will see:<br><br><b>' + escapeHtml(product) + '</b><br><br>' +
+              'Once they weigh it, the kilos show here and on every other order ' +
+              'with this product, and nobody is asked to weigh it again.',
+        yes: 'Send it to the warehouse'
+      });
+      if (!ok) return;
+      try {
+        await writeMeasureRequests(all => [...all, {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+          product,
+          sku: skus,
+          orderKey: key,
+          hideDetail: true,
+          status: 'sent',
+          requestedAt: Date.now()
+        }]);
+        document.getElementById('top-status').textContent =
+          'Asked the warehouse to measure ' + product + '.';
+      } catch (e) {
+        document.getElementById('top-status').textContent =
+          'Could not send that to the warehouse — ' + ((e && e.message) || 'try again') + '.';
+      }
+      await renderIncomingLive();
+      return;
+    }
+
     if (act === 'undopart') {
       incWritePartOverride(key, b.dataset.part, null);
       await renderIncomingLive();
@@ -2254,7 +2323,7 @@
         .replace(/^\[UNRECOGNISED SKU:.*?\]\s*/i, '')
         .trim() || val;
 
-      const ans = await askTeachSku(single, suggested, qty);
+      const ans = await askTeachSku(single, suggested, qty, val);
       if (!ans) { incWritePartOverride(key, idx, val); await renderIncomingLive(); return; }
 
       if (!ans.remember) {
@@ -2324,7 +2393,7 @@
         .replace(/^\[UNRECOGNISED SKU:.*?\]\s*/i, '')
         .trim() || val;
 
-      const ans = await askTeachSku(single, suggested, qty);
+      const ans = await askTeachSku(single, suggested, qty, val);
       if (!ans) return;
 
       incEditingLive = null;
