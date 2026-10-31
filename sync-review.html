@@ -501,6 +501,12 @@
   .conv-actions .btn { flex:1; justify-content:center; padding:9px 10px; font-size:13px; }
   .inc-ship { margin-top:12px; border-top:1px solid #ece9e1; padding-top:11px; display:grid; grid-template-columns:auto 1fr; gap:10px 14px; align-items:center; }
   @media (max-width:620px){ .inc-ship{grid-template-columns:minmax(0,1fr);} }
+  /* Labels and weight share one line on a wide screen — they were stacked,
+     which pushed the Process button off the bottom of the card. */
+  .ship-top { grid-column:1/-1; display:grid; grid-template-columns:auto auto 1fr; gap:10px 14px; align-items:center; }
+  @media (max-width:620px){ .ship-top{grid-template-columns:auto 1fr;} }
+  .band-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+  .band-btn.on { background:#c65d2e; color:#fff; border-color:#c65d2e; }
   .inc-ship-k { font-size:11.5px; font-weight:800; color:#666; }
   .inc-ship-v { font-size:13.5px; }
   .stepper { display:inline-flex; align-items:center; border:2px solid #c65d2e; border-radius:9px; overflow:hidden; vertical-align:middle; }
@@ -712,13 +718,11 @@
     <div id="attention-list"></div>
   </div>
 
-  <!-- INCOMING ORDERS — DEMO DATA ONLY.
-       These six cards are made up. They are here so the layout and the
-       buttons can be judged on a phone before the live feed is wired in.
-       Nothing on this panel talks to Sendcloud. -->
+  <!-- INCOMING ORDERS — live from Sendcloud by way of PC 2.
+       Opening this tab is the refresh: it re-reads what PC 2 has and asks
+       it to pull from Sendcloud again, so there is no separate button. -->
   <div class="card tab-panel" id="panel-incoming" style="display:none;">
     <div class="inc-bar">
-      <button class="btn btn-ghost" id="inc-refresh" style="width:auto; padding:10px 16px;">&#8635; Refresh</button>
       <span class="inc-age" id="inc-age"></span>
     </div>
     <div id="inc-live"></div>
@@ -946,6 +950,24 @@
     } catch (e) { /* storage blocked — still applies on screen */ }
   }
 
+  // The three bands Evri actually prices on. 2-15kg is the default when
+  // nothing has been measured: it is what Sendcloud has been picking, and
+  // of the three it is the one that cannot under-declare the parcel.
+  const INC_BANDS = ['0-1kg', '1-2kg', '2-15kg'];
+  const INC_DEFAULT_BAND = '2-15kg';
+  const INC_BANDS_KEY = 'incoming-bands';
+  function incReadBands() {
+    try { return JSON.parse(localStorage.getItem(INC_BANDS_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteBand(key, band) {
+    try {
+      const all = incReadBands();
+      if (band === null || band === INC_DEFAULT_BAND) delete all[key]; else all[key] = band;
+      localStorage.setItem(INC_BANDS_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
+
   const INC_LABELS_KEY = 'incoming-label-counts';
   function incReadLabels() {
     try { return JSON.parse(localStorage.getItem(INC_LABELS_KEY) || '{}'); }
@@ -1007,6 +1029,24 @@
       return incDescribe(rule.label, units, Number(rule.unitsPerBox) || 0);
     });
     return changed ? parts.join(' + ') : null;
+  }
+
+  // A change to ONE product line of an order. Separate from the whole-order
+  // override below, because an order with two products needs each line
+  // editable where it sits rather than both pulled into one text box.
+  const INC_PARTS_KEY = 'incoming-part-overrides';
+  function incReadPartOverrides() {
+    try { return JSON.parse(localStorage.getItem(INC_PARTS_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWritePartOverride(key, idx, text) {
+    try {
+      const all = incReadPartOverrides();
+      const mine = all[key] || {};
+      if (text === null) delete mine[idx]; else mine[idx] = text;
+      if (Object.keys(mine).length) all[key] = mine; else delete all[key];
+      localStorage.setItem(INC_PARTS_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — the change still applies on screen */ }
   }
 
   const INC_OVERRIDES_KEY = 'incoming-converted-overrides';
@@ -1212,15 +1252,28 @@
     const isOpen = incExpanded.has(openKey);
     // One line of the "exactly as it came in" column. Shared, because the
     // paired view below renders the same lines regrouped.
-    const srcLineHtml = (it, num) =>
+    // The measured weight of the product this line became, so the kilos sit
+    // next to the quantity and price rather than only as an order total.
+    const partKg = (num) => {
+      const m = Array.isArray(o.partMeasures) ? o.partMeasures[num - 1] : null;
+      return m && m.weightKg != null ? m.weightKg : null;
+    };
+
+    // badgeNo numbers the pair; partNo says which converted line this item
+    // became, which is what the weight hangs off. In the flat view there is
+    // no badge but there is still a part, so they are separate arguments.
+    const srcLineHtml = (it, badgeNo, partNo) =>
       '<div class="src-line">' +
         '<div class="src-head">' +
           '<div style="flex:1; min-width:0;">' +
             '<div class="src-sku">' +
-              (num ? '<span class="pair-no">' + num + '</span>' : '') +
+              (badgeNo ? '<span class="pair-no">' + badgeNo + '</span>' : '') +
               escapeHtml(it.sku || '(no SKU)') + '</div>' +
             '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
               (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
+              (partKg(partNo) != null
+                ? '<span class="src-tag kg">' + partKg(partNo) + ' kg</span>'
+                : '<span class="src-tag none">no kg</span>') +
               (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
             '</div>' +
           '</div>' +
@@ -1230,7 +1283,12 @@
         (isOpen && it.name ? '<div class="src-desc src-detail">' + escapeHtml(it.name) + '</div>' : '') +
       '</div>';
 
-    const items = (o.items || []).map(it => srcLineHtml(it, 0)).join('') ||
+    const items = (o.items || []).map((it, i) => {
+      const p = Array.isArray(o.itemParts) && Number.isInteger(o.itemParts[i])
+        ? o.itemParts[i] + 1
+        : (Array.isArray(o.partMeasures) && o.partMeasures.length === 1 ? 1 : 0);
+      return srcLineHtml(it, 0, p);
+    }).join('') ||
       '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
 
     const fixes = (o.fixes || []);
@@ -1285,11 +1343,24 @@
     const key = o.orderNumber || o.id;
     const override = overrides[key];
     const localised = incApplyLocalRules(o);
-    const convText = override != null ? override : (localised || o.converted || '');
+    // Per-line edits, and the whole-order text rebuilt from them.
+    const rawParts = Array.isArray(o.convertedParts) ? o.convertedParts : null;
+    const pOv = incReadPartOverrides()[key] || {};
+    const partText = (i) => (pOv[i] != null ? pOv[i] : ((rawParts[i] && rawParts[i].text) || ''));
+    const composed = rawParts ? rawParts.map((p, i) => partText(i)).filter(Boolean).join(' + ') : null;
+
+    const convText = override != null ? override : (localised || composed || o.converted || '');
     // A locally-applied rule counts as solved: the wording is right and the
-    // order can go, even though PC 2 has not caught up yet.
-    const convBad = !convText || (o.convertedNeedsReview && override == null && !localised);
+    // order can go, even though PC 2 has not caught up yet. With per-line
+    // edits, a line you have rewritten counts as solved on its own, so an
+    // order is only blocked while something is still genuinely unknown.
+    const partsBad = rawParts
+      ? rawParts.some((p, i) => p.needsReview && pOv[i] == null)
+      : o.convertedNeedsReview;
+    const convBad = !convText || (partsBad && override == null && !localised);
     const editing = incEditingLive === key;
+    const editingPart = (i) => incEditingLive === key + '#' + i;
+    const anyPartEditing = rawParts ? rawParts.some((p, i) => editingPart(i)) : false;
 
     const convertedHtml =
       '<div class="inc-col-label"><span>Converted for us</span>' +
@@ -1344,14 +1415,35 @@
         const mine = srcItems.filter((_, i) => iParts[i] === idx);
         if (!mine.length) return '';
         const n = idx + 1;
-        return '<div class="pair-side">' + mine.map(it => srcLineHtml(it, n)).join('') + '</div>' +
-          '<div class="pair-link"></div>' +
-          '<div class="pair-side right">' +
-            '<div class="conv-box' + (part.needsReview ? ' bad' : '') + '" ' +
-                 'data-live="edit" data-key="' + escapeHtml(key) + '">' +
-              '<span class="pair-no">' + n + '</span>' + escapeHtml(part.text || '') +
+        // Only one line anywhere on the page can be open at a time, so a
+        // fixed id avoids escaping an order number into an attribute.
+        const eid = 'part';
+        const edited = pOv[idx] != null;
+        const text = partText(idx);
+        // Editing happens where the line sits, holding only that line's
+        // wording. Pulling the whole order into one box meant rewriting
+        // text for a product you were not looking at.
+        const right = editingPart(idx)
+          ? '<textarea class="conv-edit" id="live-edit-' + eid + '">' + escapeHtml(text) + '</textarea>' +
+            '<div class="conv-actions">' +
+              '<button class="btn btn-good" data-live="savepart" data-key="' + escapeHtml(key) +
+                '" data-part="' + idx + '">Save</button>' +
+              '<button class="btn btn-ghost" data-live="cancel" data-key="' + escapeHtml(key) + '">Cancel</button>' +
+            '</div>'
+          : '<div class="conv-box' + (part.needsReview && !edited ? ' bad' : '') + '" ' +
+                 'data-live="edit" data-key="' + escapeHtml(key) + '" data-part="' + idx + '">' +
+              '<span class="pair-no">' + n + '</span>' + escapeHtml(text) +
             '</div>' +
-          '</div>';
+            (edited
+              ? '<div class="fix-how" style="color:#1d6b4f;">Changed by you · ' +
+                '<a href="#" data-live="undopart" data-key="' + escapeHtml(key) +
+                '" data-part="' + idx + '">undo</a></div>'
+              : part.needsReview
+              ? '<div class="fix-how">Tap to say what this is.</div>'
+              : '');
+        return '<div class="pair-side">' + mine.map(it => srcLineHtml(it, n, n)).join('') + '</div>' +
+          '<div class="pair-link"></div>' +
+          '<div class="pair-side right">' + right + '</div>';
       }).join('');
     }
 
@@ -1411,6 +1503,21 @@
             '</div>')
       : '';
 
+    // The band is no longer spelled out beside the weight — the shipping
+    // line below names the service, which already says the band.
+    //
+    // With no weight at all, the band is the thing that actually has to be
+    // decided, so the three real Evri bands are offered as buttons.
+    // 2-15kg Next Day is pre-selected: it is what Sendcloud has been doing,
+    // and it is the band that cannot under-declare. A measured weight beats
+    // all of it, so the buttons disappear the moment a real number arrives.
+    const chosenBand = incReadBands()[key] || null;
+    const bandNow = kg != null ? incWeightBand(kg) : (chosenBand || INC_DEFAULT_BAND);
+    const bandButtons = INC_BANDS.map(b =>
+      '<button class="svc-add band-btn' + (b === bandNow ? ' on' : '') + '" ' +
+        'data-live="band" data-band="' + escapeHtml(b) + '" data-key="' + escapeHtml(key) + '">' +
+        escapeHtml(b) + '</button>').join('');
+
     // Only offered when nothing is on record. A product already measured
     // doesn't need measuring again.
     const weightRow =
@@ -1418,16 +1525,15 @@
       '<div class="inc-ship-v">' +
         (kg != null
           ? '<b>' + kg + ' kg</b>' +
-            // The band is what the carrier actually prices on, so it belongs
-            // beside the weight rather than buried in the service name.
-            ' <span style="font-size:11.5px;color:#6b665d;font-weight:700;">' +
-              escapeHtml(incWeightBand(kg)) + ' band</span>' +
             (kgIsMine
               ? ' <span style="font-size:11.5px;color:#1d6b4f;font-weight:700;">(you typed this) ' +
                 '<a href="#" data-live="clearkg" data-key="' + escapeHtml(key) + '">clear</a></span>'
+              : o.weightFromMeasurements
+              ? ' <span style="font-size:11.5px;color:#857f74;">added up from the measured products</span>'
               : ' <span style="font-size:11.5px;color:#857f74;">on record</span>')
-          : '<span style="color:#8a5200;font-weight:700;">Nothing on record — Sendcloud will guess, ' +
-            'and guessing is where surcharges come from.</span>') +
+          : '<span style="color:#8a5200;font-weight:700;">No weight on record — using ' +
+            escapeHtml(bandNow) + (chosenBand ? '' : ' by default') + '</span>' +
+            '<div class="band-row">' + bandButtons + '</div>') +
         (kg == null || kgIsMine
           ? '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">' +
               '<button class="svc-add" data-live="typekg" data-key="' + escapeHtml(key) + '">' +
@@ -1514,8 +1620,11 @@
           ? '<div class="pair-grid">' +
               '<div class="inc-col-label pair-hdr"><span>Exactly as it came in</span></div>' +
               '<div class="pair-hdr"></div>' +
+              // No Edit button here: every line is tappable on its own, and
+              // a whole-order editor is what put two products in one box.
               '<div class="inc-col-label pair-hdr"><span>Converted for us</span>' +
-                '<button data-live="edit" data-key="' + escapeHtml(key) + '">Edit</button></div>' +
+                '<span style="font-weight:600;letter-spacing:0;text-transform:none;font-size:11px;">' +
+                'tap a line to change it</span></div>' +
               pairsHtml +
             '</div>' + convFoot() + fixesHtml
           : '<div class="inc-cols">' +
@@ -1523,7 +1632,8 @@
               '</div>' +
               '<div>' + convertedHtml + fixesHtml + '</div>' +
             '</div>') +
-        '<div class="inc-ship">' + stepper + weightRow +
+        '<div class="inc-ship">' +
+          '<div class="ship-top">' + stepper + weightRow + '</div>' +
           '<div class="inc-ship-k">Shipping</div>' +
           '<div class="inc-ship-v">' +
             // Everything leaves on Next Day whatever was ordered, so the
@@ -1789,6 +1899,15 @@
       return;
     }
 
+    // Choosing the band by hand, for an order nobody has weighed. It is a
+    // declaration, not a measurement, so it is kept separately from a real
+    // weight and a measured one always wins.
+    if (act === 'band') {
+      incWriteBand(key, b.dataset.band);
+      await renderIncomingLive();
+      return;
+    }
+
     if (act === 'typekg') {
       const current = incReadWeights()[key];
       const kg = await askNumber({
@@ -1972,6 +2091,11 @@
     }
 
     if (act === 'process') {
+      // A label may already have been made in Sendcloud by hand, in which
+      // case this order is done and nobody has told the system. Asking for
+      // a sync on every press is what stops that one being missed.
+      incRequestSync('process', true);
+
       // Deliberately not wired to Sendcloud yet. A button that spends money
       // goes in only once the list it sits on is known to be right, and the
       // channel filtering is still being checked against the panel.
@@ -1989,13 +2113,70 @@
     }
 
     if (act === 'edit') {
-      incEditingLive = key;
+      // A line carries its own index, so only that line opens.
+      const part = b.dataset.part;
+      incEditingLive = part != null ? key + '#' + part : key;
       await renderIncomingLive();
-      const t = document.getElementById('live-edit-' + key);
+      const t = document.getElementById(part != null ? 'live-edit-part' : 'live-edit-' + key);
       if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
       return;
     }
     if (act === 'cancel') { incEditingLive = null; await renderIncomingLive(); return; }
+
+    if (act === 'undopart') {
+      incWritePartOverride(key, b.dataset.part, null);
+      await renderIncomingLive();
+      return;
+    }
+
+    // Saving one product line. No confirmation when the line already had a
+    // product on it — you are correcting wording, not telling the system
+    // something it did not know. An unrecognised SKU still offers to be
+    // learned, because that is the only way it ever gets recognised.
+    if (act === 'savepart') {
+      const box = document.getElementById('live-edit-part');
+      if (!box) return;
+      const val = box.value.trim();
+      if (!val) return;
+      const idx = Number(b.dataset.part);
+      const part = (order && order.convertedParts || [])[idx];
+      const unknown = !!(part && part.needsReview);
+      const skus = [...new Set(((part && part.skus) || []).filter(Boolean))];
+      const single = skus.length === 1 ? skus[0] : null;
+
+      incEditingLive = null;
+
+      if (!unknown || !single) {
+        incWritePartOverride(key, idx, val);
+        await renderIncomingLive();
+        return;
+      }
+
+      const qty = ((order.items || []).find(i => i.sku === single) || {}).qty || 1;
+      const suggested = val
+        .replace(/\s*\bx\s*\d+(\s+single)?\s*$/i, '')
+        .replace(/^\[UNRECOGNISED SKU:.*?\]\s*/i, '')
+        .trim() || val;
+
+      const ans = await askTeachSku(single, suggested, qty);
+      if (!ans) { incWritePartOverride(key, idx, val); await renderIncomingLive(); return; }
+
+      if (!ans.remember) {
+        incWritePartOverride(key, idx, val);
+        await renderIncomingLive();
+        return;
+      }
+
+      // Saved locally before the network call, so losing the connection
+      // cannot lose the rule.
+      incWriteRule(single, {
+        label: ans.name, unitsPerItem: ans.unitsPerItem, unitsPerBox: ans.unitsPerBox || 0
+      });
+      incWritePartOverride(key, idx, null);
+      await renderIncomingLive();
+      await incSaveRuleToCloud(single, ans);
+      return;
+    }
 
     if (act === 'undo') {
       const ok = await askYesNo({
@@ -2068,52 +2249,76 @@
       incWriteOverride(key, null);
       await renderIncomingLive();
 
-      try {
-        const rule = {
-          sku: single,
-          label: ans.name,
-          unitsPerItem: ans.unitsPerItem,
-          unitsPerBox: ans.unitsPerBox || 0,
-          mode: 'scale',
-          override: true,
-          updatedAt: Date.now()
-        };
-        const existing = await db.collection('sku-corrections').where('sku', '==', single).limit(1).get();
-        if (!existing.empty) {
-          await db.collection('sku-corrections').doc(existing.docs[0].id).update(rule);
-        } else {
-          await db.collection('sku-corrections').add({ ...rule, createdAt: Date.now() });
-        }
-        // The override is cleared on purpose: from here the rule produces the
-        // wording, so a stale one-off would mask it and hide a mistake.
-        document.getElementById('top-status').textContent =
-          'Saved — ' + single + ' is now "' + ans.name + '"' +
-          (ans.unitsPerItem > 1 ? ', ' + ans.unitsPerItem + ' singles per item' : '') +
-          (ans.unitsPerBox ? ', ' + ans.unitsPerBox + ' to a full box' : '') +
-          '. It applies on the next refresh from PC 2.';
-        renderLearnedList();
-      } catch (err) {
-        // The wording is already right on this device; only the shared copy
-        // failed, so say exactly that rather than implying nothing happened.
-        document.getElementById('top-status').textContent =
-          'Saved on this device, but it could not be shared with PC 2 — ' +
-          ((err && err.message) || 'try again') + '. Other devices will still ' +
-          'show it as unrecognised.';
-      }
-      await renderIncomingLive();
+      await incSaveRuleToCloud(single, ans);
       return;
     }
+
   });
 
-  document.getElementById('inc-refresh').addEventListener('click', async () => {
-    const btn = document.getElementById('inc-refresh');
-    btn.disabled = true;
-    const was = btn.textContent;
-    btn.textContent = 'Refreshing…';
+  // Shares a learned product with PC 2. Split out so a line edit and a
+  // whole-order edit cannot drift apart in what they save.
+  async function incSaveRuleToCloud(sku, ans) {
+    try {
+      const rule = {
+        sku,
+        label: ans.name,
+        unitsPerItem: ans.unitsPerItem,
+        unitsPerBox: ans.unitsPerBox || 0,
+        mode: 'scale',
+        override: true,
+        updatedAt: Date.now()
+      };
+      const existing = await db.collection('sku-corrections').where('sku', '==', sku).limit(1).get();
+      if (!existing.empty) {
+        await db.collection('sku-corrections').doc(existing.docs[0].id).update(rule);
+      } else {
+        await db.collection('sku-corrections').add({ ...rule, createdAt: Date.now() });
+      }
+      // Any one-off is cleared on purpose: from here the rule produces the
+      // wording, so a stale override would mask it and hide a mistake.
+      document.getElementById('top-status').textContent =
+        'Saved — ' + sku + ' is now "' + ans.name + '"' +
+        (ans.unitsPerItem > 1 ? ', ' + ans.unitsPerItem + ' singles per item' : '') +
+        (ans.unitsPerBox ? ', ' + ans.unitsPerBox + ' to a full box' : '') +
+        '. It applies on the next refresh from PC 2.';
+      renderLearnedList();
+    } catch (err) {
+      // The wording is already right on this device; only the shared copy
+      // failed, so say exactly that rather than implying nothing happened.
+      document.getElementById('top-status').textContent =
+        'Saved on this device, but it could not be shared with PC 2 — ' +
+        ((err && err.message) || 'try again') + '. Other devices will still ' +
+        'show it as unrecognised.';
+    }
+    await renderIncomingLive();
+  }
+
+  // Asks PC 2 to pull from Sendcloud. Fire and forget: the result lands in
+  // the normal read a few seconds later, so nothing here waits on it.
+  //
+  // This runs whenever the Incoming tab is opened and whenever a label is
+  // made, because a label created directly in Sendcloud is invisible here
+  // until a sync happens, and those are exactly the ones that get missed.
+  let incLastSyncAt = 0;
+  function incRequestSync(reason, always) {
+    const now = Date.now();
+    // Opening the tab twice in a row should not queue two syncs. Making a
+    // label is never skipped, though: that is exactly the moment a label
+    // someone created by hand in Sendcloud most needs to be noticed.
+    if (!always && now - incLastSyncAt < 20000) return;
+    incLastSyncAt = now;
+    try {
+      db.collection('sync-requests').add({ status: 'pending', requestedAt: now, reason: reason || 'incoming' });
+    } catch (e) { /* the orders already on screen are still the ones to work from */ }
+  }
+
+  // Opening the Incoming tab is the refresh — there is no separate button.
+  async function incOpenTab() {
+    const el = document.getElementById('inc-age');
+    if (el) el.textContent = 'Refreshing…';
+    incRequestSync('incoming-tab');
     try { await renderIncomingLive(); } catch (e) { showRenderError('the incoming orders', e); }
-    btn.textContent = was;
-    btn.disabled = false;
-  });
+  }
 
 
   async function submitPin() {
@@ -2543,7 +2748,11 @@
 
   document.getElementById('main-tabs').addEventListener('click', (e) => {
     const btn = e.target.closest('.tab');
-    if (btn) setTab(btn.dataset.tab, true);
+    if (!btn) return;
+    setTab(btn.dataset.tab, true);
+    // Pressing Incoming is the refresh, including when you are already on
+    // it — that is what the separate Refresh button used to be for.
+    if (btn.dataset.tab === 'incoming' && typeof incOpenTab === 'function') incOpenTab();
   });
 
   const REVIEW_DISPLAY_LIMIT = 300;
