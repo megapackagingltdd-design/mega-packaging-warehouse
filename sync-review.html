@@ -455,8 +455,11 @@
   .inc-sum-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px,1fr)); gap:6px; }
   .inc-sum-cell {
     border:1.5px solid #e6e3da; border-radius:8px; padding:7px 8px; min-width:0;
-    display:flex; flex-direction:column; gap:1px;
+    display:flex; flex-direction:column; gap:1px; position:relative;
   }
+  /* Top-right corner: the count sits on the left, so the empty opposite
+     corner is where the eye has room for the warning. */
+  .inc-sum-cell .warn-pip { position:absolute; top:6px; right:6px; margin:0; }
   .inc-sum-cell.amazon { border-color:#f0a830; background:#fff9f0; }
   .inc-sum-cell.web { border-color:#49a37c; background:#f1faf5; }
   .inc-sum-cell.ebay { border-color:#4a86e0; background:#f0f5fd; }
@@ -547,6 +550,17 @@
     min-width:20px; height:20px; padding:0 6px; border-radius:10px;
     background:#c0392b; color:#fff; font-size:11.5px; font-weight:900; margin-left:5px;
   }
+  .inc-card.pricey { border-color:#c0392b; }
+  .inc-banner.pricey { background:#fdeceb; color:#a3271b; }
+  .inc-banner.pricey b { font-size:15px; }
+  .btn-amazon { background:#f0a830; color:#241d00; }
+  .amz-state {
+    font-size:12.5px; font-weight:800; line-height:1.5; margin-top:8px;
+    border-radius:8px; padding:9px 11px;
+  }
+  .amz-state.waiting { background:#fff8ec; color:#8a5200; border:1.5px solid #f0c98a; }
+  .amz-state.done    { background:#eaf5ec; color:#2f6b3e; border:1.5px solid #9ad0ab; }
+  .amz-state.failed  { background:#fdeceb; color:#a3271b; border:1.5px solid #e8aaa3; }
   .teach-l { display:block; font-size:12px; font-weight:800; color:#6b665d; margin:10px 0 4px; line-height:1.4; }
   .teach-i {
     width:100%; box-sizing:border-box; font-family:inherit; font-size:16px; font-weight:800;
@@ -1183,6 +1197,8 @@
   let incShowDemo = false;
   let incEditingLive = null;       // order number currently being edited
   let incChannelFilter = null;     // null = all channels
+  let incAmazonState = {};         // order key -> the Amazon request's state
+  let incMeasureAsked = new Set(); // orders a measurement has been asked for
   let incExpanded = new Set();     // order keys whose product descriptions are open
   let incItemsCache = [];          // last rendered live items, for the editor
 
@@ -1191,6 +1207,21 @@
   // explicit choice (the tickbox) that writes a real SKU correction instead.
   // How many labels to make for an order. Kept per order on this device
   // until it is processed; one label unless you say otherwise.
+  // A weight typed in for one order, so the service and price can be judged
+  // before anyone measures the product properly.
+  const INC_WEIGHTS_KEY = 'incoming-weights';
+  function incReadWeights() {
+    try { return JSON.parse(localStorage.getItem(INC_WEIGHTS_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteWeight(key, kg) {
+    try {
+      const all = incReadWeights();
+      if (kg === null) delete all[key]; else all[key] = kg;
+      localStorage.setItem(INC_WEIGHTS_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — still applies on screen */ }
+  }
+
   const INC_LABELS_KEY = 'incoming-label-counts';
   function incReadLabels() {
     try { return JSON.parse(localStorage.getItem(INC_LABELS_KEY) || '{}'); }
@@ -1202,6 +1233,56 @@
       if (n === null || n === 1) delete all[key]; else all[key] = n;
       localStorage.setItem(INC_LABELS_KEY, JSON.stringify(all));
     } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
+
+  // Rules taught from this page, applied here and now.
+  //
+  // The real conversion runs on PC 2, so a product taught at 14:20 would not
+  // show correctly until the next read three minutes later — and in the
+  // meantime the order still says UNRECOGNISED and cannot be processed.
+  // The same rule is kept here and applied at render time, so the card is
+  // right the moment you save it. PC 2 catches up on its own schedule and
+  // produces the identical wording, at which point this stops mattering.
+  const INC_RULES_KEY = 'incoming-local-rules';
+  function incReadRules() {
+    try { return JSON.parse(localStorage.getItem(INC_RULES_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteRule(sku, rule) {
+    try {
+      const all = incReadRules();
+      if (rule === null) delete all[sku]; else all[sku] = rule;
+      localStorage.setItem(INC_RULES_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — PC 2 will still pick the rule up */ }
+  }
+
+  // Must produce the same wording as describeSingles in the watcher.
+  function incDescribe(label, units, perBox) {
+    if (!perBox || perBox < 1) return label + ' x' + units;
+    const boxes = Math.floor(units / perBox), rem = units % perBox;
+    return [boxes ? label + ' full box x' + boxes : '',
+            rem ? label + ' x' + rem + ' single' : ''].filter(Boolean).join(' + ');
+  }
+
+  // Re-runs the conversion for any item whose SKU we have just been taught.
+  // Only unrecognised lines are touched — a line the watcher converted fine
+  // is left exactly as it is.
+  function incApplyLocalRules(o) {
+    const rules = incReadRules();
+    if (!Object.keys(rules).length) return null;
+    const text = o.converted || '';
+    if (!/\[UNRECOGNISED SKU:/.test(text)) return null;
+    let changed = false;
+    const parts = text.split(' + ').map(part => {
+      const m = part.match(/^\[UNRECOGNISED SKU:\s*(.+?)\]\s*x(\d+)$/);
+      if (!m) return part;
+      const rule = rules[m[1]];
+      if (!rule || !rule.label) return part;
+      changed = true;
+      const units = Number(m[2]) * (Number(rule.unitsPerItem) || 1);
+      return incDescribe(rule.label, units, Number(rule.unitsPerBox) || 0);
+    });
+    return changed ? parts.join(' + ') : null;
   }
 
   const INC_OVERRIDES_KEY = 'incoming-converted-overrides';
@@ -1254,7 +1335,13 @@
   };
   function incServiceName(code, weightKg) {
     const raw = String(code || '').trim();
-    if (!raw) return 'No service requested';
+    // Even with no service named, the weight band is worth showing: it is
+    // what decides the price, and it is the thing a typed weight changes.
+    if (!raw) {
+      const b = weightKg == null ? '' : (weightKg <= 1 ? ' (0-1kg band)' :
+                 weightKg <= 15 ? ' (2-15kg band)' : ' (over 15kg)');
+      return 'No service requested' + b;
+    }
     const known = SERVICE_NAMES[raw.toLowerCase()];
     const name = known || raw
       .replace(/[:_]+/g, ' ')
@@ -1277,11 +1364,13 @@
   // Anything that stops an order going out as it stands.
   function incNeedsYou(o) {
     if (!o) return false;
-    if (o.cancelRequested || o.needsCustoms) return true;
+    if (o.cancelRequested || o.needsCustoms || o.priceHigh) return true;
     if ((o.fixes || []).some(f => f.lossy)) return true;
     const override = incReadOverrides()[o.orderNumber || o.id];
-    if (o.convertedNeedsReview && override == null) return true;
-    if (!o.converted && override == null) return true;
+    if (override != null) return false;
+    if (incApplyLocalRules(o)) return false;
+    if (o.convertedNeedsReview) return true;
+    if (!o.converted) return true;
     return false;
   }
 
@@ -1320,8 +1409,8 @@
         return '<div class="inc-sum-cell ' + incChannelKind(name) +
             (picked ? ' picked' : '') + (dim ? ' dim' : '') + (needs ? ' flashing' : '') +
             '" data-live="channel" data-key="' + escapeHtml(name) + '">' +
-          '<span class="inc-sum-n">' + e.n +
-            (needs ? '<span class="warn-pip">' + needs + '</span>' : '') + '</span>' +
+          (needs ? '<span class="warn-pip">' + needs + '</span>' : '') +
+          '<span class="inc-sum-n">' + e.n + '</span>' +
           '<span class="inc-sum-name">' + escapeHtml(name) + '</span>' +
           '<span class="inc-sum-status">' + breakdown + '</span>' +
         '</div>';
@@ -1395,6 +1484,14 @@
         '<a class="cancel-link" target="_blank" rel="noopener" href="https://sellercentral.amazon.co.uk/orders-v3/order/' +
           encodeURIComponent(o.orderNumber || '') + '">Open it in Seller Central \u2192</a>' +
         '</div>';
+    } else if (o.priceHigh) {
+      cls = 'flag-stop pricey';
+      banner = '<div class="inc-banner pricey">' +
+        '<b>£' + Number(o.estimatedShipping).toFixed(2) + ' to ship — £' +
+        Number(o.priceOverBy).toFixed(2) + ' more than usual.</b><br>' +
+        'Orders like this normally cost £' + Number(o.usualPrice).toFixed(2) +
+        ' (from ' + o.priceSamples + ' recent orders). Worth pricing on Amazon before you send it.' +
+        '</div>';
     } else if (o.needsCustoms) {
       cls = 'flag-stop';
       banner = '<div class="inc-banner stop">🌍 Going to ' + escapeHtml(addr.countryCode || 'abroad') +
@@ -1425,8 +1522,11 @@
     const overrides = incReadOverrides();
     const key = o.orderNumber || o.id;
     const override = overrides[key];
-    const convText = override != null ? override : (o.converted || '');
-    const convBad = !convText || (o.convertedNeedsReview && override == null);
+    const localised = incApplyLocalRules(o);
+    const convText = override != null ? override : (localised || o.converted || '');
+    // A locally-applied rule counts as solved: the wording is right and the
+    // order can go, even though PC 2 has not caught up yet.
+    const convBad = !convText || (o.convertedNeedsReview && override == null && !localised);
     const editing = incEditingLive === key;
 
     const convertedHtml =
@@ -1445,6 +1545,9 @@
       (override != null
         ? '<div class="fix-how" style="color:#1d6b4f;">Changed by you for this order · ' +
           '<a href="#" data-live="undo" data-key="' + escapeHtml(key) + '">undo</a></div>'
+        : localised
+        ? '<div class="fix-how" style="color:#1d6b4f;">Using the product you just taught. ' +
+          'PC 2 picks it up within a few minutes.</div>'
         : '') +
       (o.convertedNeedsReview && override == null
         ? '<div class="fix-how">' + escapeHtml((o.convertedReasons || []).join(' ')) + '</div>'
@@ -1455,11 +1558,43 @@
         fixes.map(incFixHtml).join('')
       : '';
 
+    // A typed weight stands in until the product is measured properly.
+    o.measureAsked = incMeasureAsked.has(key);
+    const typedKg = incReadWeights()[key];
+    const kg = typedKg != null ? typedKg : o.weightKg;
+    const kgIsMine = typedKg != null;
+
     const price = o.estimatedShipping != null
       ? '<span class="cost normal">£' + Number(o.estimatedShipping).toFixed(2) + '</span>'
-      : '<span style="color:#857f74;">no estimate</span>';
+      : '<span style="color:#857f74;">no estimate yet</span>';
+
+    // Only offered when nothing is on record. A product already measured
+    // doesn't need measuring again.
+    const weightRow =
+      '<div class="inc-ship-k">Weight</div>' +
+      '<div class="inc-ship-v">' +
+        (kg != null
+          ? '<b>' + kg + ' kg</b>' + (kgIsMine
+              ? ' <span style="font-size:11.5px;color:#1d6b4f;font-weight:700;">(you typed this) ' +
+                '<a href="#" data-live="clearkg" data-key="' + escapeHtml(key) + '">clear</a></span>'
+              : ' <span style="font-size:11.5px;color:#857f74;">on record</span>')
+          : '<span style="color:#8a5200;font-weight:700;">Nothing on record — Sendcloud will guess, ' +
+            'and guessing is where surcharges come from.</span>') +
+        (kg == null || kgIsMine
+          ? '<div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:7px;">' +
+              '<button class="svc-add" data-live="typekg" data-key="' + escapeHtml(key) + '">' +
+                (kgIsMine ? 'Change the weight' : 'Type a weight') + '</button>' +
+              (o.measureAsked
+                ? '<span class="svc-add" style="border-style:dashed; cursor:default;">Measurement asked for</span>'
+                : '<button class="svc-add" data-live="measure" data-key="' + escapeHtml(key) + '">' +
+                  'Ask staff to measure it</button>') +
+            '</div>'
+          : '') +
+      '</div>';
 
     const labels = incReadLabels()[key] || 1;
+    // A high price is a prompt to look, not a barrier: sometimes the remote
+    // rate is simply what it costs and the order still has to go.
     const blocked = o.cancelRequested || convBad || lossy || o.needsCustoms;
     const stepper =
       '<div class="inc-ship-k">Labels</div>' +
@@ -1469,8 +1604,30 @@
         '<button data-live="plus" data-key="' + escapeHtml(key) + '"' + (labels >= 6 ? ' disabled' : '') + '>+</button>' +
       '</span></div>';
 
+    // Once you've approved it, the request is in the hands of the Amazon
+    // project. Showing its state here means you aren't left wondering
+    // whether anything happened.
+    const amz = incAmazonState[key];
+    const amzHtml = amz
+      ? '<div class="amz-state ' + (amz.status === 'done' ? 'done' : amz.status === 'failed' ? 'failed' : 'waiting') + '">' +
+          (amz.status === 'done'
+            ? '✓ Amazon label bought' + (amz.cost != null ? ' for £' + Number(amz.cost).toFixed(2) : '') +
+              '. It is on the Upload list for the warehouse.'
+            : amz.status === 'failed'
+            ? '✗ Amazon could not buy it: ' + escapeHtml(amz.error || 'no reason given') +
+              '. Nothing was charged. Ship it through Sendcloud or try again.'
+            : 'Waiting for the Amazon project to buy the label… asked ' +
+              escapeHtml(incWhen(new Date(amz.requestedAt || Date.now()).toISOString()))) +
+        '</div>'
+      : '';
+
+    const amazonBtn = (o.priceHigh && !amz && !o.cancelRequested)
+      ? '<button class="btn btn-amazon" data-live="amazon" data-key="' + escapeHtml(key) + '">' +
+          'Buy it on Amazon instead</button>'
+      : '';
+
     const actions =
-      '<div class="inc-actions">' +
+      '<div class="inc-actions">' + amazonBtn +
         (blocked
           ? '<button class="btn btn-ghost" disabled>' +
               (o.cancelRequested ? 'Cancellation requested \u2014 do not create a label'
@@ -1479,7 +1636,7 @@
                 : 'Fill in the conversion first') + '</button>'
           : '<button class="btn btn-good" data-live="process" data-key="' + escapeHtml(key) + '">' +
               'Process — create ' + labels + ' label' + (labels > 1 ? 's' : '') + '</button>') +
-      '</div>';
+      '</div>' + amzHtml;
 
     // A hazard block down the left edge of the warning, so a card that needs
     // you is recognisable before you have read a word of it.
@@ -1509,11 +1666,11 @@
           '</div>' +
           '<div>' + convertedHtml + fixesHtml + '</div>' +
         '</div>' +
-        '<div class="inc-ship">' + stepper +
+        '<div class="inc-ship">' + stepper + weightRow +
           '<div class="inc-ship-k">Shipping</div>' +
           '<div class="inc-ship-v">' +
-            '<span class="svc-name">' + escapeHtml(incServiceName(o.shippingOptionCode, o.weightKg)) + '</span>' +
-            ' · ' + price + (o.weightKg ? ' · ' + o.weightKg + ' kg' : '') +
+            '<span class="svc-name">' + escapeHtml(incServiceName(o.shippingOptionCode, kg)) + '</span>' +
+            ' · ' + price +
             (o.fallbackTo
               ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
                 ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
@@ -1555,6 +1712,18 @@
       return;
     }
 
+    // Any Amazon label requests already in flight, so the cards can show
+    // where each one got to rather than offering the button again.
+    incAmazonState = {};
+    try {
+      const reqs = await db.collection('amazon-label-requests')
+        .where('status', 'in', ['pending', 'done', 'failed']).get();
+      reqs.forEach(d => {
+        const r = d.data() || {};
+        if (r.orderNumber) incAmazonState[r.orderNumber] = { id: d.id, ...r };
+      });
+    } catch (e) { /* no requests yet, or the index is missing — not fatal */ }
+
     const data = doc.data() || {};
     let items = [];
     try { items = JSON.parse(data.itemsJson || '[]'); } catch (e) { items = []; }
@@ -1595,7 +1764,7 @@
     // Cancellations first, then anything else that needs a decision, then
     // the ones that can just go. Within each group the original order is
     // kept, so nothing jumps around between refreshes.
-    const rank = (o) => o.cancelRequested ? 0 : incNeedsYou(o) ? 1 : 2;
+    const rank = (o) => o.cancelRequested ? 0 : o.priceHigh ? 1 : incNeedsYou(o) ? 2 : 3;
     const ordered = items
       .map((o, i) => ({ o, i }))
       .sort((a, b) => (rank(a.o) - rank(b.o)) || (a.i - b.i))
@@ -1608,6 +1777,37 @@
     wrap.innerHTML = incSummaryHtml(items) + note + body;
   }
 
+
+  // A single number, asked for properly rather than through the browser's
+  // prompt box, which on a phone is tiny and easy to mis-tap.
+  function askNumber(opts) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'ask-overlay';
+      ov.innerHTML =
+        '<div class="ask-box">' +
+          '<div class="ask-title">' + (opts.title || '') + '</div>' +
+          '<div class="ask-body">' + (opts.body || '') + '</div>' +
+          '<input class="teach-i" id="num-v" type="number" inputmode="decimal" step="0.1" min="0" ' +
+            'value="' + escapeHtml(opts.value || '') + '" placeholder="' + escapeHtml(opts.unit || '') + '" />' +
+          '<div class="ask-actions">' +
+            '<button class="btn btn-ghost" id="num-no">Cancel</button>' +
+            '<button class="btn btn-good" id="num-yes">Use it</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      const input = ov.querySelector('#num-v');
+      input.focus();
+      const done = (v) => { ov.remove(); resolve(v); };
+      ov.querySelector('#num-no').onclick = () => done(null);
+      ov.querySelector('#num-yes').onclick = () => {
+        const n = parseFloat(input.value);
+        if (!isFinite(n) || n <= 0) { input.focus(); return; }
+        done(Math.round(n * 100) / 100);
+      };
+      ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
+    });
+  }
 
   // Teaching the system a product, properly.
   //
@@ -1693,6 +1893,110 @@
     const key = b.dataset.key;
     const act = b.dataset.live;
     const order = incItemsCache.find(o => (o.orderNumber || o.id) === key);
+
+    if (act === 'clearkg') {
+      incWriteWeight(key, null);
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'typekg') {
+      const current = incReadWeights()[key];
+      const kg = await askNumber({
+        title: 'Weight for this parcel',
+        body: '<b>' + escapeHtml((order.address && order.address.name) || key) + '</b><br>' +
+              escapeHtml(order.converted || '') + '<br><br>' +
+              'Just for this order. It changes which service band the label falls in, ' +
+              'so get it roughly right rather than exactly right.',
+        unit: 'kg',
+        value: current != null ? String(current) : ''
+      });
+      if (kg == null) return;
+      incWriteWeight(key, kg);
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'measure') {
+      // Goes into the same Measure list the warehouse already works from,
+      // so there is one queue, not two.
+      const names = [...new Set((order.items || []).map(i => i.name || i.sku).filter(Boolean))];
+      const skus = [...new Set((order.items || []).map(i => i.sku).filter(Boolean))];
+      const product = names.join(' + ') || (order.converted || key);
+      const ok = await askYesNo({
+        title: 'Ask the warehouse to measure this?',
+        body: '<b>' + escapeHtml(product) + '</b><br><br>' +
+              'It goes on the Measure list. Staff weigh and measure it, and once ' +
+              'that is saved the right service shows here automatically.<br><br>' +
+              'This order waits until then — or type a weight yourself to send it now.',
+        yes: 'Add to the Measure list'
+      });
+      if (!ok) return;
+      try {
+        await writeMeasureRequests(all => [...all, {
+          id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
+          product,
+          sku: skus.join(', '),
+          note: 'No weight on record. Needed for order ' + (order.orderNumber || key) +
+                (order.address && order.address.name ? ' (' + order.address.name + ')' : ''),
+          status: 'pending',
+          source: 'incoming orders',
+          requestedAt: Date.now()
+        }]);
+        incMeasureAsked.add(key);
+        document.getElementById('top-status').textContent =
+          'Added to the Measure list. Approve it in Settings → Measure to send it to the warehouse.';
+        await renderIncomingLive();
+      } catch (err) {
+        document.getElementById('top-status').textContent =
+          'Could not add that — ' + ((err && err.message) || 'try again') + '.';
+      }
+      return;
+    }
+
+    if (act === 'amazon') {
+      // Deliberately worded so there is no doubt about who decided. The
+      // system has not compared anything — you have.
+      const n = incReadLabels()[key] || 1;
+      const ok = await askYesNo({
+        title: 'Buy this label on Amazon?',
+        body: '<b>' + escapeHtml((order.address && order.address.name) || key) + '</b><br>' +
+              escapeHtml(order.converted || '') + '<br><br>' +
+              'Sendcloud wants <b>£' + Number(order.estimatedShipping).toFixed(2) + '</b>, ' +
+              '£' + Number(order.priceOverBy).toFixed(2) + ' over the usual £' +
+              Number(order.usualPrice).toFixed(2) + '.<br><br>' +
+              'This buys <b>' + n + ' Evri drop-off label' + (n > 1 ? 's' : '') + ' on Amazon</b> and is ' +
+              'chargeable. You have checked the Amazon price yourself and it is cheaper — ' +
+              'nothing here has compared them for you.',
+        yes: 'Yes, buy it on Amazon'
+      });
+      if (!ok) return;
+      try {
+        await db.collection('amazon-label-requests').add({
+          orderNumber: order.orderNumber || key,
+          channel: order.channel || '',
+          customerName: (order.address && order.address.name) || '',
+          postcode: (order.address && order.address.postcode) || '',
+          products: order.converted || '',
+          labels: n,
+          carrierPreference: 'evri-dropoff',
+          labelSize: 'A5',
+          sendcloudPrice: order.estimatedShipping,
+          usualPrice: order.usualPrice,
+          approvedBy: 'sync-page',
+          approvedAt: Date.now(),
+          status: 'pending',
+          requestedAt: Date.now()
+        });
+        document.getElementById('top-status').textContent =
+          'Asked the Amazon project to buy the label for ' + (order.orderNumber || key) + '.';
+        await renderIncomingLive();
+      } catch (err) {
+        document.getElementById('top-status').textContent =
+          'Could not send that request — ' + ((err && err.message) || 'try again') + '.';
+      }
+      return;
+    }
 
     if (act === 'fallback') {
       // Recording it by hand now saves the failed attempt later. The watcher
@@ -1853,6 +2157,16 @@
         return;
       }
 
+      // Saved locally FIRST, before any network call. The Firestore write
+      // takes a round trip, and anything that interrupts it — closing the
+      // page, losing signal — would otherwise lose the rule entirely and
+      // leave the order still unrecognised.
+      incWriteRule(single, {
+        label: ans.name, unitsPerItem: ans.unitsPerItem, unitsPerBox: ans.unitsPerBox || 0
+      });
+      incWriteOverride(key, null);
+      await renderIncomingLive();
+
       try {
         const rule = {
           sku: single,
@@ -1871,7 +2185,6 @@
         }
         // The override is cleared on purpose: from here the rule produces the
         // wording, so a stale one-off would mask it and hide a mistake.
-        incWriteOverride(key, null);
         document.getElementById('top-status').textContent =
           'Saved — ' + single + ' is now "' + ans.name + '"' +
           (ans.unitsPerItem > 1 ? ', ' + ans.unitsPerItem + ' singles per item' : '') +
@@ -1879,10 +2192,12 @@
           '. It applies on the next refresh from PC 2.';
         renderLearnedList();
       } catch (err) {
-        incWriteOverride(key, val);
+        // The wording is already right on this device; only the shared copy
+        // failed, so say exactly that rather than implying nothing happened.
         document.getElementById('top-status').textContent =
-          'The order was changed, but the product rule could not be saved — ' +
-          ((err && err.message) || 'try again') + '.';
+          'Saved on this device, but it could not be shared with PC 2 — ' +
+          ((err && err.message) || 'try again') + '. Other devices will still ' +
+          'show it as unrecognised.';
       }
       await renderIncomingLive();
       return;
