@@ -464,6 +464,28 @@
   .inc-meta { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:#777; margin-top:3px; word-break:break-all; }
   .inc-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
   @media (max-width:620px){ .inc-cols{grid-template-columns:minmax(0,1fr);} }
+
+  /* Two products, two pairs. One grid for both columns so the rows cannot
+     drift apart as the boxes grow to different heights. */
+  .pair-grid { display:grid; grid-template-columns:minmax(0,1fr) 28px minmax(0,1fr);
+               align-items:stretch; column-gap:0; row-gap:10px; margin-top:12px; }
+  .pair-side { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:6px; }
+  .pair-link { position:relative; }
+  .pair-link::before { content:''; position:absolute; top:50%; left:2px; right:2px;
+                       height:2px; background:#d5d1c7; transform:translateY(-1px); }
+  .pair-link::after { content:''; position:absolute; top:50%; right:1px; width:6px; height:6px;
+                      border-radius:50%; background:#c65d2e; transform:translate(0,-3px); }
+  .pair-no { display:inline-flex; width:17px; height:17px; border-radius:50%; background:#c65d2e;
+             color:#fff; font-size:10px; font-weight:800; align-items:center; justify-content:center;
+             margin-right:6px; flex:none; }
+  .conv-box .pair-no { vertical-align:2px; }
+  /* Stacked on a phone, where a horizontal rule between columns is
+     meaningless — the numbers carry the link instead. */
+  @media (max-width:620px){
+    .pair-grid { grid-template-columns:minmax(0,1fr); row-gap:6px; }
+    .pair-grid > .pair-hdr, .pair-grid > .pair-link { display:none; }
+    .pair-side.right { margin-bottom:8px; }
+  }
   .inc-col-label { font-size:10px; font-weight:800; letter-spacing:.07em; text-transform:uppercase; color:#999; margin-bottom:5px; display:flex; justify-content:space-between; align-items:center; }
   .inc-col-label button { font-size:11px; font-weight:800; border:1px solid #c65d2e; background:#fff; color:#c65d2e; border-radius:5px; padding:3px 10px; cursor:pointer; font-family:inherit; letter-spacing:0; text-transform:none; }
   .src-line { border:1px solid #e6e3da; border-radius:7px; padding:7px 9px; margin-bottom:5px; background:#fbfaf7; }
@@ -1188,11 +1210,15 @@
     // then stays short enough to take in on a phone.
     const openKey = o.orderNumber || o.id;
     const isOpen = incExpanded.has(openKey);
-    const items = (o.items || []).map(it =>
+    // One line of the "exactly as it came in" column. Shared, because the
+    // paired view below renders the same lines regrouped.
+    const srcLineHtml = (it, num) =>
       '<div class="src-line">' +
         '<div class="src-head">' +
           '<div style="flex:1; min-width:0;">' +
-            '<div class="src-sku">' + escapeHtml(it.sku || '(no SKU)') + '</div>' +
+            '<div class="src-sku">' +
+              (num ? '<span class="pair-no">' + num + '</span>' : '') +
+              escapeHtml(it.sku || '(no SKU)') + '</div>' +
             '<div class="src-foot"><span class="src-tag">qty ' + (it.qty || 0) + '</span>' +
               (it.totalValue != null ? '<span class="src-tag">£' + Number(it.totalValue).toFixed(2) + '</span>' : '') +
               (it.hsCode ? '<span class="src-tag">HS ' + escapeHtml(it.hsCode) + '</span>' : '') +
@@ -1202,7 +1228,10 @@
             '">' + (isOpen ? '−' : '+') + '</button>' : '') +
         '</div>' +
         (isOpen && it.name ? '<div class="src-desc src-detail">' + escapeHtml(it.name) + '</div>' : '') +
-      '</div>').join('') || '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
+      '</div>';
+
+    const items = (o.items || []).map(it => srcLineHtml(it, 0)).join('') ||
+      '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
 
     const fixes = (o.fixes || []);
     const lossy = fixes.some(f => f.lossy);
@@ -1275,7 +1304,11 @@
         : '<div class="conv-box' + (convBad ? ' bad' : '') + '" data-live="edit" data-key="' + escapeHtml(key) + '">' +
             (convText ? escapeHtml(convText) : 'Nothing worked out — tap to fill in') +
           '</div>') +
-      (override != null
+      convFoot();
+
+    // The notes that sit under the converted column, wherever it is drawn.
+    function convFoot() {
+      return (override != null
         ? '<div class="fix-how" style="color:#1d6b4f;">Changed by you for this order · ' +
           '<a href="#" data-live="undo" data-key="' + escapeHtml(key) + '">undo</a></div>'
         : localised
@@ -1285,6 +1318,42 @@
       (o.convertedNeedsReview && override == null
         ? '<div class="fix-how">' + escapeHtml((o.convertedReasons || []).join(' ')) + '</div>'
         : '');
+    }
+
+    // ---- Two products, two pairs ----
+    // An order with more than one product used to read as one run-on line
+    // on the right, with no way to tell which half came from which SKU.
+    // When the watcher has told us which item produced which line, the two
+    // columns are drawn as one grid so each pair sits on its own row with a
+    // rule joining them. Several items can feed one line — pack sizes of
+    // the same product are totalled — and that shows as two rows on the
+    // left meeting a single box on the right.
+    //
+    // An order you have edited by hand falls back to the single box, because
+    // an override is one piece of text and cannot be split per item.
+    const srcItems = (o.items || []);
+    const cParts = Array.isArray(o.convertedParts) ? o.convertedParts : null;
+    const iParts = Array.isArray(o.itemParts) ? o.itemParts : null;
+    const canPair = !editing && override == null && !localised &&
+      cParts && cParts.length > 1 && iParts && iParts.length === srcItems.length &&
+      iParts.every(p => Number.isInteger(p) && p >= 0 && p < cParts.length);
+
+    let pairsHtml = '';
+    if (canPair) {
+      pairsHtml = cParts.map((part, idx) => {
+        const mine = srcItems.filter((_, i) => iParts[i] === idx);
+        if (!mine.length) return '';
+        const n = idx + 1;
+        return '<div class="pair-side">' + mine.map(it => srcLineHtml(it, n)).join('') + '</div>' +
+          '<div class="pair-link"></div>' +
+          '<div class="pair-side right">' +
+            '<div class="conv-box' + (part.needsReview ? ' bad' : '') + '" ' +
+                 'data-live="edit" data-key="' + escapeHtml(key) + '">' +
+              '<span class="pair-no">' + n + '</span>' + escapeHtml(part.text || '') +
+            '</div>' +
+          '</div>';
+      }).join('');
+    }
 
     const fixesHtml = fixes.length
       ? '<div class="inc-col-label" style="margin-top:10px;"><span>Too long for the label</span></div>' +
@@ -1441,19 +1510,36 @@
             '<span class="inc-chan ' + incChannelClass(o.channel) + '">' +
               escapeHtml(o.channel || 'unknown') + '</span>' +
           '</div></div>' +
-        '<div class="inc-cols">' +
-          '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + items +
-          '</div>' +
-          '<div>' + convertedHtml + fixesHtml + '</div>' +
-        '</div>' +
+        (canPair
+          ? '<div class="pair-grid">' +
+              '<div class="inc-col-label pair-hdr"><span>Exactly as it came in</span></div>' +
+              '<div class="pair-hdr"></div>' +
+              '<div class="inc-col-label pair-hdr"><span>Converted for us</span>' +
+                '<button data-live="edit" data-key="' + escapeHtml(key) + '">Edit</button></div>' +
+              pairsHtml +
+            '</div>' + convFoot() + fixesHtml
+          : '<div class="inc-cols">' +
+              '<div><div class="inc-col-label"><span>Exactly as it came in</span></div>' + items +
+              '</div>' +
+              '<div>' + convertedHtml + fixesHtml + '</div>' +
+            '</div>') +
         '<div class="inc-ship">' + stepper + weightRow +
           '<div class="inc-ship-k">Shipping</div>' +
           '<div class="inc-ship-v">' +
+            // Everything leaves on Next Day whatever was ordered, so the
+            // card leads with what will actually be shipped and keeps the
+            // buyer's choice beside it. Showing the buyer's choice as the
+            // headline made the card disagree with the invoice.
             '<span class="svc-name">' +
-              escapeHtml(incSpeedName(o.deliveryIndicator) || incServiceName(o.shippingOptionCode, kg)) +
+              escapeHtml(o.expectedMethod
+                ? (/next\s*day/i.test(o.expectedMethod) ? 'Next day' : 'Standard delivery')
+                : (incSpeedName(o.deliveryIndicator) || incServiceName(o.shippingOptionCode, kg))) +
             '</span>' +
             (o.deliveryIndicator
-              ? ' <span style="font-size:11.5px;color:#857f74;">what the buyer chose</span>'
+              ? ' <span style="font-size:11.5px;color:#857f74;">' +
+                (o.expectedMethod
+                  ? 'buyer chose ' + escapeHtml(incSpeedName(o.deliveryIndicator) || 'standard')
+                  : 'what the buyer chose') + '</span>'
               : '') +
             ' · ' + price +
             (o.expectedMethod
