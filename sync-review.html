@@ -530,6 +530,34 @@
     display:inline-block; margin-top:8px; font-size:13px; font-weight:900;
     color:#fff; background:#8c251a; border-radius:7px; padding:9px 14px; text-decoration:none;
   }
+  /* A slow pulse, not a strobe. It should catch the eye across the
+     warehouse without being unpleasant to sit next to all day, and it stops
+     entirely for anyone who has asked for less motion. */
+  @keyframes mp-attention {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(192,57,43,0); }
+    50%      { box-shadow: 0 0 0 4px rgba(192,57,43,.45); }
+  }
+  .tab.flashing { animation: mp-attention 1.6s ease-in-out infinite; }
+  .inc-sum-cell.flashing { animation: mp-attention 1.6s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) {
+    .tab.flashing, .inc-sum-cell.flashing { animation: none; box-shadow: 0 0 0 3px rgba(192,57,43,.5); }
+  }
+  .warn-pip {
+    display:inline-flex; align-items:center; justify-content:center;
+    min-width:20px; height:20px; padding:0 6px; border-radius:10px;
+    background:#c0392b; color:#fff; font-size:11.5px; font-weight:900; margin-left:5px;
+  }
+  .teach-l { display:block; font-size:12px; font-weight:800; color:#6b665d; margin:10px 0 4px; line-height:1.4; }
+  .teach-i {
+    width:100%; box-sizing:border-box; font-family:inherit; font-size:16px; font-weight:800;
+    padding:11px 12px; border:1.5px solid #d5d1c7; border-radius:8px;
+  }
+  .teach-i:focus { outline:none; border-color:#c65d2e; }
+  .teach-preview {
+    margin:14px 0 4px; font-size:13px; line-height:1.7; color:#444;
+    background:#f3f1ea; border-radius:8px; padding:10px 12px;
+  }
+  .teach-preview b { color:#1a1d1a; }
   .svc-name { font-weight:800; }
   .svc-fallback {
     display:block; margin-top:6px; font-size:12px; font-weight:700; line-height:1.45;
@@ -1246,6 +1274,17 @@
     return p.length > 3 ? p.slice(0, p.length - 3) : p;
   }
 
+  // Anything that stops an order going out as it stands.
+  function incNeedsYou(o) {
+    if (!o) return false;
+    if (o.cancelRequested || o.needsCustoms) return true;
+    if ((o.fixes || []).some(f => f.lossy)) return true;
+    const override = incReadOverrides()[o.orderNumber || o.id];
+    if (o.convertedNeedsReview && override == null) return true;
+    if (!o.converted && override == null) return true;
+    return false;
+  }
+
   function incChannelKind(channel) {
     const c = String(channel || '').toLowerCase();
     if (c.includes('amazon')) return 'amazon';
@@ -1277,10 +1316,12 @@
           .map(([st, n]) => n + ' ' + escapeHtml(st)).join('<br/>');
         const picked = incChannelFilter === name;
         const dim = incChannelFilter && !picked;
+        const needs = items.filter(o => (o.channel || 'Unknown') === name && incNeedsYou(o)).length;
         return '<div class="inc-sum-cell ' + incChannelKind(name) +
-            (picked ? ' picked' : '') + (dim ? ' dim' : '') +
+            (picked ? ' picked' : '') + (dim ? ' dim' : '') + (needs ? ' flashing' : '') +
             '" data-live="channel" data-key="' + escapeHtml(name) + '">' +
-          '<span class="inc-sum-n">' + e.n + '</span>' +
+          '<span class="inc-sum-n">' + e.n +
+            (needs ? '<span class="warn-pip">' + needs + '</span>' : '') + '</span>' +
           '<span class="inc-sum-name">' + escapeHtml(name) + '</span>' +
           '<span class="inc-sum-status">' + breakdown + '</span>' +
         '</div>';
@@ -1543,11 +1584,22 @@
 
     incItemsCache = items;
     wrap.dataset.loaded = '1';
+    // The tab flashes while anything needs a decision, so it is noticeable
+    // from another tab rather than only once you have opened this one.
+    const tabBtn = document.querySelector('#main-tabs .tab[data-tab="incoming"]');
+    if (tabBtn) tabBtn.classList.toggle('flashing', items.some(incNeedsYou));
     // The summary always counts every channel, so the totals stay checkable
     // against Sendcloud even while the list below is narrowed to one shop.
     // Cancellation requests go to the very top whatever their date, because
     // the cost of missing one is a parcel that should never have left.
-    const ordered = items.slice().sort((a, b) => (b.cancelRequested ? 1 : 0) - (a.cancelRequested ? 1 : 0));
+    // Cancellations first, then anything else that needs a decision, then
+    // the ones that can just go. Within each group the original order is
+    // kept, so nothing jumps around between refreshes.
+    const rank = (o) => o.cancelRequested ? 0 : incNeedsYou(o) ? 1 : 2;
+    const ordered = items
+      .map((o, i) => ({ o, i }))
+      .sort((a, b) => (rank(a.o) - rank(b.o)) || (a.i - b.i))
+      .map(x => x.o);
     const shown = incChannelFilter ? ordered.filter(o => (o.channel || 'Unknown') === incChannelFilter) : ordered;
     const body = shown.length
       ? shown.map(incLiveCard).join('')
@@ -1556,6 +1608,82 @@
     wrap.innerHTML = incSummaryHtml(items) + note + body;
   }
 
+
+  // Teaching the system a product, properly.
+  //
+  // The old flow saved whatever text was on screen, quantity and all, so
+  // "wood fork x1" became the product's name and every future order came out
+  // as x1. This asks for the three things that actually define it — the name,
+  // how many singles come in one ordered item, and how many make a full box —
+  // and the quantity is then worked out fresh each time.
+  function askTeachSku(sku, suggestedName, qty) {
+    return new Promise(resolve => {
+      const ov = document.createElement('div');
+      ov.className = 'ask-overlay';
+      ov.innerHTML =
+        '<div class="ask-box">' +
+          '<div class="ask-title">Remember this product?</div>' +
+          '<div class="ask-body">' +
+            'SKU <b>' + escapeHtml(sku) + '</b><br><br>' +
+            'Give the product name on its own. Leave the quantity out — it is ' +
+            'worked out from each order.' +
+          '</div>' +
+          '<label class="teach-l">Product name</label>' +
+          '<input class="teach-i" id="teach-name" value="' + escapeHtml(suggestedName) + '" />' +
+          '<label class="teach-l">How many singles in ONE of these?</label>' +
+          '<input class="teach-i" id="teach-per" type="number" inputmode="numeric" min="1" value="1" />' +
+          '<label class="teach-l">How many singles make a FULL BOX? (blank if it does not come by the box)</label>' +
+          '<input class="teach-i" id="teach-box" type="number" inputmode="numeric" min="1" placeholder="leave blank" />' +
+          '<div class="teach-preview" id="teach-prev"></div>' +
+          '<div class="ask-actions">' +
+            '<button class="btn btn-ghost" id="teach-no">Just this order</button>' +
+            '<button class="btn btn-good" id="teach-yes">Remember it</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+
+      const nameEl = ov.querySelector('#teach-name');
+      const perEl = ov.querySelector('#teach-per');
+      const boxEl = ov.querySelector('#teach-box');
+      const prev = ov.querySelector('#teach-prev');
+
+      // Shows the result for THIS order and for a different quantity, so a
+      // wrong "singles per item" is obvious before it is saved rather than
+      // on somebody else's order next week.
+      const describe = (label, units, perBox) => {
+        if (!perBox || perBox < 1) return label + ' x' + units;
+        const boxes = Math.floor(units / perBox), rem = units % perBox;
+        return [boxes ? label + ' full box x' + boxes : '', rem ? label + ' x' + rem + ' single' : '']
+          .filter(Boolean).join(' + ');
+      };
+      const update = () => {
+        const label = nameEl.value.trim() || '(name)';
+        const per = Math.max(1, parseInt(perEl.value, 10) || 1);
+        const perBox = parseInt(boxEl.value, 10) || 0;
+        const other = qty === 3 ? 5 : 3;
+        prev.innerHTML =
+          'This order (qty ' + qty + '): <b>' + escapeHtml(describe(label, qty * per, perBox)) + '</b><br>' +
+          'If someone ordered ' + other + ': <b>' + escapeHtml(describe(label, other * per, perBox)) + '</b>';
+      };
+      [nameEl, perEl, boxEl].forEach(el => el.addEventListener('input', update));
+      update();
+      nameEl.focus();
+
+      const done = (val) => { ov.remove(); resolve(val); };
+      ov.querySelector('#teach-no').onclick = () => done({ remember: false, name: nameEl.value.trim() });
+      ov.querySelector('#teach-yes').onclick = () => {
+        const name = nameEl.value.trim();
+        if (!name) { nameEl.focus(); return; }
+        done({
+          remember: true,
+          name,
+          unitsPerItem: Math.max(1, parseInt(perEl.value, 10) || 1),
+          unitsPerBox: parseInt(boxEl.value, 10) || 0
+        });
+      };
+      ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
+    });
+  }
 
   // Editing the converted wording on a live order.
   document.getElementById('inc-live').addEventListener('click', async (e) => {
@@ -1689,42 +1817,74 @@
       const skus = [...new Set((order && order.items || []).map(i => i.sku).filter(Boolean))];
       const single = skus.length === 1 ? skus[0] : null;
 
-      const ans = await askYesNo({
-        title: 'Save this change?',
-        body: 'This order will go through as:<br><br><b>' + escapeHtml(val) + '</b>',
-        check: single
-          ? 'Remember it, so <b>' + escapeHtml(single) + '</b> converts this way from now on'
-          : null,
-        checked: false,
-        yes: 'Save'
-      });
+      // One product: offer to teach it properly, name and pack sizes.
+      // Two or more: there is no way to know which SKU the wording belongs
+      // to, so it stays a one-off for this order.
+      if (!single) {
+        const ok = await askYesNo({
+          title: 'Save this change?',
+          body: 'This order will go through as:<br><br><b>' + escapeHtml(val) + '</b><br><br>' +
+                'It has more than one product, so this applies to this order only.',
+          yes: 'Save'
+        });
+        if (!ok) return;
+        incWriteOverride(key, val);
+        incEditingLive = null;
+        await renderIncomingLive();
+        return;
+      }
+
+      const qty = ((order.items || []).find(i => i.sku === single) || {}).qty || 1;
+      // The typed text usually still has the quantity on the end from the
+      // placeholder. Strip it, so the name box starts clean.
+      const suggested = val
+        .replace(/\s*\bx\s*\d+(\s+single)?\s*$/i, '')
+        .replace(/^\[UNRECOGNISED SKU:.*?\]\s*/i, '')
+        .trim() || val;
+
+      const ans = await askTeachSku(single, suggested, qty);
       if (!ans) return;
 
-      incWriteOverride(key, val);
       incEditingLive = null;
-      await renderIncomingLive();
 
-      if (ans.remember && single) {
-        try {
-          const existing = await db.collection('sku-corrections').where('sku', '==', single).limit(1).get();
-          if (!existing.empty) {
-            await db.collection('sku-corrections').doc(existing.docs[0].id)
-              .update({ label: val, mode: 'fixed', override: true, updatedAt: Date.now() });
-          } else {
-            await db.collection('sku-corrections').add({
-              sku: single, label: val, unitsPerItem: 1, mode: 'fixed', override: true,
-              exampleFrom: 'incoming order ' + key, exampleTo: val, createdAt: Date.now()
-            });
-          }
-          document.getElementById('top-status').textContent =
-            'Saved — ' + single + ' will convert to "' + val + '" from now on.';
-          renderLearnedList();
-        } catch (err) {
-          document.getElementById('top-status').textContent =
-            'The order was changed, but the SKU rule could not be saved — ' +
-            ((err && err.message) || 'try again') + '.';
-        }
+      if (!ans.remember) {
+        incWriteOverride(key, val);
+        await renderIncomingLive();
+        return;
       }
+
+      try {
+        const rule = {
+          sku: single,
+          label: ans.name,
+          unitsPerItem: ans.unitsPerItem,
+          unitsPerBox: ans.unitsPerBox || 0,
+          mode: 'scale',
+          override: true,
+          updatedAt: Date.now()
+        };
+        const existing = await db.collection('sku-corrections').where('sku', '==', single).limit(1).get();
+        if (!existing.empty) {
+          await db.collection('sku-corrections').doc(existing.docs[0].id).update(rule);
+        } else {
+          await db.collection('sku-corrections').add({ ...rule, createdAt: Date.now() });
+        }
+        // The override is cleared on purpose: from here the rule produces the
+        // wording, so a stale one-off would mask it and hide a mistake.
+        incWriteOverride(key, null);
+        document.getElementById('top-status').textContent =
+          'Saved — ' + single + ' is now "' + ans.name + '"' +
+          (ans.unitsPerItem > 1 ? ', ' + ans.unitsPerItem + ' singles per item' : '') +
+          (ans.unitsPerBox ? ', ' + ans.unitsPerBox + ' to a full box' : '') +
+          '. It applies on the next refresh from PC 2.';
+        renderLearnedList();
+      } catch (err) {
+        incWriteOverride(key, val);
+        document.getElementById('top-status').textContent =
+          'The order was changed, but the product rule could not be saved — ' +
+          ((err && err.message) || 'try again') + '.';
+      }
+      await renderIncomingLive();
       return;
     }
   });
