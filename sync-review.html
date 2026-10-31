@@ -530,6 +530,16 @@
     display:inline-block; margin-top:8px; font-size:13px; font-weight:900;
     color:#fff; background:#8c251a; border-radius:7px; padding:9px 14px; text-decoration:none;
   }
+  .svc-name { font-weight:800; }
+  .svc-fallback {
+    display:block; margin-top:6px; font-size:12px; font-weight:700; line-height:1.45;
+    color:#0b4ea8; background:#eef4fd; border:1.5px solid #9ec1ef; border-radius:7px; padding:7px 9px;
+  }
+  .svc-add {
+    margin-top:6px; font-size:11.5px; font-weight:800; font-family:inherit;
+    border:1.5px solid #d5d1c7; background:#fff; color:#6b665d;
+    border-radius:6px; padding:5px 10px; cursor:pointer;
+  }
   .inc-when { font-size:12px; color:#857f74; font-weight:700; margin-top:2px; }
   .inc-addr { font-size:13px; color:#444; line-height:1.4; margin-top:4px; }
   .src-line { position:relative; }
@@ -1204,6 +1214,38 @@
     return hrs === 1 ? '1 hour ago' : hrs + ' hours ago';
   }
 
+  // Sendcloud sends a code like "evri:nextday". These are the names the panel
+  // shows for them. Anything not listed falls back to a tidied version of the
+  // code rather than a blank, so a new service is readable immediately and
+  // can be named properly later.
+  const SERVICE_NAMES = {
+    'evri:nextday': 'Evri Next Day',
+    'evri:next_day': 'Evri Next Day',
+    'evri:standard': 'Evri Standard',
+    'evri:standard_delivery': 'Evri Standard'
+  };
+  function incServiceName(code, weightKg) {
+    const raw = String(code || '').trim();
+    if (!raw) return 'No service requested';
+    const known = SERVICE_NAMES[raw.toLowerCase()];
+    const name = known || raw
+      .replace(/[:_]+/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+    // The weight band is what decides the price, so it belongs in the name
+    // the same way the panel shows it.
+    const band = weightKg == null ? '' : (weightKg <= 1 ? ' 0-1kg' : weightKg <= 15 ? ' 2-15kg' : ' over 15kg');
+    return name + band;
+  }
+
+  // Must match the watcher's outwardCode exactly, or an area saved here
+  // would never be found when the orders are read.
+  function incOutward(postcode) {
+    const p = String(postcode || '').trim().toUpperCase().replace(/\s+/g, ' ');
+    if (!p) return '';
+    if (p.includes(' ')) return p.split(' ')[0];
+    return p.length > 3 ? p.slice(0, p.length - 3) : p;
+  }
+
   function incChannelKind(channel) {
     const c = String(channel || '').toLowerCase();
     if (c.includes('amazon')) return 'amazon';
@@ -1428,8 +1470,17 @@
         '</div>' +
         '<div class="inc-ship">' + stepper +
           '<div class="inc-ship-k">Shipping</div>' +
-          '<div class="inc-ship-v">' + (o.shippingOptionCode ? escapeHtml(o.shippingOptionCode) + ' · ' : '') +
-            price + (o.weightKg ? ' · ' + o.weightKg + ' kg' : '') + '</div>' +
+          '<div class="inc-ship-v">' +
+            '<span class="svc-name">' + escapeHtml(incServiceName(o.shippingOptionCode, o.weightKg)) + '</span>' +
+            ' · ' + price + (o.weightKg ? ' · ' + o.weightKg + ' kg' : '') +
+            (o.fallbackTo
+              ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
+                ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
+                (o.fallbackNote ? ' (' + escapeHtml(o.fallbackNote) + ')' : '') + '. ' +
+                'Use <b>' + escapeHtml(incServiceName(o.fallbackTo, o.weightKg)) + '</b> instead.</span>'
+              : '<button class="svc-add" data-live="fallback" data-key="' + escapeHtml(key) + '">' +
+                'This area needs a different service</button>') +
+          '</div>' +
         '</div>' + actions +
       '</div></div>';
   }
@@ -1514,6 +1565,47 @@
     const key = b.dataset.key;
     const act = b.dataset.live;
     const order = incItemsCache.find(o => (o.orderNumber || o.id) === key);
+
+    if (act === 'fallback') {
+      // Recording it by hand now saves the failed attempt later. The watcher
+      // writes these automatically once label creation is live and a carrier
+      // actually refuses; this is the same store, filled in from what you
+      // already know about an area.
+      const pc = (order && order.address && order.address.postcode) || '';
+      const area = incOutward(pc);
+      if (!area) return;
+      const current = order.shippingOptionCode || '';
+      const ok = await askYesNo({
+        title: 'Always use Standard for ' + escapeHtml(area) + '?',
+        body: 'Orders to <b>' + escapeHtml(area) + '</b> will be flagged to go by ' +
+              '<b>Evri Standard</b> instead of <b>' + escapeHtml(incServiceName(current)) + '</b>, ' +
+              'so the carrier does not refuse the label.<br><br>' +
+              'This applies to the whole ' + escapeHtml(area) + ' area, not just this customer.',
+        yes: 'Yes, remember it'
+      });
+      if (!ok) return;
+      try {
+        const ref = db.collection('print-watcher-control').doc('shipping-fallbacks');
+        const doc = await ref.get();
+        let list = [];
+        if (doc.exists) { try { list = JSON.parse(doc.data().itemsJson || '[]'); } catch (e) { list = []; } }
+        const found = list.find(x => String(x.area || '').toUpperCase() === area);
+        if (found) {
+          found.seen = (Number(found.seen) || 1) + 1;
+          found.lastAt = Date.now();
+          found.to = 'evri:standard';
+        } else {
+          list.push({ area, from: current, to: 'evri:standard', seen: 1, lastAt: Date.now(), note: 'added by hand' });
+        }
+        await ref.set({ itemsJson: JSON.stringify(list), updatedAt: Date.now() }, { merge: true });
+        document.getElementById('top-status').textContent =
+          area + ' will be flagged for Standard from now on. It applies on the next refresh from PC 2.';
+      } catch (err) {
+        document.getElementById('top-status').textContent =
+          'Could not save that — ' + ((err && err.message) || 'try again') + '.';
+      }
+      return;
+    }
 
     if (act === 'channel') {
       // Tapping the channel you are already filtered to clears the filter,
@@ -2058,6 +2150,13 @@
   // Most urgent thing first: flagged orders, then the queue, then duplicates.
   function chooseDefaultTab() {
     if (userPickedTab && activeTab) { setTab(activeTab); return; }
+    // A hidden tab is not a landing place: with Other and Duplicates now
+    // hiding themselves when empty, picking one would show a panel with no
+    // way back to it.
+    const visible = (tab) => {
+      const btn = document.querySelector(`#main-tabs .tab[data-tab="${tab}"]`);
+      return btn && btn.style.display !== 'none';
+    };
     // Null-safe: a tab can be retired (the 8ply one was), and reading
     // .textContent off a missing element would throw here and stop the
     // page rendering at all.
@@ -2065,10 +2164,11 @@
       const el = document.getElementById('count-' + id);
       return el ? (parseInt(el.textContent, 10) || 0) : 0;
     };
-    if (n('attention') > 0) return setTab('attention');
-    if (n('other') > 0) return setTab('other');
-    if (n('skipped') > 0) return setTab('skipped');
-    if (n('notscanned') > 0) return setTab('notscanned');
+    if (visible('attention') && n('attention') > 0) return setTab('attention');
+    if (visible('incoming') && n('incoming') > 0) return setTab('incoming');
+    if (visible('other') && n('other') > 0) return setTab('other');
+    if (visible('skipped') && n('skipped') > 0) return setTab('skipped');
+    if (visible('notscanned') && n('notscanned') > 0) return setTab('notscanned');
     setTab('upload');
   }
 
@@ -2128,7 +2228,7 @@
       eightplyListEl.innerHTML = '';
       setTabCount('attention', 0, true);
       setTabCount('eightply', 0, false);
-      setTabCount('other', 0, false);
+      setTabCount('other', 0, true);
       document.getElementById('eightply-empty').style.display = 'block';
       document.getElementById('other-empty').style.display = 'block';
       document.querySelectorAll('.eightply-bulk, .review-bulk').forEach(el => { el.style.display = 'none'; });
@@ -2159,7 +2259,7 @@
     attentionListEl.innerHTML = attentionCards.join('');
     setTabCount('attention', attentionCards.length, true);
     setTabCount('eightply', eightplyCards.length, false);
-    setTabCount('other', normalCards.length, false);
+    setTabCount('other', normalCards.length, true);
 
     const notes = [];
     if (docs.length >= REVIEW_DISPLAY_LIMIT) {
@@ -3873,11 +3973,11 @@
     const snapshot = await db.collection('sync-skipped-duplicates').orderBy('createdAt', 'desc').limit(SKIPPED_DISPLAY_LIMIT).get();
     if (snapshot.empty) {
       listEl.innerHTML = '';
-      setTabCount('skipped', 0, false);
+      setTabCount('skipped', 0, true);
       document.getElementById('skipped-empty').style.display = 'block';
       return;
     }
-    setTabCount('skipped', snapshot.size, false);
+    setTabCount('skipped', snapshot.size, true);
     document.getElementById('skipped-empty').style.display = 'none';
     const rows = [];
     if (snapshot.size >= SKIPPED_DISPLAY_LIMIT) {
