@@ -427,9 +427,43 @@
   .inc-top { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; }
   .inc-name { font-size:16.5px; font-weight:900; }
   .inc-chan { font-size:11px; font-weight:800; padding:2px 9px; border-radius:5px; border:1.5px solid; white-space:nowrap; }
-  .chan-amazon { color:#8a5200; border-color:#f0a830; background:#fff8ec; }
-  .chan-web { color:#7a5c00; border-color:#e0b63c; background:#fffbe9; }
-  .chan-ebay { color:#0b5ea8; border-color:#4a9fe0; background:#eef6fd; }
+  /* The three channels were all warm yellows and hard to tell apart at a
+     glance. Now each has its own colour and its own mark, so a card can be
+     identified from the corner of your eye on a phone. */
+  .inc-chan { display:inline-flex; align-items:center; gap:5px; }
+  .inc-chan::before { font-size:12px; line-height:1; }
+  .chan-amazon { color:#7a4a00; border-color:#f0a830; background:#fff4e0; }
+  .chan-amazon::before { content:'\1F4E6'; }
+  .chan-web { color:#1d6b4f; border-color:#49a37c; background:#e9f7f0; }
+  .chan-web::before { content:'\1F310'; }
+  .chan-ebay { color:#0b4ea8; border-color:#4a86e0; background:#e9f0fd; }
+  .chan-ebay::before { content:'\1F3F7'; }
+  .chan-other { color:#5c5349; border-color:#c9c3b6; background:#f3f1ea; }
+  .chan-other::before { content:'\2753'; }
+
+  /* Stays put while you scroll a long list, so the counts per channel are
+     always in view to check against Sendcloud's own screen. */
+  .inc-summary {
+    position: sticky; top: 0; z-index: 30;
+    background:#fff; border:1.5px solid #e2ded4; border-radius:10px;
+    padding:10px 12px; margin-bottom:12px;
+    box-shadow:0 2px 10px rgba(0,0,0,.06);
+  }
+  .inc-sum-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:8px; }
+  .inc-sum-total { font-size:15px; font-weight:900; }
+  .inc-sum-sub { font-size:11.5px; color:#857f74; font-weight:700; }
+  .inc-sum-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(96px,1fr)); gap:6px; }
+  .inc-sum-cell {
+    border:1.5px solid #e6e3da; border-radius:8px; padding:7px 8px; min-width:0;
+    display:flex; flex-direction:column; gap:1px;
+  }
+  .inc-sum-cell.amazon { border-color:#f0a830; background:#fff9f0; }
+  .inc-sum-cell.web { border-color:#49a37c; background:#f1faf5; }
+  .inc-sum-cell.ebay { border-color:#4a86e0; background:#f0f5fd; }
+  .inc-sum-n { font-size:20px; font-weight:900; line-height:1.1; }
+  .inc-sum-name { font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.04em; color:#6b665d;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .inc-sum-status { font-size:10.5px; color:#857f74; line-height:1.35; }
   .inc-meta { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:#777; margin-top:3px; word-break:break-all; }
   .inc-cols { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
   @media (max-width:620px){ .inc-cols{grid-template-columns:minmax(0,1fr);} }
@@ -1085,11 +1119,49 @@
     return hrs === 1 ? '1 hour ago' : hrs + ' hours ago';
   }
 
-  function incChannelClass(channel) {
+  function incChannelKind(channel) {
     const c = String(channel || '').toLowerCase();
-    if (c.includes('amazon')) return 'chan-amazon';
-    if (c.includes('bay')) return 'chan-ebay';
-    return 'chan-web';
+    if (c.includes('amazon')) return 'amazon';
+    if (c.includes('bay')) return 'ebay';
+    if (c.includes('web') || c.includes('mega') || c.includes('site')) return 'web';
+    return 'other';
+  }
+  function incChannelClass(channel) { return 'chan-' + incChannelKind(channel); }
+
+  // A count per channel, broken down by the status word each shop uses, so it
+  // reads straight across against Sendcloud's own Incoming orders screen. If a
+  // number here disagrees with the panel, that is the bug \u2014 and this is
+  // how it gets noticed.
+  function incSummaryHtml(items) {
+    const byChannel = new Map();
+    for (const o of items) {
+      const name = o.channel || 'Unknown';
+      if (!byChannel.has(name)) byChannel.set(name, { n: 0, statuses: new Map() });
+      const entry = byChannel.get(name);
+      entry.n++;
+      const st = o.statusCode || 'no status';
+      entry.statuses.set(st, (entry.statuses.get(st) || 0) + 1);
+    }
+    const cells = [...byChannel.entries()]
+      .sort((a, b) => b[1].n - a[1].n)
+      .map(([name, e]) => {
+        const breakdown = [...e.statuses.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([st, n]) => n + ' ' + escapeHtml(st)).join('<br/>');
+        return '<div class="inc-sum-cell ' + incChannelKind(name) + '">' +
+          '<span class="inc-sum-n">' + e.n + '</span>' +
+          '<span class="inc-sum-name">' + escapeHtml(name) + '</span>' +
+          '<span class="inc-sum-status">' + breakdown + '</span>' +
+        '</div>';
+      }).join('');
+    const needing = items.filter(i => (i.fixes || []).length || i.needsCustoms).length;
+    return '<div class="inc-summary">' +
+      '<div class="inc-sum-head">' +
+        '<span class="inc-sum-total">' + items.length + ' waiting for a label</span>' +
+        '<span class="inc-sum-sub">' + (needing ? needing + ' need something first' : 'none need attention') + '</span>' +
+      '</div>' +
+      '<div class="inc-sum-grid">' + cells + '</div>' +
+    '</div>';
   }
 
   function incFixHtml(fix) {
@@ -1217,15 +1289,13 @@
       return;
     }
 
-    const needing = items.filter(i => (i.fixes || []).length || i.needsCustoms).length;
-    const head = '<div class="inc-readonly">' +
-      '<b>' + items.length + ' order' + (items.length > 1 ? 's' : '') + ' waiting for a label</b>' +
-      (needing ? ', ' + needing + ' needing something before they can go' : '') + '. ' +
-      'This is read-only for now — nothing here creates a label. Check it against ' +
-      'Sendcloud’s Incoming orders screen; once it matches, the Process buttons go in.' +
+    const note = '<div class="inc-readonly">' +
+      'Read-only for now — nothing here creates a label. Check these counts against ' +
+      'Sendcloud’s Incoming orders screen channel by channel; once they match, the ' +
+      'Process buttons go in.' +
       '</div>';
 
-    wrap.innerHTML = head + items.map(incLiveCard).join('');
+    wrap.innerHTML = incSummaryHtml(items) + note + items.map(incLiveCard).join('');
   }
 
   document.getElementById('inc-refresh').addEventListener('click', async () => {
