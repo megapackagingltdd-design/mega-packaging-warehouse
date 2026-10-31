@@ -503,9 +503,16 @@
   @media (max-width:620px){ .inc-ship{grid-template-columns:minmax(0,1fr);} }
   /* Labels and weight share one line on a wide screen — they were stacked,
      which pushed the Process button off the bottom of the card. */
-  .ship-top { grid-column:1/-1; display:grid; grid-template-columns:auto auto 1fr; gap:10px 14px; align-items:center; }
-  @media (max-width:620px){ .ship-top{grid-template-columns:auto 1fr;} }
+  /* Four children: Labels, the stepper, Weight, its value. With three
+     columns the value wrapped onto a line of its own. */
+  .ship-top { grid-column:1/-1; display:grid; grid-template-columns:auto auto auto minmax(0,1fr);
+              gap:10px 14px; align-items:center; }
+  @media (max-width:620px){ .ship-top{grid-template-columns:auto minmax(0,1fr);} }
   .band-row { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
+  .ship-more { width:24px; height:24px; border:1.5px solid #d5d1c7; background:#fff; color:#6b665d;
+               border-radius:6px; font-size:15px; font-weight:900; font-family:inherit; cursor:pointer;
+               line-height:1; vertical-align:middle; padding:0; }
+  .ship-detail { margin-top:6px; font-size:12.5px; color:#6b665d; line-height:1.5; }
   .band-btn.on { background:#c65d2e; color:#fff; border-color:#c65d2e; }
   .inc-ship-k { font-size:11.5px; font-weight:800; color:#666; }
   .inc-ship-v { font-size:13.5px; }
@@ -918,6 +925,7 @@
   // writes anything or talks to Sendcloud — this is the "check it matches the
   // panel" stage, before any button creates a label.
   let incEditingLive = null;       // order number currently being edited
+  const incShipOpen = new Set();   // orders showing the full shipping detail
   let incChannelFilter = null;     // null = all channels
   let incAmazonState = {};         // order key -> the Amazon request's state
   // Which orders already have a measurement request outstanding.
@@ -1014,9 +1022,16 @@
   // Only unrecognised lines are touched — a line the watcher converted fine
   // is left exactly as it is.
   function incApplyLocalRules(o) {
+    return incApplyLocalRulesToText(o.converted || '');
+  }
+
+  // Works on one line as readily as on a whole order, so teaching a product
+  // on a two-product order changes only that line's wording instead of
+  // collapsing the paired view back into a single box.
+  function incApplyLocalRulesToText(textIn) {
     const rules = incReadRules();
     if (!Object.keys(rules).length) return null;
-    const text = o.converted || '';
+    const text = textIn || '';
     if (!/\[UNRECOGNISED SKU:/.test(text)) return null;
     let changed = false;
     const parts = text.split(' + ').map(part => {
@@ -1254,10 +1269,32 @@
     // paired view below renders the same lines regrouped.
     // The measured weight of the product this line became, so the kilos sit
     // next to the quantity and price rather than only as an order total.
+    // Declared here rather than beside the weight row: the product lines
+    // are rendered first and need it, and a const read before its line is
+    // a hard error, not an undefined.
+    // A typed weight stands in until the product is measured properly.
+    const typedKg = incReadWeights()[openKey];
+    const kg = typedKg != null ? typedKg : o.weightKg;
+    const kgIsMine = typedKg != null;
+
+    // Falls back to the order weight when there is only one product on the
+    // order, because then the order weight IS that product's weight. It
+    // belongs beside the product rather than repeated on its own line.
+    const onePart = !Array.isArray(o.convertedParts) || o.convertedParts.length <= 1;
     const partKg = (num) => {
       const m = Array.isArray(o.partMeasures) ? o.partMeasures[num - 1] : null;
-      return m && m.weightKg != null ? m.weightKg : null;
+      if (m && m.weightKg != null) return m.weightKg;
+      if (onePart && kg != null) return kg;
+      return null;
     };
+    // True when every line already shows its own weight, so the weight row
+    // has nothing left to add and shows only the controls.
+    const kgShownPerProduct = (o.items || []).length > 0 &&
+      (o.items || []).every((_, i) => {
+        const p = Array.isArray(o.itemParts) && Number.isInteger(o.itemParts[i])
+          ? o.itemParts[i] + 1 : (onePart ? 1 : 0);
+        return partKg(p) != null;
+      });
 
     // badgeNo numbers the pair; partNo says which converted line this item
     // became, which is what the weight hangs off. In the flat view there is
@@ -1346,7 +1383,12 @@
     // Per-line edits, and the whole-order text rebuilt from them.
     const rawParts = Array.isArray(o.convertedParts) ? o.convertedParts : null;
     const pOv = incReadPartOverrides()[key] || {};
-    const partText = (i) => (pOv[i] != null ? pOv[i] : ((rawParts[i] && rawParts[i].text) || ''));
+    // A product taught on this device applies here and now, line by line,
+    // rather than waiting for PC 2 to catch up.
+    const partLocal = (i) => incApplyLocalRulesToText((rawParts[i] && rawParts[i].text) || '');
+    const partText = (i) => (pOv[i] != null ? pOv[i]
+      : (partLocal(i) || (rawParts[i] && rawParts[i].text) || ''));
+    const partSolved = (i) => pOv[i] != null || partLocal(i) != null;
     const composed = rawParts ? rawParts.map((p, i) => partText(i)).filter(Boolean).join(' + ') : null;
 
     const convText = override != null ? override : (localised || composed || o.converted || '');
@@ -1355,7 +1397,7 @@
     // edits, a line you have rewritten counts as solved on its own, so an
     // order is only blocked while something is still genuinely unknown.
     const partsBad = rawParts
-      ? rawParts.some((p, i) => p.needsReview && pOv[i] == null)
+      ? rawParts.some((p, i) => p.needsReview && !partSolved(i))
       : o.convertedNeedsReview;
     const convBad = !convText || (partsBad && override == null && !localised);
     const editing = incEditingLive === key;
@@ -1405,7 +1447,9 @@
     const srcItems = (o.items || []);
     const cParts = Array.isArray(o.convertedParts) ? o.convertedParts : null;
     const iParts = Array.isArray(o.itemParts) ? o.itemParts : null;
-    const canPair = !editing && override == null && !localised &&
+    // A locally taught product no longer collapses the pairing: the rule is
+    // applied to its own line, so the two columns stay lined up.
+    const canPair = !editing && override == null &&
       cParts && cParts.length > 1 && iParts && iParts.length === srcItems.length &&
       iParts.every(p => Number.isInteger(p) && p >= 0 && p < cParts.length);
 
@@ -1419,6 +1463,7 @@
         // fixed id avoids escaping an order number into an attribute.
         const eid = 'part';
         const edited = pOv[idx] != null;
+        const taught = !edited && partLocal(idx) != null;
         const text = partText(idx);
         // Editing happens where the line sits, holding only that line's
         // wording. Pulling the whole order into one box meant rewriting
@@ -1430,7 +1475,7 @@
                 '" data-part="' + idx + '">Save</button>' +
               '<button class="btn btn-ghost" data-live="cancel" data-key="' + escapeHtml(key) + '">Cancel</button>' +
             '</div>'
-          : '<div class="conv-box' + (part.needsReview && !edited ? ' bad' : '') + '" ' +
+          : '<div class="conv-box' + (part.needsReview && !edited && !taught ? ' bad' : '') + '" ' +
                  'data-live="edit" data-key="' + escapeHtml(key) + '" data-part="' + idx + '">' +
               '<span class="pair-no">' + n + '</span>' + escapeHtml(text) +
             '</div>' +
@@ -1438,6 +1483,9 @@
               ? '<div class="fix-how" style="color:#1d6b4f;">Changed by you · ' +
                 '<a href="#" data-live="undopart" data-key="' + escapeHtml(key) +
                 '" data-part="' + idx + '">undo</a></div>'
+              : taught
+              ? '<div class="fix-how" style="color:#1d6b4f;">Using the product you just taught. ' +
+                'PC 2 picks it up within a few minutes.</div>'
               : part.needsReview
               ? '<div class="fix-how">Tap to say what this is.</div>'
               : '');
@@ -1452,11 +1500,7 @@
         fixes.map(incFixHtml).join('')
       : '';
 
-    // A typed weight stands in until the product is measured properly.
     o.measureReq = incMeasureByOrder.get(key) || null;
-    const typedKg = incReadWeights()[key];
-    const kg = typedKg != null ? typedKg : o.weightKg;
-    const kgIsMine = typedKg != null;
 
     // Sendcloud works the shipping price out from your rules when it draws
     // its own screen; it is not stored on the order, and comes back as zero
@@ -1511,6 +1555,7 @@
     // 2-15kg Next Day is pre-selected: it is what Sendcloud has been doing,
     // and it is the band that cannot under-declare. A measured weight beats
     // all of it, so the buttons disappear the moment a real number arrives.
+    const shipOpen = incShipOpen.has(key);
     const chosenBand = incReadBands()[key] || null;
     const bandNow = kg != null ? incWeightBand(kg) : (chosenBand || INC_DEFAULT_BAND);
     const bandButtons = INC_BANDS.map(b =>
@@ -1524,12 +1569,17 @@
       '<div class="inc-ship-k">Weight</div>' +
       '<div class="inc-ship-v">' +
         (kg != null
-          ? '<b>' + kg + ' kg</b>' +
+          // Already shown next to every product, so it is not repeated as
+          // a number here — just how it can be changed.
+          ? (kgShownPerProduct && !kgIsMine
+              ? '<span style="font-size:12px;color:#857f74;">shown per product</span>'
+              : '<b>' + kg + ' kg</b>') +
             (kgIsMine
               ? ' <span style="font-size:11.5px;color:#1d6b4f;font-weight:700;">(you typed this) ' +
                 '<a href="#" data-live="clearkg" data-key="' + escapeHtml(key) + '">clear</a></span>'
               : o.weightFromMeasurements
               ? ' <span style="font-size:11.5px;color:#857f74;">added up from the measured products</span>'
+              : kgShownPerProduct ? ''
               : ' <span style="font-size:11.5px;color:#857f74;">on record</span>')
           : '<span style="color:#8a5200;font-weight:700;">No weight on record — using ' +
             escapeHtml(bandNow) + (chosenBand ? '' : ' by default') + '</span>' +
@@ -1640,23 +1690,36 @@
             // card leads with what will actually be shipped and keeps the
             // buyer's choice beside it. Showing the buyer's choice as the
             // headline made the card disagree with the invoice.
+            // With no quote yet, the band chosen above is what the label
+            // will be bought on, so the card names that rather than the
+            // buyer's choice — which is not what gets shipped.
             '<span class="svc-name">' +
               escapeHtml(o.expectedMethod
                 ? (/next\s*day/i.test(o.expectedMethod) ? 'Next day' : 'Standard delivery')
-                : (incSpeedName(o.deliveryIndicator) || incServiceName(o.shippingOptionCode, kg))) +
+                : 'Next day ' + bandNow) +
             '</span>' +
-            (o.deliveryIndicator
-              ? ' <span style="font-size:11.5px;color:#857f74;">' +
-                (o.expectedMethod
-                  ? 'buyer chose ' + escapeHtml(incSpeedName(o.deliveryIndicator) || 'standard')
-                  : 'what the buyer chose') + '</span>'
-              : '') +
             ' · ' + price +
-            (o.expectedMethod
-              ? '<div class="quote-guess">Sendcloud rate for ' + escapeHtml(o.expectedMethod) +
-                (o.expectedGuessed ? ' — cheapest that fits this weight' : '') + '</div>'
-              : '') +
-            surchargeHtml +
+            // The service, the buyer's choice and the fuel line are detail
+            // you read when you want it, not every time you scan the list.
+            ' <button class="ship-more" data-live="shipmore" data-key="' + escapeHtml(key) + '">' +
+              (shipOpen ? '−' : '+') + '</button>' +
+            (shipOpen
+              ? '<div class="ship-detail">' +
+                  (o.deliveryIndicator
+                    ? '<div>Buyer chose ' + escapeHtml(incSpeedName(o.deliveryIndicator) || 'standard') + '</div>'
+                    : '') +
+                  (o.expectedMethod
+                    ? '<div>Sendcloud rate for ' + escapeHtml(o.expectedMethod) +
+                      (o.expectedGuessed ? ' — cheapest that fits this weight' : '') + '</div>'
+                    : '') +
+                  surchargeHtml +
+                '</div>'
+              // An avoidable surcharge is the one thing that still shouts,
+              // because it is the only part of this worth acting on.
+              // hasAvoidable, not the raw field: a record from the watcher
+              // PC 2 is running today carries no avoidableTotal, and reading
+              // the field directly would hide a real surcharge behind the +.
+              : (hasAvoidable ? surchargeHtml : '')) +
             (o.fallbackTo
               ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
                 ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
@@ -1829,9 +1892,14 @@
           '</div>' +
           '<label class="teach-l">Product name</label>' +
           '<input class="teach-i" id="teach-name" value="' + escapeHtml(suggestedName) + '" />' +
-          '<label class="teach-l">How many singles in ONE of these?</label>' +
+          '<label class="teach-l">How many singles in ONE of these? (a 100-pack is 100)</label>' +
           '<input class="teach-i" id="teach-per" type="number" inputmode="numeric" min="1" value="1" />' +
-          '<label class="teach-l">How many singles make a FULL BOX? (blank if it does not come by the box)</label>' +
+          // This used to ask how many SINGLES make a box. The natural
+          // answer to "how many make a box" is the number of packs — five,
+          // not five hundred — and answering it that way put "x5" on the
+          // slot. It now asks in packs and works the singles out itself.
+          '<label class="teach-l">How many of THESE make a FULL BOX? ' +
+            '(5 packs to a box = 5. Blank if it does not come by the box)</label>' +
           '<input class="teach-i" id="teach-box" type="number" inputmode="numeric" min="1" placeholder="leave blank" />' +
           '<div class="teach-preview" id="teach-prev"></div>' +
           '<div class="ask-actions">' +
@@ -1855,14 +1923,36 @@
         return [boxes ? label + ' full box x' + boxes : '', rem ? label + ' x' + rem + ' single' : '']
           .filter(Boolean).join(' + ');
       };
-      const update = () => {
-        const label = nameEl.value.trim() || '(name)';
+      // A quantity left on the end of the name gets multiplied again on
+      // every order — "500 salad x100 single" saved as the name comes back
+      // as "500 salad x100 single x1". The name is the product alone.
+      const cleanName = (raw) => String(raw || '')
+        .replace(/^\[(?:UNRECOGNISED SKU|NEEDS REVIEW):.*?\]\s*/i, '')
+        .replace(/\s*\bfull box\s*x\s*\d+\s*$/i, '')
+        .replace(/\s*\bx\s*\d+(\s+single)?\s*$/i, '')
+        .trim();
+
+      // packs per box -> singles per box, which is what the rule stores.
+      const singlesPerBox = () => {
         const per = Math.max(1, parseInt(perEl.value, 10) || 1);
-        const perBox = parseInt(boxEl.value, 10) || 0;
+        const packs = parseInt(boxEl.value, 10) || 0;
+        return packs > 0 ? per * packs : 0;
+      };
+
+      const update = () => {
+        const typed = nameEl.value.trim();
+        const label = cleanName(typed) || '(name)';
+        const per = Math.max(1, parseInt(perEl.value, 10) || 1);
+        const perBox = singlesPerBox();
         const other = qty === 3 ? 5 : 3;
         prev.innerHTML =
+          (typed && cleanName(typed) !== typed
+            ? '<div style="color:#8a5200;">Saving the name as <b>' + escapeHtml(label) +
+              '</b> — the quantity is worked out per order.</div>'
+            : '') +
           'This order (qty ' + qty + '): <b>' + escapeHtml(describe(label, qty * per, perBox)) + '</b><br>' +
-          'If someone ordered ' + other + ': <b>' + escapeHtml(describe(label, other * per, perBox)) + '</b>';
+          'If someone ordered ' + other + ': <b>' + escapeHtml(describe(label, other * per, perBox)) + '</b>' +
+          (perBox ? '<br><span style="color:#6b665d;">A full box is ' + perBox + ' singles.</span>' : '');
       };
       [nameEl, perEl, boxEl].forEach(el => el.addEventListener('input', update));
       update();
@@ -1871,13 +1961,13 @@
       const done = (val) => { ov.remove(); resolve(val); };
       ov.querySelector('#teach-no').onclick = () => done({ remember: false, name: nameEl.value.trim() });
       ov.querySelector('#teach-yes').onclick = () => {
-        const name = nameEl.value.trim();
+        const name = cleanName(nameEl.value);
         if (!name) { nameEl.focus(); return; }
         done({
           remember: true,
           name,
           unitsPerItem: Math.max(1, parseInt(perEl.value, 10) || 1),
-          unitsPerBox: parseInt(boxEl.value, 10) || 0
+          unitsPerBox: singlesPerBox()
         });
       };
       ov.addEventListener('click', (e) => { if (e.target === ov) done(null); });
@@ -2122,6 +2212,12 @@
       return;
     }
     if (act === 'cancel') { incEditingLive = null; await renderIncomingLive(); return; }
+
+    if (act === 'shipmore') {
+      if (incShipOpen.has(key)) incShipOpen.delete(key); else incShipOpen.add(key);
+      await renderIncomingLive();
+      return;
+    }
 
     if (act === 'undopart') {
       incWritePartOverride(key, b.dataset.part, null);
