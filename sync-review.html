@@ -1108,6 +1108,24 @@
   // writes anything or talks to Sendcloud — this is the "check it matches the
   // panel" stage, before any button creates a label.
   let incShowDemo = false;
+  let incEditingLive = null;       // order number currently being edited
+  let incItemsCache = [];          // last rendered live items, for the editor
+
+  // A one-off wording change for a single order, kept on this device until the
+  // order is processed. Teaching the system permanently is a separate,
+  // explicit choice (the tickbox) that writes a real SKU correction instead.
+  const INC_OVERRIDES_KEY = 'incoming-converted-overrides';
+  function incReadOverrides() {
+    try { return JSON.parse(localStorage.getItem(INC_OVERRIDES_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteOverride(orderNumber, text) {
+    try {
+      const all = incReadOverrides();
+      if (text === null) delete all[orderNumber]; else all[orderNumber] = text;
+      localStorage.setItem(INC_OVERRIDES_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
 
   function incAgeText(ms) {
     if (!ms) return 'never';
@@ -1207,11 +1225,50 @@
       cls = 'flag-attention';
       banner = '<div class="inc-banner attention">⚠ ' + fixes.length + ' field' +
         (fixes.length > 1 ? 's are' : ' is') + ' over the limit. Suggested wording below.</div>';
+    } else if (o.convertedNeedsReview && !incReadOverrides()[o.orderNumber || o.id]) {
+      cls = 'flag-attention';
+      banner = '<div class="inc-banner attention">⚠ The products could not be worked out — ' +
+        'fill in what this converts to before it can go.</div>';
     } else if (o.statusGroup === 'unknown') {
       cls = 'flag-attention';
       banner = '<div class="inc-banner attention">⚠ Status "' + escapeHtml(o.statusCode || '') +
         '" is not recognised, so this is being shown just in case.</div>';
     }
+
+    // What we'd put on the slot. Tap to change it for this order; the tick in
+    // the confirmation is what makes it permanent for that SKU.
+    const overrides = incReadOverrides();
+    const key = o.orderNumber || o.id;
+    const override = overrides[key];
+    const convText = override != null ? override : (o.converted || '');
+    const convBad = !convText || (o.convertedNeedsReview && override == null);
+    const editing = incEditingLive === key;
+
+    const convertedHtml =
+      '<div class="inc-col-label"><span>Converted for us</span>' +
+        (editing ? '' : '<button data-live="edit" data-key="' + escapeHtml(key) + '">Edit</button>') +
+      '</div>' +
+      (editing
+        ? '<textarea class="conv-edit" id="live-edit-' + escapeHtml(key) + '">' + escapeHtml(convText) + '</textarea>' +
+          '<div class="conv-actions">' +
+            '<button class="btn btn-good" data-live="save" data-key="' + escapeHtml(key) + '">Save</button>' +
+            '<button class="btn btn-ghost" data-live="cancel" data-key="' + escapeHtml(key) + '">Cancel</button>' +
+          '</div>'
+        : '<div class="conv-box' + (convBad ? ' bad' : '') + '" data-live="edit" data-key="' + escapeHtml(key) + '">' +
+            (convText ? escapeHtml(convText) : 'Nothing worked out — tap to fill in') +
+          '</div>') +
+      (override != null
+        ? '<div class="fix-how" style="color:#1d6b4f;">Changed by you for this order · ' +
+          '<a href="#" data-live="undo" data-key="' + escapeHtml(key) + '">undo</a></div>'
+        : '') +
+      (o.convertedNeedsReview && override == null
+        ? '<div class="fix-how">' + escapeHtml((o.convertedReasons || []).join(' ')) + '</div>'
+        : '');
+
+    const fixesHtml = fixes.length
+      ? '<div class="inc-col-label" style="margin-top:10px;"><span>Too long for the label</span></div>' +
+        fixes.map(incFixHtml).join('')
+      : '';
 
     const price = o.estimatedShipping != null
       ? '<span class="cost normal">£' + Number(o.estimatedShipping).toFixed(2) + '</span>'
@@ -1234,11 +1291,7 @@
               escapeHtml([addr.companyName, addr.line1, addr.line2, addr.city, addr.postcode]
                 .filter(Boolean).join(', ')) + '</div></div>' +
           '</div>' +
-          '<div><div class="inc-col-label"><span>' +
-            (fixes.length ? 'Needs changing before it goes' : 'Nothing to change') + '</span></div>' +
-            (fixes.length ? fixes.map(incFixHtml).join('')
-              : '<div class="conv-box" style="cursor:default; color:#2f6b3e;">✓ All fields fit</div>') +
-          '</div>' +
+          '<div>' + convertedHtml + fixesHtml + '</div>' +
         '</div>' +
         '<div class="inc-ship">' +
           '<div class="inc-ship-k">Shipping</div>' +
@@ -1295,8 +1348,93 @@
       'Process buttons go in.' +
       '</div>';
 
+    incItemsCache = items;
     wrap.innerHTML = incSummaryHtml(items) + note + items.map(incLiveCard).join('');
   }
+
+
+  // Editing the converted wording on a live order.
+  document.getElementById('inc-live').addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-live]');
+    if (!b) return;
+    e.preventDefault();
+    const key = b.dataset.key;
+    const act = b.dataset.live;
+    const order = incItemsCache.find(o => (o.orderNumber || o.id) === key);
+
+    if (act === 'edit') {
+      incEditingLive = key;
+      await renderIncomingLive();
+      const t = document.getElementById('live-edit-' + key);
+      if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+      return;
+    }
+    if (act === 'cancel') { incEditingLive = null; await renderIncomingLive(); return; }
+
+    if (act === 'undo') {
+      const ok = await askYesNo({
+        title: 'Undo your change?',
+        body: 'This order goes back to what the system worked out on its own.',
+        yes: 'Undo'
+      });
+      if (!ok) return;
+      incWriteOverride(key, null);
+      await renderIncomingLive();
+      return;
+    }
+
+    if (act === 'save') {
+      const box = document.getElementById('live-edit-' + key);
+      if (!box) return;
+      const val = box.value.trim();
+      if (!val) return;
+
+      // "Remember this" is only offered when the order has exactly ONE
+      // product. With two or more there is no way to know which SKU the new
+      // wording belongs to, and guessing would teach the system something
+      // wrong for every future order containing either item.
+      const skus = [...new Set((order && order.items || []).map(i => i.sku).filter(Boolean))];
+      const single = skus.length === 1 ? skus[0] : null;
+
+      const ans = await askYesNo({
+        title: 'Save this change?',
+        body: 'This order will go through as:<br><br><b>' + escapeHtml(val) + '</b>',
+        check: single
+          ? 'Remember it, so <b>' + escapeHtml(single) + '</b> converts this way from now on'
+          : null,
+        checked: false,
+        yes: 'Save'
+      });
+      if (!ans) return;
+
+      incWriteOverride(key, val);
+      incEditingLive = null;
+      await renderIncomingLive();
+
+      if (ans.remember && single) {
+        try {
+          const existing = await db.collection('sku-corrections').where('sku', '==', single).limit(1).get();
+          if (!existing.empty) {
+            await db.collection('sku-corrections').doc(existing.docs[0].id)
+              .update({ label: val, mode: 'fixed', override: true, updatedAt: Date.now() });
+          } else {
+            await db.collection('sku-corrections').add({
+              sku: single, label: val, unitsPerItem: 1, mode: 'fixed', override: true,
+              exampleFrom: 'incoming order ' + key, exampleTo: val, createdAt: Date.now()
+            });
+          }
+          document.getElementById('top-status').textContent =
+            'Saved — ' + single + ' will convert to "' + val + '" from now on.';
+          renderLearnedList();
+        } catch (err) {
+          document.getElementById('top-status').textContent =
+            'The order was changed, but the SKU rule could not be saved — ' +
+            ((err && err.message) || 'try again') + '.';
+        }
+      }
+      return;
+    }
+  });
 
   document.getElementById('inc-refresh').addEventListener('click', async () => {
     const btn = document.getElementById('inc-refresh');
