@@ -432,6 +432,8 @@
   .chan-web::before { content:'\1F310'; }
   .chan-ebay { color:#0b4ea8; border-color:#4a86e0; background:#e9f0fd; }
   .chan-ebay::before { content:'\1F3F7'; }
+  .chan-tiktok { color:#1a1a1a; border-color:#8a8a8a; background:#f0eff2; }
+  .chan-tiktok::before { content:'\266A'; }
   .chan-other { color:#5c5349; border-color:#c9c3b6; background:#f3f1ea; }
   .chan-other::before { content:'\2753'; }
 
@@ -1195,6 +1197,9 @@
     const c = String(channel || '').toLowerCase();
     if (c.includes('amazon')) return 'amazon';
     if (c.includes('bay')) return 'ebay';
+    // Checked before the website test: "TikTok Shop" contains neither, but
+    // a name like "TikTok website" would otherwise be read as the website.
+    if (c.includes('tiktok') || c.includes('tik tok')) return 'tiktok';
     if (c.includes('web') || c.includes('mega') || c.includes('site')) return 'web';
     return 'other';
   }
@@ -1407,9 +1412,37 @@
     // Per-line edits, and the whole-order text rebuilt from them.
     const rawParts = Array.isArray(o.convertedParts) ? o.convertedParts : null;
     const pOv = incReadPartOverrides()[key] || {};
-    // A product taught on this device applies here and now, line by line,
-    // rather than waiting for PC 2 to catch up.
-    const partLocal = (i) => incApplyLocalRulesToText((rawParts[i] && rawParts[i].text) || '');
+    // How many of this product the order is for. Several items can feed one
+    // line when pack sizes are totalled, so they are added up.
+    const partQtyAt = (i) => {
+      if (!Array.isArray(o.itemParts)) {
+        return ((o.items || []).reduce((n, it) => n + (Number(it.qty) || 0), 0)) || 1;
+      }
+      let q = 0;
+      (o.items || []).forEach((it, n) => { if (o.itemParts[n] === i) q += Number(it.qty) || 0; });
+      return q || 1;
+    };
+
+    // A product taught on this device wins outright, even over wording PC 2
+    // has already produced.
+    //
+    // This used to rewrite only lines still marked UNRECOGNISED, which left
+    // a wrong rule stuck on screen: once PC 2 had converted a SKU — rightly
+    // or not — the line was no longer unrecognised, so correcting it here
+    // changed nothing visible and the bad wording stayed until PC 2 caught
+    // up. Correcting a product is exactly the case that has to show at once.
+    const partFromRule = (i) => {
+      const p = rawParts && rawParts[i];
+      const skus = (p && p.skus) || [];
+      if (skus.length !== 1) return null;
+      const rule = incReadRules()[skus[0]];
+      if (!rule || !rule.label) return null;
+      const units = partQtyAt(i) * (Number(rule.unitsPerItem) || 1);
+      return incDescribe(rule.label, units, Number(rule.unitsPerBox) || 0);
+    };
+
+    const partLocal = (i) => partFromRule(i)
+      || incApplyLocalRulesToText((rawParts[i] && rawParts[i].text) || '');
     const partText = (i) => (pOv[i] != null ? pOv[i]
       : (partLocal(i) || (rawParts[i] && rawParts[i].text) || ''));
     const partSolved = (i) => pOv[i] != null || partLocal(i) != null;
