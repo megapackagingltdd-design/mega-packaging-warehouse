@@ -549,13 +549,11 @@
   .inc-empty b { display:block; color:#1a1d1a; font-size:15px; margin-bottom:5px; }
   .inc-status { font-size:11px; font-weight:800; padding:2px 9px; border-radius:5px; border:1.5px solid #d5d1c7; color:#6b665d; background:#f7f5f0; white-space:nowrap; }
   .fix-row { border:1px solid #e9d898; background:#fffbe9; border-radius:7px; padding:8px 10px; margin-bottom:6px; }
-  .fix-row.lossy { border-color:#e3b4ad; background:#fdf2f0; }
   .fix-field { font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#8a5200; }
-  .fix-row.lossy .fix-field { color:#a3271b; }
   .fix-was { font-size:12px; color:#777; margin-top:3px; word-break:break-word; }
   .fix-now { font-size:14px; font-weight:800; color:#1a1d1a; margin-top:2px; word-break:break-word; }
   .fix-how { font-size:11.5px; color:#8a5200; margin-top:3px; line-height:1.4; }
-  .fix-row.lossy .fix-how { color:#a3271b; font-weight:700; }
+  .fix-actions { display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; }
   .inc-readonly { font-size:12px; color:#6b665d; background:#f7f5f0; border:1.5px solid #e2ded4; border-radius:8px; padding:9px 11px; margin-top:10px; line-height:1.5; }
   /* Loud on purpose. Shipping one of these costs a refund, a return and
      possibly a metric, so it should be impossible to scroll past. */
@@ -935,6 +933,7 @@
   const incShipOpen = new Set();   // orders showing the full shipping detail
   let incChannelFilter = null;     // null = all channels
   let incAmazonState = {};         // order key -> the Amazon request's state
+  let incLabelState = {};          // order key -> the label request's state
   // Which orders already have a measurement request outstanding.
   //
   // This used to be a plain Set in memory, so refreshing the page lost it
@@ -1184,7 +1183,10 @@
   function incNeedsYou(o) {
     if (!o) return false;
     if (o.cancelRequested || o.needsCustoms || o.priceHigh) return true;
-    if ((o.fixes || []).some(f => f.lossy)) return true;
+    // A long address is no longer "needs you". It was flashing the channel
+    // tile and pushing orders to the top for something Sendcloud accepts
+    // without complaint, which trains you to ignore the flashing.
+    if (o.labelRejected) return true;
     const override = incReadOverrides()[o.orderNumber || o.id];
     if (override != null) return false;
     if (incApplyLocalRules(o)) return false;
@@ -1257,15 +1259,56 @@
     '</div>';
   }
 
-  function incFixHtml(fix) {
-    return '<div class="fix-row' + (fix.lossy ? ' lossy' : '') + '">' +
-      '<div class="fix-field">' + escapeHtml(fix.field) + ' — ' + fix.original.length +
-        ' characters, limit ' + fix.limit + '</div>' +
+  // Addresses the page would shorten, offered rather than imposed.
+  //
+  // Nothing here is wrong until Sendcloud says so, so each row shows what
+  // came in, what we would change it to, and leaves the choice: approve
+  // the suggestion, type your own, or ignore it and let the original go
+  // through as it is. Approving is only worth doing when Sendcloud has
+  // actually complained.
+  const INC_ADDR_KEY = 'incoming-address-overrides';
+  function incReadAddr() {
+    try { return JSON.parse(localStorage.getItem(INC_ADDR_KEY) || '{}'); }
+    catch (e) { return {}; }
+  }
+  function incWriteAddr(key, field, value) {
+    try {
+      const all = incReadAddr();
+      const mine = all[key] || {};
+      if (value === null) delete mine[field]; else mine[field] = value;
+      if (Object.keys(mine).length) all[key] = mine; else delete all[key];
+      localStorage.setItem(INC_ADDR_KEY, JSON.stringify(all));
+    } catch (e) { /* storage blocked — the change still applies on screen */ }
+  }
+
+  function incFixHtml(fix, key, chosen, editing) {
+    const f = escapeHtml(fix.field);
+    if (editing) {
+      return '<div class="fix-row">' +
+        '<div class="fix-field">' + f + '</div>' +
+        '<textarea class="conv-edit" id="live-edit-addr">' + escapeHtml(chosen != null ? chosen : fix.corrected) + '</textarea>' +
+        '<div class="conv-actions">' +
+          '<button class="btn btn-good" data-live="saveaddr" data-key="' + escapeHtml(key) +
+            '" data-field="' + f + '">Save</button>' +
+          '<button class="btn btn-ghost" data-live="cancel" data-key="' + escapeHtml(key) + '">Cancel</button>' +
+        '</div></div>';
+    }
+    return '<div class="fix-row">' +
+      '<div class="fix-field">' + f + ' — ' + fix.original.length + ' characters</div>' +
       '<div class="fix-was">' + escapeHtml(fix.original) + '</div>' +
-      '<div class="fix-now">→ ' + escapeHtml(fix.corrected) +
-        (fix.movedToLine2 ? '<br/><span style="font-size:12px;font-weight:700;color:#6b665d;">line 2: ' +
-          escapeHtml(fix.movedToLine2) + '</span>' : '') + '</div>' +
-      '<div class="fix-how">' + escapeHtml(fix.how || '') + '</div>' +
+      (chosen != null
+        ? '<div class="fix-now" style="color:#1d6b4f;">✓ going as: ' + escapeHtml(chosen) +
+            ' · <a href="#" data-live="undoaddr" data-key="' + escapeHtml(key) +
+            '" data-field="' + f + '">undo</a></div>'
+        : '<div class="fix-now">suggestion: ' + escapeHtml(fix.corrected) +
+            (fix.movedToLine2 ? '<br/><span style="font-size:12px;font-weight:700;color:#6b665d;">line 2: ' +
+              escapeHtml(fix.movedToLine2) + '</span>' : '') + '</div>' +
+          '<div class="fix-actions">' +
+            '<button class="svc-add" data-live="useaddr" data-key="' + escapeHtml(key) +
+              '" data-field="' + f + '">Use the suggestion</button>' +
+            '<button class="svc-add" data-live="editaddr" data-key="' + escapeHtml(key) +
+              '" data-field="' + f + '">Edit it</button>' +
+          '</div>') +
     '</div>';
   }
 
@@ -1358,7 +1401,6 @@
       '<div class="src-line"><div class="src-desc">No item detail came through</div></div>';
 
     const fixes = (o.fixes || []);
-    const lossy = fixes.some(f => f.lossy);
     let banner = '';
     let cls = '';
     if (o.cancelRequested) {
@@ -1385,14 +1427,15 @@
         ((o.missingHsCodes || []).length ? ' Missing an HS code for: ' +
           escapeHtml(o.missingHsCodes.join(', ')) + '.' : '') +
         ' Worth pricing on Amazon first.</div>';
-    } else if (lossy) {
-      cls = 'flag-stop';
-      banner = '<div class="inc-banner stop">⚠ An address line is too long and cannot be split — ' +
-        'the suggestion below drops part of it. Check it before this goes.</div>';
-    } else if (fixes.length) {
-      cls = 'flag-attention';
-      banner = '<div class="inc-banner attention">' + fixes.length + ' field' +
-        (fixes.length > 1 ? 's are' : ' is') + ' over the limit. Suggested wording below.</div>';
+    // Address length is NOT a banner any more, and never blocks.
+    //
+    // The 32-character limit here was our own guess at what the carrier
+    // would take, and it was wrong often enough to matter: orders got a
+    // red "too long" stop on this screen while Sendcloud was perfectly
+    // happy with the same address. Sendcloud is the one that actually
+    // rejects a label, so it is the one to believe. The suggestion still
+    // appears below the order as something to approve or edit if you want
+    // it, and nothing waits on it.
     } else if (o.convertedNeedsReview && !incReadOverrides()[o.orderNumber || o.id]) {
       cls = 'flag-attention';
       banner = '<div class="inc-banner attention">The products could not be worked out — ' +
@@ -1549,9 +1592,12 @@
       }).join('');
     }
 
+    // "Could be shortened", not "too long for the label" — we do not know
+    // that it is too long, only that it is longer than we would write it.
+    const addrChosen = incReadAddr()[key] || {};
     const fixesHtml = fixes.length
-      ? '<div class="inc-col-label" style="margin-top:10px;"><span>Too long for the label</span></div>' +
-        fixes.map(incFixHtml).join('')
+      ? '<div class="inc-col-label" style="margin-top:10px;"><span>Long address — shorten it?</span></div>' +
+        fixes.map(fx => incFixHtml(fx, key, addrChosen[fx.field], incEditingLive === key + '@' + fx.field)).join('')
       : '';
 
     o.measureReq = incMeasureByOrder.get(key) || null;
@@ -1641,7 +1687,10 @@
     const labels = incReadLabels()[key] || 1;
     // A high price is a prompt to look, not a barrier: sometimes the remote
     // rate is simply what it costs and the order still has to go.
-    const blocked = o.cancelRequested || convBad || lossy || o.needsCustoms;
+    // An address suggestion no longer blocks: Sendcloud accepts most of
+    // what this used to stop, and a shipment held up by our own guess is
+    // worse than one the carrier would have taken.
+    const blocked = o.cancelRequested || convBad || o.needsCustoms;
     const stepper =
       '<div class="inc-ship-k">Labels</div>' +
       '<div><span class="stepper">' +
@@ -1672,17 +1721,37 @@
           'Buy it on Amazon instead</button>'
       : '';
 
+    // Once a label has been asked for, the button goes. Offering Process
+    // again while PC 2 is mid-purchase is how you end up with two.
+    const lab = incLabelState[key];
+    const labelHtml = !lab ? '' :
+      '<div class="amz-state ' +
+        (lab.status === 'done' ? 'done' : (lab.status === 'failed' ? 'failed' : 'waiting')) + '">' +
+        (lab.status === 'done'
+          ? '\u2713 Label created' + (lab.tracking ? ' \u2014 ' + escapeHtml(lab.tracking) : '') +
+            '. It is ready to print.'
+          : lab.status === 'failed'
+          ? '\u2717 Sendcloud would not create it: ' + escapeHtml(lab.error || 'no reason given') +
+            '. Nothing was charged. ' +
+            '<a href="#" data-live="retrylabel" data-key="' + escapeHtml(key) + '">try again</a>'
+          : lab.status === 'skipped'
+          ? '\u2022 Sendcloud already had a label for this order, so none was bought. ' +
+            '<a href="#" data-live="retrylabel" data-key="' + escapeHtml(key) + '">clear this</a>'
+          : '\u23f3 PC 2 is creating it\u2026') +
+      '</div>';
+
     const actions =
       '<div class="inc-actions">' + amazonBtn +
-        (blocked
+        (lab && lab.status !== 'failed' && lab.status !== 'skipped'
+          ? ''
+          : blocked
           ? '<button class="btn btn-ghost" disabled>' +
               (o.cancelRequested ? 'Cancellation requested \u2014 do not create a label'
                 : o.needsCustoms ? 'Needs customs data first'
-                : lossy ? 'Check the address first'
                 : 'Fill in the conversion first') + '</button>'
           : '<button class="btn btn-good" data-live="process" data-key="' + escapeHtml(key) + '">' +
               'Process — create ' + labels + ' label' + (labels > 1 ? 's' : '') + '</button>') +
-      '</div>' + amzHtml;
+      '</div>' + labelHtml + amzHtml;
 
     // A hazard block down the left edge of the warning, so a card that needs
     // you is recognisable before you have read a word of it.
@@ -1822,6 +1891,18 @@
       });
     } catch (e) { /* no requests yet, or the index is missing — not fatal */ }
 
+    // Where each label request got to. Keyed by order so a card can say
+    // "being created" rather than offering Process again and inviting a
+    // second one.
+    incLabelState = {};
+    try {
+      const reqs = await db.collection('label-requests').get();
+      reqs.forEach(d => {
+        const r = d.data() || {};
+        if (r.orderKey) incLabelState[r.orderKey] = { id: d.id, ...r };
+      });
+    } catch (e) { /* none yet — the button simply offers again */ }
+
     const data = doc.data() || {};
     let items = [];
     try { items = JSON.parse(data.itemsJson || '[]'); } catch (e) { items = []; }
@@ -1919,6 +2000,27 @@
   // as x1. This asks for the three things that actually define it — the name,
   // how many singles come in one ordered item, and how many make a full box —
   // and the quantity is then worked out fresh each time.
+  // The converted wording for a whole order, as it currently stands.
+  //
+  // The card works this out while rendering, but the click handlers live
+  // outside that function and one of them was reaching for a variable
+  // that does not exist there — which threw silently and made Process do
+  // nothing at all. Shared here so both see the same text, including any
+  // line edited by hand and any product taught on this device.
+  function incConvertedTextFor(order, key) {
+    if (!order) return '';
+    const whole = incReadOverrides()[key];
+    if (whole != null) return whole;
+    const parts = Array.isArray(order.convertedParts) ? order.convertedParts : null;
+    if (parts && parts.length) {
+      const ov = incReadPartOverrides()[key] || {};
+      return parts.map((p, i) => ov[i] != null ? ov[i]
+        : (incApplyLocalRulesToText(p.text) || p.text || ''))
+        .filter(Boolean).join(' + ');
+    }
+    return incApplyLocalRules(order) || order.converted || '';
+  }
+
   // Reads the pack size straight out of what was typed.
   //
   // "375 salad x100 single" on a qty-1 order means one of these holds 100
@@ -2248,19 +2350,66 @@
       // a sync on every press is what stops that one being missed.
       incRequestSync('process', true);
 
-      // Deliberately not wired to Sendcloud yet. A button that spends money
-      // goes in only once the list it sits on is known to be right, and the
-      // channel filtering is still being checked against the panel.
       const n = incReadLabels()[key] || 1;
-      await askYesNo({
-        title: 'Not connected yet',
-        body: 'This would create <b>' + n + ' label' + (n > 1 ? 's' : '') + '</b> for<br>' +
-              '<b>' + escapeHtml((order && order.address && order.address.name) || key) + '</b><br>' +
-              escapeHtml((order && order.converted) || '') + '<br><br>' +
-              'Label creation is switched off until the channel counts here match ' +
-              'the Sendcloud panel. Nothing has been sent.',
-        yes: 'Understood', no: 'Close'
+      const payload = order && order.labelPayload;
+      if (!payload) {
+        await askYesNo({
+          title: 'Cannot price this one yet',
+          body: 'PC 2 has not worked out a service for this order, so there is ' +
+                'nothing to buy a label against.<br><br>' +
+                'Usually that means no weight: pick a band or ask the warehouse ' +
+                'to weigh it, then try again.',
+          yes: 'Understood', no: 'Close'
+        });
+        return;
+      }
+
+      // Confirmed with the figures in front of you, because the next thing
+      // that happens costs money.
+      const ok = await askYesNo({
+        title: 'Create ' + n + ' label' + (n > 1 ? 's' : '') + '?',
+        body: '<b>' + escapeHtml((order.address && order.address.name) || key) + '</b><br>' +
+              escapeHtml(incConvertedTextFor(order, key)) + '<br><br>' +
+              escapeHtml(payload.methodName || 'the quoted service') +
+              (order.expectedPrice != null
+                ? ' · about <b>£' + (Number(order.expectedPrice) * n).toFixed(2) + '</b>'
+                : '') + '<br><br>' +
+              'PC 2 buys it from Sendcloud. It checks first that this order does ' +
+              'not already have a label.',
+        yes: 'Create ' + (n > 1 ? n + ' labels' : 'the label')
       });
+      if (!ok) return;
+
+      // Any address line you approved or typed replaces the suggestion.
+      const chosen = incReadAddr()[key] || {};
+      const parcel = { ...payload.parcel };
+      const FIELD_TO_PARCEL = { name: 'name', companyName: 'company_name',
+                                line1: 'address', line2: 'address_2', city: 'city' };
+      for (const [field, value] of Object.entries(chosen)) {
+        if (FIELD_TO_PARCEL[field]) parcel[FIELD_TO_PARCEL[field]] = value;
+      }
+
+      // The order key is the document id on purpose: pressing Process twice
+      // overwrites one request rather than queueing two labels.
+      const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
+      try {
+        await db.collection('label-requests').doc(docId).set({
+          orderKey: key,
+          orderNumber: order.orderNumber || '',
+          labels: n,
+          converted: incConvertedTextFor(order, key),
+          payloadJson: JSON.stringify({ ...payload, parcel }),
+          status: 'pending',
+          requestedAt: Date.now()
+        });
+        document.getElementById('top-status').textContent =
+          'Asked PC 2 to create ' + n + ' label' + (n > 1 ? 's' : '') + ' for ' +
+          (order.orderNumber || key) + '.';
+      } catch (e) {
+        document.getElementById('top-status').textContent =
+          'Could not send that to PC 2 — ' + ((e && e.message) || 'try again') + '. No label was created.';
+      }
+      await renderIncomingLive();
       return;
     }
 
@@ -2274,6 +2423,48 @@
       return;
     }
     if (act === 'cancel') { incEditingLive = null; await renderIncomingLive(); return; }
+
+    // Address suggestions: take it, write your own, or undo back to what
+    // the shop actually sent. None of them block the order either way.
+    if (act === 'useaddr') {
+      const fx = (order && order.fixes || []).find(f => f.field === b.dataset.field);
+      if (fx) incWriteAddr(key, fx.field, fx.corrected);
+      await renderIncomingLive();
+      return;
+    }
+    if (act === 'editaddr') {
+      incEditingLive = key + '@' + b.dataset.field;
+      await renderIncomingLive();
+      const t = document.getElementById('live-edit-addr');
+      if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+      return;
+    }
+    if (act === 'saveaddr') {
+      const box = document.getElementById('live-edit-addr');
+      if (!box) return;
+      const v = box.value.trim();
+      incEditingLive = null;
+      if (v) incWriteAddr(key, b.dataset.field, v);
+      await renderIncomingLive();
+      return;
+    }
+    if (act === 'undoaddr') {
+      incWriteAddr(key, b.dataset.field, null);
+      await renderIncomingLive();
+      return;
+    }
+
+    // Clears a failed or skipped request so Process comes back. Only ever
+    // offered on those two: a request that is pending or done is never
+    // clearable from here, because that is the route to a second label.
+    if (act === 'retrylabel') {
+      try {
+        const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
+        await db.collection('label-requests').doc(docId).delete();
+      } catch (e) { /* already gone — the button returns either way */ }
+      await renderIncomingLive();
+      return;
+    }
 
     if (act === 'shipmore') {
       if (incShipOpen.has(key)) incShipOpen.delete(key); else incShipOpen.add(key);
