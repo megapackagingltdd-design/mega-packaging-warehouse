@@ -282,18 +282,40 @@
 
      Every rule is !important because the card carries an inline group
      colour that would otherwise win. */
-  .mp-order-card.mp-web {
-    overflow: hidden;
-    background: linear-gradient(135deg, #b8860b 0%, #e8c14a 18%, #fff3c4 30%, #e8c14a 42%,
-                #c9961a 60%, #e8c14a 80%, #b8860b 100%) !important;
-    background-size: 300% 100% !important;
-    border-color: #8a6412 !important;
-    animation: mpGoldSweep 4.5s linear infinite;
+  /* A website order is an ORDINARY slot with a ribbon on it.
+     It used to be gold, with its own bronze/silver/platinum/ruby set for
+     each state — five metals running alongside the blue/green/purple the
+     rest of the board uses. Staff had to learn two colour languages and
+     read which one applied before they could read the state, which is the
+     opposite of what a colour is for. The ribbon says where it came from;
+     the state colour says what has happened to it, exactly as on every
+     other slot. */
+  .mp-order-card.mp-web { overflow: hidden; }
+
+  /* ---------- Spotlight ----------
+     Tapping a counter shows WHICH slots it is counting, for a few seconds,
+     then puts the board back. The number says how many are left but not
+     which ones, and hunting for them on a full board is the slow part.
+     Nothing can be tapped while it is up: this is a glance, not a mode to
+     work in, and a board that quietly stayed filtered would be a worse
+     problem than the one it solves. */
+  .mp-summary-box[data-spot] { cursor: pointer; }
+  body.mp-spotlight .mp-order-card { pointer-events: none !important; }
+  body.mp-spotlight .mp-order-card.mp-spot-out { display: none !important; }
+  .mp-spot-blocker { position: fixed; inset: 0; z-index: 40; background: transparent; }
+  .mp-spot-note {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 22px; z-index: 41;
+    background: #1b1f24; color: #fff; border-radius: 10px;
+    padding: 10px 18px; font-size: 15px; font-weight: 800;
+    box-shadow: 0 6px 20px rgba(0,0,0,.35);
+    display: flex; align-items: center; gap: 10px;
   }
-  @keyframes mpGoldSweep {
-    0%   { background-position: 0% 50%; }
-    100% { background-position: 300% 50%; }
-  }
+  .mp-spot-note .mp-spot-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .mp-spot-note.spot-blue .mp-spot-dot { background: #1e6fd9; }
+  .mp-spot-note.spot-green .mp-spot-dot { background: var(--good); }
+  .mp-spot-note.spot-purple .mp-spot-dot { background: #6a2ca3; }
+  .mp-spot-secs { opacity: .65; font-weight: 700; }
 
   /* Ribbon sits top-LEFT so it never collides with the label-count badge,
      which is pinned top-right. */
@@ -307,56 +329,6 @@
     box-shadow: 0 1px 4px rgba(0,0,0,.3);
   }
 
-  .mp-order-card.mp-web .mp-order-card-main,
-  .mp-order-card.mp-web .mp-card-header-line { color: #2a2206 !important; }
-  .mp-order-card.mp-web .mp-card-header-line { opacity: .72; }
-
-  /* --- picked: bronze --- */
-  .mp-order-card.mp-web.state-green {
-    background: linear-gradient(145deg, #b5702a 0%, #8c5116 100%) !important;
-    border-color: #6b3d0f !important;
-    animation: none;
-  }
-  /* --- printed: silver --- */
-  .mp-order-card.mp-web.state-purple {
-    background: linear-gradient(135deg, #8d949c 0%, #c9d1d9 20%, #f2f6fa 32%, #c9d1d9 46%,
-                #9aa2ab 64%, #c9d1d9 82%, #8d949c 100%) !important;
-    background-size: 300% 100% !important;
-    border-color: #6c737a !important;
-    animation: mpGoldSweep 5.5s linear infinite;
-  }
-  /* --- complete: platinum --- */
-  .mp-order-card.mp-web.state-blue {
-    background: linear-gradient(145deg, #e9edf2 0%, #cfd6de 100%) !important;
-    border-color: #a8b2bd !important;
-    animation: none;
-  }
-  /* --- flagged: ruby --- */
-  .mp-order-card.mp-web.state-red {
-    background: linear-gradient(145deg, #8e1b2e 0%, #5e0f1e 100%) !important;
-    border-color: #440a16 !important;
-    animation: none;
-  }
-
-  .mp-order-card.mp-web.state-green .mp-order-card-main,
-  .mp-order-card.mp-web.state-green .mp-card-header-line,
-  .mp-order-card.mp-web.state-red .mp-order-card-main,
-  .mp-order-card.mp-web.state-red .mp-card-header-line { color: #fff !important; }
-  .mp-order-card.mp-web.state-purple .mp-order-card-main,
-  .mp-order-card.mp-web.state-purple .mp-card-header-line,
-  .mp-order-card.mp-web.state-blue .mp-order-card-main,
-  .mp-order-card.mp-web.state-blue .mp-card-header-line { color: #1b1f24 !important; }
-
-  /* Ribbon recoloured so it stays legible on each metal. */
-  .mp-order-card.mp-web.state-purple::after,
-  .mp-order-card.mp-web.state-blue::after { background: #1b1f24; }
-  .mp-order-card.mp-web.state-red::after  { background: #f5d976; color: #5e0f1e; }
-
-  /* Staff may leave this screen running all day; respect a reduced-motion
-     preference rather than shimmering at them indefinitely. */
-  @media (prefers-reduced-motion: reduce) {
-    .mp-order-card.mp-web, .mp-order-card.mp-web.state-purple { animation: none; }
-  }
 
   /* ---------- Measuring jobs (not orders) ----------
      Deliberately unlike a slot. A slot is blue/green/purple and gets
@@ -1115,15 +1087,15 @@
   root.innerHTML = `
     <div class="mp-top">
       <div class="mp-summary-banner" id="summary-banner">
-        <div class="mp-summary-box mp-summary-blue">
+        <div class="mp-summary-box mp-summary-blue" data-spot="blue">
           <div class="mp-summary-count" id="summary-complete-count">0</div>
           <div class="mp-summary-label" id="summary-complete-label">Remaining</div>
         </div>
-        <div class="mp-summary-box mp-summary-green">
+        <div class="mp-summary-box mp-summary-green" data-spot="green">
           <div class="mp-summary-count" id="summary-picked-count">0</div>
           <div class="mp-summary-label" id="summary-picked-label">Remaining</div>
         </div>
-        <div class="mp-summary-box mp-summary-purple">
+        <div class="mp-summary-box mp-summary-purple" data-spot="purple">
           <div class="mp-summary-count" id="summary-printed-count">0</div>
           <div class="mp-summary-label" id="summary-printed-label">Remaining</div>
         </div>
@@ -2982,7 +2954,90 @@ This backup was generated in one click from Back End and contains:
     knownOrderIds = currentIds;
   }
 
+  // ---------- Spotlight ----------
+  //
+  // Each counter counts a different thing, and the rules are written out
+  // here ONCE so the spotlight cannot drift from the number it explains.
+  // If the counting in updateSummaryBanner changes, this changes with it
+  // or the two disagree — worse than no spotlight, because the board
+  // would be contradicting its own total.
+  //
+  //   blue   - not yet scanned complete
+  //   green  - not touched at all (green, blue and purple all count as
+  //            touched, matching noLongerDefaultCount below)
+  //   purple - not yet printed, and blue satisfies printed
+  const SPOT_RULES = {
+    blue:   st => st !== 'blue',
+    green:  st => st !== 'green' && st !== 'blue' && st !== 'purple',
+    purple: st => st !== 'purple' && st !== 'blue'
+  };
+  const SPOT_WORDS = {
+    blue: 'still to be scanned complete',
+    green: 'not started yet',
+    purple: 'still to be printed'
+  };
+  const SPOT_SECONDS = 4;
+  let spotTimer = null, spotTick = null;
+
+  function clearSpotlight() {
+    if (spotTimer) { clearTimeout(spotTimer); spotTimer = null; }
+    if (spotTick) { clearInterval(spotTick); spotTick = null; }
+    document.body.classList.remove('mp-spotlight');
+    document.querySelectorAll('.mp-order-card.mp-spot-out')
+      .forEach(el => el.classList.remove('mp-spot-out'));
+    const note = document.getElementById('mp-spot-note');
+    if (note) note.remove();
+    const blocker = document.getElementById('mp-spot-blocker');
+    if (blocker) blocker.remove();
+  }
+
+  function cardState(el) {
+    return el.classList.contains('state-green') ? 'green'
+         : el.classList.contains('state-blue') ? 'blue'
+         : el.classList.contains('state-purple') ? 'purple'
+         : el.classList.contains('state-red') ? 'red' : '';
+  }
+
+  function showSpotlight(kind) {
+    const rule = SPOT_RULES[kind];
+    if (!rule) return;
+    clearSpotlight();   // tapping a second counter replaces the first
+
+    // Cards carry their state as a class, so the board needs no
+    // re-rendering — which also means nothing can be lost by doing this.
+    let shown = 0;
+    for (const el of document.querySelectorAll('.mp-order-card')) {
+      if (rule(cardState(el))) shown++; else el.classList.add('mp-spot-out');
+    }
+
+    document.body.classList.add('mp-spotlight');
+
+    // A transparent sheet over everything, so a tap aimed at a slot that
+    // has just moved under your finger cannot land on the one now there.
+    const blocker = document.createElement('div');
+    blocker.id = 'mp-spot-blocker';
+    blocker.className = 'mp-spot-blocker';
+    document.body.appendChild(blocker);
+
+    const note = document.createElement('div');
+    note.id = 'mp-spot-note';
+    note.className = 'mp-spot-note spot-' + kind;
+    let left = SPOT_SECONDS;
+    const text = () => '<span class="mp-spot-dot"></span>' +
+      (shown === 0 ? 'Nothing ' + SPOT_WORDS[kind] + ' - all done'
+                   : shown + ' ' + SPOT_WORDS[kind]) +
+      '<span class="mp-spot-secs">back in ' + left + 's</span>';
+    note.innerHTML = text();
+    document.body.appendChild(note);
+
+    spotTick = setInterval(() => { left -= 1; if (left >= 0) note.innerHTML = text(); }, 1000);
+    spotTimer = setTimeout(clearSpotlight, SPOT_SECONDS * 1000);
+  }
+
   function updateSummaryBanner(todayOrders) {
+    // A refresh while the spotlight is up would redraw the cards without
+    // the hidden class and leave the board half-filtered, so it ends here.
+    if (document.body.classList.contains('mp-spotlight')) clearSpotlight();
     const total = todayOrders.length;
     const blueCount = todayOrders.filter(o => o.state === 'blue').length;
     // "Remaining" for green now means "still untouched at all" — any of
@@ -5104,6 +5159,14 @@ This backup was generated in one click from Back End and contains:
   }
 
   document.getElementById('btn-history').addEventListener('click', showHistoryPicker);
+
+  // Tapping a counter spotlights the slots it is counting. Bound to the
+  // banner rather than each box, so it survives the banner redrawing.
+  // Open to everyone — it changes nothing, it only points.
+  document.getElementById('summary-banner').addEventListener('click', (e) => {
+    const box = e.target.closest('[data-spot]');
+    if (box) showSpotlight(box.dataset.spot);
+  });
 
   // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
   // tabs over a shift. The portal has its own button to come back here.
