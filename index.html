@@ -2976,10 +2976,16 @@ This backup was generated in one click from Back End and contains:
     green: 'not started yet',
     purple: 'still to be printed'
   };
-  const SPOT_SECONDS = 4;
+  // Four seconds was not long enough to read the board — it was gone before
+  // you had finished looking. Ten, and a tap closes it the moment you are
+  // done, so the longer time never gets in the way.
+  const SPOT_SECONDS = 10;
   let spotTimer = null, spotTick = null;
+  // Which counter is being shown, so tapping the same one again can close it.
+  let spotKind = null;
 
   function clearSpotlight() {
+    spotKind = null;
     if (spotTimer) { clearTimeout(spotTimer); spotTimer = null; }
     if (spotTick) { clearInterval(spotTick); spotTick = null; }
     document.body.classList.remove('mp-spotlight');
@@ -3002,6 +3008,7 @@ This backup was generated in one click from Back End and contains:
     const rule = SPOT_RULES[kind];
     if (!rule) return;
     clearSpotlight();   // tapping a second counter replaces the first
+    spotKind = kind;
 
     // Cards carry their state as a class, so the board needs no
     // re-rendering — which also means nothing can be lost by doing this.
@@ -3017,6 +3024,16 @@ This backup was generated in one click from Back End and contains:
     const blocker = document.createElement('div');
     blocker.id = 'mp-spot-blocker';
     blocker.className = 'mp-spot-blocker';
+    // A tap on the board closes it rather than making you wait the ten
+    // seconds out. The sheet still swallows that tap, so it can never land
+    // on a card that has just shifted under a finger — which is the whole
+    // reason the sheet is here. The counters themselves sit above it and
+    // are handled where they are bound.
+    blocker.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearSpotlight();
+    });
     document.body.appendChild(blocker);
 
     const note = document.createElement('div');
@@ -3026,7 +3043,7 @@ This backup was generated in one click from Back End and contains:
     const text = () => '<span class="mp-spot-dot"></span>' +
       (shown === 0 ? 'Nothing ' + SPOT_WORDS[kind] + ' - all done'
                    : shown + ' ' + SPOT_WORDS[kind]) +
-      '<span class="mp-spot-secs">back in ' + left + 's</span>';
+      '<span class="mp-spot-secs">back in ' + left + 's · tap to close</span>';
     note.innerHTML = text();
     document.body.appendChild(note);
 
@@ -3949,6 +3966,19 @@ This backup was generated in one click from Back End and contains:
   const POLL_COOLDOWN_AFTER_TOGGLE_MS = 3000;
   setInterval(() => {
     const cooldownActive = Date.now() - lastToggleCompletedAt < POLL_COOLDOWN_AFTER_TOGGLE_MS;
+    // Hold the refresh while a counter is being shown.
+    //
+    // This poll is why the spotlight seemed to vanish almost at once: it
+    // runs every four seconds and redraws the board, and a redraw ends the
+    // spotlight. So it was never lasting its four seconds — whichever poll
+    // happened to land first cut it off, sometimes after barely a second.
+    // Raising the time on its own would have changed nothing.
+    //
+    // Pausing is safe. The board is deliberately frozen under the blocking
+    // sheet for these few seconds, and nothing can be tapped while it is
+    // up, so there is nothing a refresh could usefully do. The longest it
+    // can ever be held back is the ten seconds, and a tap ends it sooner.
+    if (document.body.classList.contains('mp-spotlight')) return;
     if (document.getElementById('view-wh').classList.contains('active') && inFlightToggles.size === 0 && !cooldownActive) {
       loadAndRenderList();
       updateNotCompleteButton();
@@ -5165,7 +5195,12 @@ This backup was generated in one click from Back End and contains:
   // Open to everyone — it changes nothing, it only points.
   document.getElementById('summary-banner').addEventListener('click', (e) => {
     const box = e.target.closest('[data-spot]');
-    if (box) showSpotlight(box.dataset.spot);
+    if (!box) return;
+    // Tapping the counter that is already showing closes it, so nobody has
+    // to stand and wait the ten seconds out. Tapping a different one
+    // switches straight to it, as before.
+    if (spotKind === box.dataset.spot) { clearSpotlight(); return; }
+    showSpotlight(box.dataset.spot);
   });
 
   // Opens in the same tab, so the warehouse PC doesn't end up with a pile of
