@@ -161,6 +161,14 @@
   .tab.warn .tab-count { background: #f7ecd6; color: #a3701c; }
   .tab.warn.active .tab-count { background: #fff; color: #a3701c; }
   .tab.active { background: #c65d2e; border-color: #c65d2e; color: #fff; }
+  /* While PC 2 is being asked for fresh orders.
+     Appearance only — no pointer-events:none. Blocking the click in CSS
+     makes the press land on the tab strip behind it instead, which is
+     worse than receiving it: the guard in incOpenTab ignores a second
+     press properly, and a real one can still be clicked by anyone using
+     a keyboard. */
+  .tab.busy { opacity: .55; cursor: progress; }
+  .tab.busy::after { content: ' …'; }
   .tab-count {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 22px; padding: 2px 7px; border-radius: 11px;
@@ -3023,11 +3031,63 @@
   }
 
   // Opening the Incoming tab is the refresh — there is no separate button.
+  //
+  // It now WAITS for the answer instead of redrawing yesterday's numbers.
+  // Before, it asked PC 2 for a sync and then immediately rendered whatever
+  // was already stored, so the screen still said "4 waiting" for orders that
+  // had just been dealt with. That is how the same order gets processed
+  // twice, which is the reason this is worth the wait.
+  const INC_REFRESH_TIMEOUT_MS = 45000;
+  let incRefreshing = false;
+
+  async function incStoredUpdatedAt() {
+    try {
+      const doc = await db.collection('print-watcher-control').doc('incoming-orders').get();
+      return doc.exists ? Number((doc.data() || {}).updatedAt || 0) : 0;
+    } catch (e) { return 0; }
+  }
+
   async function incOpenTab() {
+    if (incRefreshing) return;             // pressing it again should not stack
+    incRefreshing = true;
     const el = document.getElementById('inc-age');
-    if (el) el.textContent = 'Refreshing…';
-    incRequestSync('incoming-tab');
-    try { await renderIncomingLive(); } catch (e) { showRenderError('the incoming orders', e); }
+    const tab = document.querySelector('#main-tabs .tab[data-tab="incoming"]');
+    if (tab) { tab.classList.add('busy'); tab.setAttribute('aria-busy', 'true'); }
+    try {
+      const before = await incStoredUpdatedAt();
+      // always: a refresh asked for by hand is never the one to skip.
+      incRequestSync('incoming-tab', true);
+      // Draw what we already have first, so the screen is not blank while
+      // waiting — then say plainly that it is not the final answer yet.
+      // (The message has to be set AFTER this render, which rewrites the
+      // same line with "Updated N minutes ago".)
+      try { await renderIncomingLive(); } catch (e) { showRenderError('the incoming orders', e); }
+      if (el) el.textContent = 'Asking PC 2 for the latest…';
+
+      const started = Date.now();
+      let fresh = false;
+      while (Date.now() - started < INC_REFRESH_TIMEOUT_MS) {
+        await new Promise(r => setTimeout(r, 1500));
+        const now = await incStoredUpdatedAt();
+        if (now > before) { fresh = true; break; }
+        if (el) {
+          const s = Math.round((Date.now() - started) / 1000);
+          el.textContent = 'Asking PC 2 for the latest… ' + s + 's';
+        }
+      }
+      try { await renderIncomingLive(); } catch (e) { showRenderError('the incoming orders', e); }
+      if (!fresh && el) {
+        // Say so rather than letting an old list pass for a new one.
+        el.textContent = 'PC 2 did not answer — these orders may be out of date. ' +
+                         'Check the backend window on PC 2, then press Incoming again.';
+        el.style.color = '#b3261e';
+      } else if (el) {
+        el.style.color = '';
+      }
+    } finally {
+      incRefreshing = false;
+      if (tab) { tab.classList.remove('busy'); tab.removeAttribute('aria-busy'); }
+    }
   }
 
 
