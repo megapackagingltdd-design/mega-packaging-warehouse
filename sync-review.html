@@ -345,6 +345,10 @@
   }
   .btn-main.sync { background: #c65d2e; color: #fff; }
   .btn-main.clear { background: #a33; color: #fff; font-size: 15.5px; }
+  /* Working, and visibly so — the same treatment as the Incoming tab, so a
+     press is obviously registered and nobody presses it twice. */
+  .btn-main.busy { opacity: .6; cursor: progress; }
+  .btn-main.busy::after { content: ' …'; }
   .btn-main:active { filter: brightness(0.92); }
   @media (max-width: 400px) {
     .btn-main { min-height: 64px; font-size: 16px; }
@@ -3339,15 +3343,32 @@
     const btn = document.getElementById('btn-sync');
     const statusEl = document.getElementById('sync-status');
     btn.disabled = true;
-    statusEl.textContent = 'Requesting sync…';
+    // Same treatment as the Incoming tab: visibly busy and counting, so you
+    // can see the press landed and that something is happening, rather than
+    // wondering whether to press it again.
+    btn.classList.add('busy');
+    btn.setAttribute('aria-busy', 'true');
+    const finished = () => {
+      btn.disabled = false;
+      btn.classList.remove('busy');
+      btn.removeAttribute('aria-busy');
+      if (tick) { clearInterval(tick); tick = null; }
+    };
+    let tick = null;
+    statusEl.textContent = 'Asking PC 2 to sync…';
     try {
       const docRef = await db.collection('sync-requests').add({ status: 'pending', requestedAt: Date.now() });
-      statusEl.textContent = 'Waiting for the print-watcher program to fetch orders from Sendcloud…';
       const startedAt = Date.now();
+      const waitingText = () =>
+        'Asking PC 2 to fetch the orders from Sendcloud… ' +
+        Math.round((Date.now() - startedAt) / 1000) + 's';
+      statusEl.textContent = waitingText();
+      tick = setInterval(() => { statusEl.textContent = waitingText(); }, 1000);
       const check = async () => {
         const doc = await db.collection('sync-requests').doc(docRef.id).get();
         const data = doc.exists ? doc.data() : null;
         if (data && data.status === 'done') {
+          if (tick) { clearInterval(tick); tick = null; }
           statusEl.textContent = `Done — ${data.importedCount != null ? data.importedCount : '?'} order(s) queued below for review (${data.skippedCount != null ? data.skippedCount : 0} already in the system).`;
           renderSkippedList();
           renderNotScanned();
@@ -3359,20 +3380,20 @@
           await autoApproveEightPly(statusEl);
           await renderJoined();
           if (joinedItems.length) await joinedAlert(joinedItems);
-          btn.disabled = false;
+          finished();
           return;
         }
         if (data && data.status === 'failed') {
           statusEl.textContent = 'Sync failed: ' + (data.errorMessage || 'unknown error');
-          btn.disabled = false;
+          finished();
           return;
         }
-        // print-watcher checks for sync requests every ~30s (kept low to stay
-        // inside Firestore's daily free-tier quota), so allow generous time
-        // for pickup plus the sync itself before declaring it dead.
+        // PC 2 now looks for sync requests every few seconds rather than
+        // every thirty, so a healthy run starts almost at once. The long
+        // ceiling is for the sync itself, which pages through Sendcloud.
         if (Date.now() - startedAt > 150000) {
-          statusEl.textContent = 'Timed out waiting for the print-watcher program — is it running on the warehouse computer?';
-          btn.disabled = false;
+          statusEl.textContent = 'PC 2 did not answer. Check the backend window is open on PC 2, then try again.';
+          finished();
           return;
         }
         setTimeout(check, 2000);
@@ -3380,7 +3401,7 @@
       check();
     } catch (e) {
       statusEl.textContent = 'Could not request sync — try again. (' + (e && e.message ? e.message : 'unknown error') + ')';
-      btn.disabled = false;
+      finished();
     }
   });
 
