@@ -2289,7 +2289,17 @@
         const name = incStripTitle(addr.name || order.customerName || '');
         const postcode = String(addr.postcode || '').trim();
         if (!name) continue;
-        const header = postcode ? name + ' (' + postcode + ')' : name;
+        let header = postcode ? name + ' (' + postcode + ')' : name;
+        // How many labels, in brackets on the end of the first line. The
+        // warehouse app reads that as the label count — it is the same
+        // wording used everywhere else in the system, so a two-label job
+        // created here looks exactly like one created any other way.
+        //
+        // Taken from the request that was actually bought, not from what
+        // the stepper happens to show now: those can differ if somebody
+        // changed the number after pressing Process.
+        const bought = Math.max(1, Number(lab.labels) || 1);
+        if (bought > 1) header += ' (' + bought + ')';
         const orderNumbers = [order.orderNumber].filter(Boolean);
         const tracking = String(lab.tracking || '').split(',').map(s => s.trim()).filter(Boolean);
 
