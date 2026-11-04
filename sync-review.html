@@ -1729,7 +1729,10 @@
         (lab.status === 'done' ? 'done' : (lab.status === 'failed' ? 'failed' : 'waiting')) + '">' +
         (lab.status === 'done'
           ? '\u2713 Label created' + (lab.tracking ? ' \u2014 ' + escapeHtml(lab.tracking) : '') +
-            '. It is ready to print.'
+            (lab.slotCreated ? '. On the warehouse list, ready to print.'
+                             : '. Adding it to the warehouse list\u2026') +
+            (lab.linked === false
+              ? ' <b>The shop was not told</b> \u2014 mark it shipped there by hand.' : '')
           : lab.status === 'failed'
           ? '\u2717 Sendcloud would not create it: ' + escapeHtml(lab.error || 'no reason given') +
             '. Nothing was charged. ' +
@@ -1836,6 +1839,34 @@
       '</div></div>';
   }
 
+  // While a label is being bought, keep looking until it is finished.
+  //
+  // This page had no refresh of any kind, so a card that said "PC 2 is
+  // creating it" said that for ever — the label was bought and linked
+  // seconds later, but nothing on screen ever changed and the only way to
+  // find out was to reload by hand.
+  //
+  // It only runs while something is actually in flight and stops the moment
+  // nothing is, so an idle page makes no requests at all.
+  const INC_POLL_MS = 4000;
+  let incPollTimer = null;
+
+  function incStopPolling() {
+    if (incPollTimer) { clearTimeout(incPollTimer); incPollTimer = null; }
+  }
+
+  function incPollIfWaiting() {
+    incStopPolling();
+    const waiting = Object.values(incLabelState || {}).some(
+      l => l && (l.status === 'pending' || l.status === 'working'));
+    if (!waiting) return;
+    // Only while this tab is the one on screen. A background tab polling
+    // the database all day is waste nobody asked for.
+    const tab = document.querySelector('#main-tabs .tab[data-tab="incoming"]');
+    if (tab && !tab.classList.contains('active')) return;
+    incPollTimer = setTimeout(() => { renderIncomingLive().catch(() => {}); }, INC_POLL_MS);
+  }
+
   async function renderIncomingLive() {
     const wrap = document.getElementById('inc-live');
     const ageEl = document.getElementById('inc-age');
@@ -1907,6 +1938,18 @@
     let items = [];
     try { items = JSON.parse(data.itemsJson || '[]'); } catch (e) { items = []; }
     const updated = Number(data.updatedAt || 0);
+
+    // A finished label should reach the warehouse list by itself.
+    //
+    // Before this, pressing Process bought the label and stopped. The slot
+    // only appeared if somebody then pressed Sync, and even then it landed
+    // in the review queue to be approved a second time — after the order had
+    // already been read, converted and confirmed on this very screen.
+    await incCreateSlotsForFinishedLabels(items);
+
+    // Come back in a few seconds if a label is still being bought, so the
+    // card stops saying "PC 2 is creating it" on its own.
+    incPollIfWaiting();
 
     // A stale timestamp is the signal that PC 2 has stopped, and it matters
     // more than an empty list: an empty list looks the same either way.
@@ -2007,6 +2050,84 @@
   // that does not exist there — which threw silently and made Process do
   // nothing at all. Shared here so both see the same text, including any
   // line edited by hand and any product taught on this device.
+  // Titles are dropped from the name on a slot, the same way the sync does
+  // it, so a slot made here and a slot made by the sync read identically.
+  // Nothing else about the name is touched.
+  function incStripTitle(name) {
+    const titles = ['mr', 'mrs', 'ms', 'miss', 'dr', 'mx', 'prof', 'sir', 'madam', 'rev'];
+    const words = String(name || '').trim().split(/\s+/);
+    if (words.length > 1 && titles.includes(words[0].toLowerCase())) {
+      return words.slice(1).join(' ');
+    }
+    return String(name || '').trim();
+  }
+
+  // Turns a finished label into a warehouse slot, once.
+  //
+  // Done here rather than on PC 2 on purpose: this page is the only thing
+  // that writes to the month document, and it needs to stay that way. Two
+  // writers on one document means one of them silently loses an order.
+  //
+  // "Once" is the whole difficulty. The guard is a flag written back onto
+  // the label request itself, so a reload, a second tab or another machine
+  // all see the same answer. The flag is written BEFORE the slot, not after:
+  // if the write fails halfway, the cost is a missing slot that the Sync
+  // will pick up — not a duplicate one, which the warehouse would pick and
+  // send twice.
+  const INC_SLOT_FLAG = 'slotCreated';
+  let incSlotRunning = false;
+
+  async function incCreateSlotsForFinishedLabels(items) {
+    if (incSlotRunning) return;         // a re-render mid-run must not double up
+    incSlotRunning = true;
+    try {
+      // Same key the cards are drawn with, so the two always agree.
+      const byKey = new Map();
+      for (const o of (items || [])) {
+        const k = o.orderNumber || o.id;
+        if (k) byKey.set(k, o);
+      }
+      for (const [key, lab] of Object.entries(incLabelState)) {
+        if (!lab || lab.status !== 'done') continue;
+        if (lab[INC_SLOT_FLAG]) continue;             // already on the list
+        const order = byKey.get(key);
+        if (!order) continue;                          // order has aged out of the list
+        const text = incConvertedTextFor(order, key);
+        // Never put a slot on the warehouse list that does not say what to
+        // pick. Better the order stays visible here than a picker is handed
+        // a blank line.
+        if (!text || !text.trim()) continue;
+
+        const addr = order.address || {};
+        const name = incStripTitle(addr.name || order.customerName || '');
+        const postcode = String(addr.postcode || '').trim();
+        if (!name) continue;
+        const header = postcode ? name + ' (' + postcode + ')' : name;
+        const orderNumbers = [order.orderNumber].filter(Boolean);
+        const tracking = String(lab.tracking || '').split(',').map(s => s.trim()).filter(Boolean);
+
+        try {
+          // Claim it first. See above: a missing slot is recoverable, a
+          // duplicated one gets picked and shipped twice.
+          await db.collection('label-requests').doc(lab.id).update({
+            [INC_SLOT_FLAG]: true, slotCreatedAt: Date.now()
+          });
+          incLabelState[key][INC_SLOT_FLAG] = true;
+          await addOrderAsSlot(header + '\n' + text, orderNumbers, false, false, tracking);
+          document.getElementById('top-status').textContent =
+            'Added ' + (order.orderNumber || name) + ' to the warehouse list.';
+        } catch (e) {
+          document.getElementById('top-status').textContent =
+            'Label created for ' + (order.orderNumber || name) +
+            ', but it could not be added to the warehouse list (' +
+            ((e && e.message) || 'unknown') + '). Press Sync to pick it up.';
+        }
+      }
+    } finally {
+      incSlotRunning = false;
+    }
+  }
+
   function incConvertedTextFor(order, key) {
     if (!order) return '';
     const whole = incReadOverrides()[key];
