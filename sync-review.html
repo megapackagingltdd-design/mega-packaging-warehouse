@@ -975,6 +975,7 @@
       if (kg === null) delete all[key]; else all[key] = kg;
       localStorage.setItem(INC_WEIGHTS_KEY, JSON.stringify(all));
     } catch (e) { /* storage blocked — still applies on screen */ }
+    incShareWeightChoice(key, { kg: kg });
   }
 
   // The three bands Evri actually prices on. 2-15kg is the default when
@@ -993,6 +994,48 @@
       if (band === null || band === INC_DEFAULT_BAND) delete all[key]; else all[key] = band;
       localStorage.setItem(INC_BANDS_KEY, JSON.stringify(all));
     } catch (e) { /* storage blocked — the change still applies on screen */ }
+    incShareWeightChoice(key, { band: (band === null ? null : band) });
+  }
+
+  // Tells PC 2 the weight or band chosen here.
+  //
+  // These used to live only in this browser. The band buttons changed what
+  // the screen said, but PC 2 never saw them, so it never worked out a
+  // service and Process came back with "Cannot price this one yet" — which
+  // is exactly what happened on the eBay order with no weight on it.
+  //
+  // Kept in one document inside warehouse-storage, which the database rules
+  // already allow, rather than a new collection needing another change in
+  // the Firebase console.
+  const INC_SHARED_WEIGHTS_DOC = 'incoming-weights';
+  let incSharedWeights = null;
+
+  async function incLoadSharedWeights() {
+    try {
+      const doc = await db.collection('warehouse-storage').doc(INC_SHARED_WEIGHTS_DOC).get();
+      incSharedWeights = doc.exists ? (JSON.parse(doc.data().value || '{}')) : {};
+    } catch (e) { incSharedWeights = incSharedWeights || {}; }
+    return incSharedWeights;
+  }
+
+  async function incShareWeightChoice(key, patch) {
+    try {
+      const all = await incLoadSharedWeights();
+      const entry = { ...(all[key] || {}), ...patch, at: Date.now() };
+      // A cleared choice is removed outright rather than left as a blank,
+      // so PC 2 goes back to whatever the shop says.
+      if (entry.band == null && entry.kg == null) delete all[key]; else all[key] = entry;
+      incSharedWeights = all;
+      await db.collection('warehouse-storage').doc(INC_SHARED_WEIGHTS_DOC)
+        .set({ value: JSON.stringify(all), shared: true, updatedAt: Date.now() });
+      // PC 2 prices on its own cycle, so ask it to look now rather than
+      // leaving someone watching an unpriced order for three minutes.
+      incRequestSync('weight', false);
+    } catch (e) {
+      document.getElementById('top-status').textContent =
+        'Saved here, but PC 2 was not told the weight (' + ((e && e.message) || 'try again') +
+        '), so it cannot price it yet.';
+    }
   }
 
   const INC_LABELS_KEY = 'incoming-label-counts';
