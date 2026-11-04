@@ -456,6 +456,17 @@
   /* Top-right corner: the count sits on the left, so the empty opposite
      corner is where the eye has room for the warning. */
   .inc-sum-cell .warn-pip { position:absolute; top:6px; right:6px; margin:0; }
+  /* Create all. Green because it spends money and the single Process
+     button is green — the same action, done to a row at once. */
+  .inc-all-btn {
+    margin-top:6px; width:100%; border:0; border-radius:7px; cursor:pointer;
+    background:#1d6b4f; color:#fff; font-weight:800; font-size:12px;
+    padding:6px 8px; font-family:inherit; line-height:1.2;
+  }
+  .inc-all-btn:hover { background:#17573f; }
+  .inc-all-btn.wide { font-size:13px; padding:9px 12px; width:auto; margin-top:0; }
+  .inc-all-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:8px; }
+  .inc-all-note { font-size:12px; color:#857f74; }
   .inc-sum-cell.amazon { border-color:#f0a830; background:#fff9f0; }
   .inc-sum-cell.web { border-color:#49a37c; background:#f1faf5; }
   .inc-sum-cell.ebay { border-color:#4a86e0; background:#f0f5fd; }
@@ -1230,6 +1241,10 @@
         const picked = incChannelFilter === name;
         const dim = incChannelFilter && !picked;
         const needs = items.filter(o => (o.channel || 'Unknown') === name && incNeedsYou(o)).length;
+        // How many of this channel's orders Create all would actually buy.
+        // Shown on the button so the number you press is the number you get,
+        // rather than the channel total which includes the flagged ones.
+        const ready = incReadyForBatch(items, name).length;
         return '<div class="inc-sum-cell ' + incChannelKind(name) +
             (picked ? ' picked' : '') + (dim ? ' dim' : '') + (needs ? ' flashing' : '') +
             '" data-live="channel" data-key="' + escapeHtml(name) + '">' +
@@ -1237,8 +1252,16 @@
           '<span class="inc-sum-n">' + e.n + '</span>' +
           '<span class="inc-sum-name">' + escapeHtml(name) + '</span>' +
           '<span class="inc-sum-status">' + breakdown + '</span>' +
+          (ready
+            ? '<button class="inc-all-btn" data-live="createall" data-key="' + escapeHtml(name) + '">' +
+                'Create all ' + ready + '</button>'
+            : '') +
         '</div>';
       }).join('');
+    // Every channel at once. Only offered when more than one channel has
+    // something ready, because with one it is the same button twice.
+    const readyAll = incReadyForBatch(items, null);
+    const channelsReady = new Set(readyAll.map(o => o.channel || 'Unknown')).size;
     const needing = items.filter(i => (i.fixes || []).length || i.needsCustoms).length;
     const cancels = items.filter(i => i.cancelRequested).length;
     return '<div class="inc-summary">' +
@@ -1252,6 +1275,14 @@
           ' order' + (cancels > 1 ? 's' : '') + ' the buyer has asked to cancel — at the top of the list.</div>'
         : '') +
       '<div class="inc-sum-grid">' + cells + '</div>' +
+      (channelsReady > 1
+        ? '<div class="inc-all-row">' +
+            '<button class="inc-all-btn wide" data-live="createall" data-key="">' +
+              'Create all ' + readyAll.length + ' ready, every shop' +
+            '</button>' +
+            '<span class="inc-all-note">Anything with a warning is left out.</span>' +
+          '</div>'
+        : '') +
       (incChannelFilter
         ? '<div class="inc-filter-note">Showing ' + escapeHtml(incChannelFilter) +
           ' only · <a href="#" data-live="channel" data-key="">show all</a></div>'
@@ -2050,6 +2081,119 @@
   // that does not exist there — which threw silently and made Process do
   // nothing at all. Shared here so both see the same text, including any
   // line edited by hand and any product taught on this device.
+  // Asks PC 2 for the labels on one order. Shared by the single Process
+  // button and by Create all, so a batch cannot drift from what one press
+  // does — the same payload, the same document id, the same guards.
+  async function incWriteLabelRequest(order, key, n) {
+    const payload = order && order.labelPayload;
+    if (!payload) throw new Error('no service worked out for this order');
+
+    // Any address line you approved or typed replaces the suggestion.
+    const chosen = incReadAddr()[key] || {};
+    const parcel = { ...payload.parcel };
+    const FIELD_TO_PARCEL = { name: 'name', companyName: 'company_name',
+                              line1: 'address', line2: 'address_2', city: 'city' };
+    for (const [field, value] of Object.entries(chosen)) {
+      if (FIELD_TO_PARCEL[field]) parcel[FIELD_TO_PARCEL[field]] = value;
+    }
+
+    // The order key is the document id on purpose: asking twice overwrites
+    // one request rather than queueing two labels.
+    const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
+    await db.collection('label-requests').doc(docId).set({
+      orderKey: key,
+      orderNumber: order.orderNumber || '',
+      labels: n,
+      converted: incConvertedTextFor(order, key),
+      payloadJson: JSON.stringify({ ...payload, parcel }),
+      status: 'pending',
+      requestedAt: Date.now()
+    });
+  }
+
+  // Which orders Create all is willing to buy for.
+  //
+  // Deliberately strict. This button spends money on a row of orders at
+  // once with one press, so anything that would have made somebody stop and
+  // look at a single card keeps it out of the batch: a cancellation, a
+  // product that could not be worked out, customs, no priced service, or a
+  // label already asked for. Those stay on screen to be done by hand, which
+  // is what Murat asked for — only the clean ones go.
+  function incReadyForBatch(items, channel) {
+    return (items || []).filter(o => {
+      const key = o.orderNumber || o.id;
+      if (!key) return false;
+      if (channel && (o.channel || 'Unknown') !== channel) return false;
+      if (incLabelState[key]) return false;            // already asked for
+      if (!o.labelPayload) return false;               // nothing priced to buy
+      if (o.cancelRequested || o.needsCustoms) return false;
+      if (incNeedsYou(o)) return false;                // anything flagged
+      if (!incConvertedTextFor(o, key)) return false;  // nothing to pick
+      return true;
+    });
+  }
+
+  // Buys for a whole list, one at a time.
+  //
+  // Sequential on purpose: PC 2 checks Sendcloud for an existing label
+  // before each purchase, and firing them together would let two of them
+  // check before either had finished.
+  async function incCreateAll(items, channel, label) {
+    const ready = incReadyForBatch(items, channel);
+    if (!ready.length) {
+      await askYesNo({
+        title: 'Nothing ready in ' + label,
+        body: 'Every order here either needs something from you first, or ' +
+              'has already been asked for.<br><br>' +
+              'Orders with a warning are left out of Create all on purpose.',
+        yes: 'Understood', no: 'Close'
+      });
+      return;
+    }
+    const totalLabels = ready.reduce((t, o) => t + (incReadLabels()[o.orderNumber || o.id] || 1), 0);
+    const cost = ready.reduce((t, o) => {
+      const n = incReadLabels()[o.orderNumber || o.id] || 1;
+      return t + (o.expectedPrice != null ? Number(o.expectedPrice) * n : 0);
+    }, 0);
+    const skipped = (items || []).filter(o =>
+      (!channel || (o.channel || 'Unknown') === channel) &&
+      !incLabelState[o.orderNumber || o.id] &&
+      !ready.includes(o)).length;
+
+    const ok = await askYesNo({
+      title: 'Create ' + totalLabels + ' label' + (totalLabels > 1 ? 's' : '') + '?',
+      body: '<b>' + ready.length + ' order' + (ready.length > 1 ? 's' : '') + '</b> in ' +
+            escapeHtml(label) + (cost > 0 ? ', about <b>£' + cost.toFixed(2) + '</b> in total' : '') + '.<br><br>' +
+            (skipped ? '<b>' + skipped + '</b> left out because ' +
+                       (skipped > 1 ? 'they need' : 'it needs') +
+                       ' something from you first.<br><br>' : '') +
+            'PC 2 buys them one at a time and checks each order for an ' +
+            'existing label before spending anything.',
+      yes: 'Create ' + totalLabels + ' label' + (totalLabels > 1 ? 's' : '')
+    });
+    if (!ok) return;
+
+    const status = document.getElementById('top-status');
+    let done = 0;
+    const failed = [];
+    for (const o of ready) {
+      const key = o.orderNumber || o.id;
+      const n = incReadLabels()[key] || 1;
+      try {
+        await incWriteLabelRequest(o, key, n);
+        done++;
+        // Said as it goes, because a row of twenty is a long wait in silence.
+        status.textContent = 'Asked PC 2 for ' + done + ' of ' + ready.length + '…';
+      } catch (e) {
+        failed.push((o.orderNumber || key) + ' (' + ((e && e.message) || 'failed') + ')');
+      }
+    }
+    status.textContent = failed.length
+      ? 'Asked PC 2 for ' + done + ' of ' + ready.length + '. These were not sent: ' + failed.join(', ')
+      : 'Asked PC 2 to create labels for all ' + done + ' ready order' + (done > 1 ? 's' : '') + '.';
+    await renderIncomingLive();
+  }
+
   // Titles are dropped from the name on a slot, the same way the sync does
   // it, so a slot made here and a slot made by the sync read identically.
   // Nothing else about the name is touched.
@@ -2465,6 +2609,15 @@
       return;
     }
 
+    if (act === 'createall') {
+      // Inside a channel tile, so stop the tile's own filter click firing.
+      // The button sits inside the channel tile, but closest() finds the
+      // button first, so the tile's own filter click never fires.
+      const chan = b.dataset.key || null;
+      await incCreateAll(incItemsCache || [], chan, chan || 'every shop');
+      return;
+    }
+
     if (act === 'process') {
       // A label may already have been made in Sendcloud by hand, in which
       // case this order is done and nobody has told the system. Asking for
@@ -2501,28 +2654,8 @@
       });
       if (!ok) return;
 
-      // Any address line you approved or typed replaces the suggestion.
-      const chosen = incReadAddr()[key] || {};
-      const parcel = { ...payload.parcel };
-      const FIELD_TO_PARCEL = { name: 'name', companyName: 'company_name',
-                                line1: 'address', line2: 'address_2', city: 'city' };
-      for (const [field, value] of Object.entries(chosen)) {
-        if (FIELD_TO_PARCEL[field]) parcel[FIELD_TO_PARCEL[field]] = value;
-      }
-
-      // The order key is the document id on purpose: pressing Process twice
-      // overwrites one request rather than queueing two labels.
-      const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
       try {
-        await db.collection('label-requests').doc(docId).set({
-          orderKey: key,
-          orderNumber: order.orderNumber || '',
-          labels: n,
-          converted: incConvertedTextFor(order, key),
-          payloadJson: JSON.stringify({ ...payload, parcel }),
-          status: 'pending',
-          requestedAt: Date.now()
-        });
+        await incWriteLabelRequest(order, key, n);
         document.getElementById('top-status').textContent =
           'Asked PC 2 to create ' + n + ' label' + (n > 1 ? 's' : '') + ' for ' +
           (order.orderNumber || key) + '.';
