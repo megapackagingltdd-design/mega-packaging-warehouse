@@ -1934,6 +1934,15 @@
           ? '\u2717 ' + escapeHtml(lab.error || 'The carrier would not accept it.') +
             ' <a href="#" data-live="standardlabel" data-key="' + escapeHtml(key) + '">' +
             'create it on Standard instead</a>'
+          : lab.status === 'failed' && lab.tooLongField
+          // Retrying changes nothing until the field is shorter, so this
+          // offers the edit rather than a button that will fail again. The
+          // suggested shorter version is on this card already, under the
+          // address.
+          ? '\u2717 ' + escapeHtml(lab.error || '') +
+            ' Shorten the ' + escapeHtml(lab.tooLongField) +
+            (lab.tooLongBy ? ' by at least ' + escapeHtml(String(lab.tooLongBy)) + ' characters' : '') +
+            ', then process it again.'
           : lab.status === 'failed'
           ? '\u2717 Sendcloud would not create it: ' + escapeHtml(lab.error || 'no reason given') +
             '. Nothing was charged. ' +
