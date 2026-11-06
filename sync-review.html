@@ -2426,6 +2426,21 @@
         if (bought > 1) header += ' (' + bought + ')';
         const orderNumbers = [order.orderNumber].filter(Boolean);
         const tracking = String(lab.tracking || '').split(',').map(s => s.trim()).filter(Boolean);
+        const parcelIds = String(lab.parcelIds || '').split(',').map(s => s.trim()).filter(Boolean);
+
+        // A slot is a promise that a label exists for this parcel. Murat's
+        // rule, and it is the right one: nothing goes on the warehouse list
+        // unless Sendcloud actually made the label.
+        //
+        // This bit us for real — an Amazon order whose Next Day service does
+        // not run to TA23 was marked done, a picker was given the job, and
+        // there was no label in Created Labels to print. The order stays
+        // here instead, visible, so it can be put on Standard and retried.
+        if (!tracking.length && !parcelIds.length) {
+          console.warn('No slot for ' + key + ': the label request finished with no ' +
+                       'parcel or tracking number, so there is no label to print.');
+          continue;
+        }
 
         try {
           // Claim it first. See above: a missing slot is recoverable, a
