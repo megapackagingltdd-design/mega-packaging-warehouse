@@ -188,6 +188,35 @@
   .other-type-row.active { border-color: #c65d2e; background: #fbf1ea; }
   .field-hidden { display: none !important; }
 
+  /* ---------- Manual label ---------- */
+  .man-note { font-size: 12.5px; color: #6b6760; line-height: 1.45; margin: 0 0 10px; }
+  .man-sub { font-size: 13px; font-weight: 600; color: #3b3832; margin: 16px 0 8px;
+             border-top: 1px solid #e6e3da; padding-top: 12px; }
+  .man-sub:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+  .man-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+  .man-grid .wide { grid-column: 1 / -1; }
+  @media (max-width: 520px) { .man-grid { grid-template-columns: 1fr; } }
+  .man-lab { display: block; font-size: 11.5px; color: #6b6760; margin-bottom: 3px; }
+  .man-grid input[type="text"] { margin-bottom: 0; width: 100%; box-sizing: border-box; }
+  .man-search { width: 100%; box-sizing: border-box; }
+  .man-results { max-height: 300px; overflow-y: auto; border: 1px solid #e6e3da;
+                 border-radius: 8px; margin-top: 8px; }
+  .man-results:empty { display: none; }
+  .man-hit { padding: 9px 11px; border-bottom: 1px solid #f0eee7; cursor: pointer; }
+  .man-hit:last-child { border-bottom: 0; }
+  .man-hit:hover, .man-hit:active { background: #faf7f0; }
+  .man-hit-name { font-size: 13.5px; font-weight: 600; color: #2e2b26; }
+  .man-hit-rest { font-size: 12px; color: #6b6760; margin-top: 2px; }
+  .man-book { font-size: 12.5px; color: #3b3832; background: #f3f6f2;
+              border: 1px solid #dce5d8; border-radius: 8px; padding: 9px 11px; margin-bottom: 10px; }
+  .man-book.empty { background: #fdf6ec; border-color: #ecd9b4; }
+  .man-msg { font-size: 13px; border-radius: 8px; padding: 10px 12px; margin-top: 10px; line-height: 1.45; }
+  .man-msg.err  { background: #fbeceb; border: 1px solid #efc9c5; color: #8d2d24; }
+  .man-msg.wait { background: #fdf6ec; border: 1px solid #ecd9b4; color: #7a5a1c; }
+  .man-msg.ok   { background: #eef5ee; border: 1px solid #cfe2cf; color: #2f6b3e; }
+  .man-check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #3b3832; }
+  .man-check input { width: auto; margin: 0; }
+
   .ns-row { padding: 11px 0; border-bottom: 1px solid #ece9e1; }
   .ns-row:last-child { border-bottom: none; }
   .ns-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
@@ -619,6 +648,11 @@
   .amz-state.done    { background:#eaf5ec; color:#2f6b3e; border:1.5px solid #9ad0ab; }
   .amz-state.failed  { background:#fdeceb; color:#a3271b; border:1.5px solid #e8aaa3; }
   .teach-l { display:block; font-size:12px; font-weight:800; color:#6b665d; margin:10px 0 4px; line-height:1.4; }
+  /* The retail system already knew this product — say so plainly, so the
+     answer is a glance and a press rather than typing out a name the
+     business has had on file all along. */
+  .teach-found { background:#e7f3ec; border-left:4px solid #1d6b4f; border-radius:6px;
+                 padding:9px 11px; margin:0 0 10px; color:#1d4a37; line-height:1.45; }
   .teach-i {
     width:100%; box-sizing:border-box; font-family:inherit; font-size:16px; font-weight:800;
     padding:11px 12px; border:1.5px solid #d5d1c7; border-radius:8px;
@@ -743,6 +777,7 @@
     <button class="tab" data-tab="skipped">Duplicates <span class="tab-count" id="count-skipped">0</span></button>
     <button class="tab warn" data-tab="notscanned" style="display:none;">Not scanned <span class="tab-count" id="count-notscanned">0</span></button>
     <button class="tab" data-tab="upload">Upload</button>
+    <button class="tab" data-tab="manual">Manual label</button>
     <!-- Learned, Dimensions and Measure moved into Settings: they're things
          you look at occasionally, and on a phone they were crowding out the
          tabs used on every order. Their panels stay in the page and are
@@ -816,6 +851,79 @@
     </div>
     <div class="status-line" id="manual-status"></div>
     <div id="manual-labels-list" style="margin-top:10px;"></div>
+  </div>
+
+  <div class="card tab-panel" id="panel-manual" style="display:none;">
+    <p class="man-note">
+      A label for someone who did not come through a shop &mdash; a phone order, a
+      replacement, a sample. PC&nbsp;2 picks the service and buys it from Sendcloud,
+      exactly as it does for a shop order. Nothing is sent to Amazon, eBay or the
+      website, because there is no order there to tell.
+    </p>
+
+    <div class="man-sub">Find a customer</div>
+    <div class="man-book empty" id="man-book-state">No address book loaded on this computer yet.</div>
+    <input type="file" id="man-book-file" accept=".csv,text/csv"/>
+    <input type="text" class="man-search" id="man-search" autocomplete="off"
+           placeholder="Type a name, business, street or postcode&hellip;" disabled/>
+    <div class="man-results" id="man-results"></div>
+
+    <div class="man-sub">Deliver to</div>
+    <div class="man-grid">
+      <div class="wide"><label class="man-lab" for="man-name">Name</label>
+        <input type="text" id="man-name" autocomplete="off"/></div>
+      <div class="wide"><label class="man-lab" for="man-company">Business name</label>
+        <input type="text" id="man-company" autocomplete="off"/></div>
+      <div class="wide"><label class="man-lab" for="man-line1">Address</label>
+        <input type="text" id="man-line1" autocomplete="off"/></div>
+      <div class="wide"><label class="man-lab" for="man-line2">Address line 2</label>
+        <input type="text" id="man-line2" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-house">House number</label>
+        <input type="text" id="man-house" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-city">Town or city</label>
+        <input type="text" id="man-city" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-postcode">Postcode</label>
+        <input type="text" id="man-postcode" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-country">Country</label>
+        <input type="text" id="man-country" value="GB" maxlength="2" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-phone">Phone</label>
+        <input type="text" id="man-phone" inputmode="tel" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-email">Email</label>
+        <input type="text" id="man-email" inputmode="email" autocomplete="off"/></div>
+    </div>
+
+    <div class="man-sub">The parcel</div>
+    <div class="man-grid">
+      <div><label class="man-lab" for="man-weight">Weight (kg)</label>
+        <input type="text" id="man-weight" inputmode="decimal" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-labels">How many labels</label>
+        <input type="text" id="man-labels" inputmode="numeric" value="1" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-length">Length (cm)</label>
+        <input type="text" id="man-length" inputmode="decimal" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-width">Width (cm)</label>
+        <input type="text" id="man-width" inputmode="decimal" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-height">Height (cm)</label>
+        <input type="text" id="man-height" inputmode="decimal" autocomplete="off"/></div>
+      <div><label class="man-lab" for="man-ref">Your reference</label>
+        <input type="text" id="man-ref" autocomplete="off"/></div>
+      <div class="wide man-check">
+        <input type="checkbox" id="man-standard"/>
+        <label for="man-standard">Send Standard instead of Next Day (cheaper, slower)</label>
+      </div>
+    </div>
+
+    <p class="man-note" style="margin-top:10px;">
+      Everything leaves here Next Day unless you tick Standard, the same as a shop order.
+      Sizes are optional, but all three or none &mdash; Sendcloud only uses them as a set.
+      Without them a parcel over 40&nbsp;litres is still charged for the volume, it just
+      will not show in the expected price.
+    </p>
+
+    <div class="btn-row" style="margin-top:12px;">
+      <button class="btn btn-primary" id="man-create">Create label</button>
+      <button class="btn btn-ghost" id="man-clear">Clear</button>
+    </div>
+    <div id="man-msg"></div>
   </div>
 
   <div class="card tab-panel" id="panel-learned" style="display:none;">
@@ -2033,6 +2141,10 @@
     // already been read, converted and confirmed on this very screen.
     await incCreateSlotsForFinishedLabels(items);
 
+    // The retail system's product names, so an unrecognised code can be
+    // answered with a yes rather than typed out. Loaded once and cached.
+    loadRetailSkus();
+
     // Come back in a few seconds if a label is still being bought, so the
     // card stops saying "PC 2 is creating it" on its own.
     incPollIfWaiting();
@@ -2369,7 +2481,46 @@
     return Math.max(1, total / q);
   }
 
+  // The retail system's own name for a product code.
+  //
+  // The retail system has always known what ALC02 is. Until now the parcel
+  // system only learned a product the first time one shipped, so Murat was
+  // typing in a name the business already had on file. These are
+  // suggestions only: nothing is saved until he presses Remember it.
+  let retailSkus = null;
+
+  async function loadRetailSkus() {
+    if (retailSkus) return retailSkus;
+    try {
+      const doc = await db.collection('warehouse-storage').doc('retail-skus').get();
+      const raw = doc.exists ? JSON.parse(doc.data().value || '{}') : {};
+      // Keyed without case or spacing so a shop's version of the code still
+      // finds it. The stored spelling is what gets shown.
+      retailSkus = {};
+      for (const [k, v] of Object.entries(raw)) {
+        retailSkus[String(k).trim().toUpperCase()] = v;
+      }
+    } catch (e) { retailSkus = {}; }
+    return retailSkus;
+  }
+
+  function retailNameFor(sku) {
+    if (!retailSkus) return '';
+    const k = String(sku || '').trim().toUpperCase();
+    if (retailSkus[k]) return retailSkus[k];
+    // Marketplace codes often carry a suffix the retail system does not
+    // use, such as " - FBM". Try the code before any such suffix, but only
+    // as an exact match on what is left — never a partial guess.
+    const base = k.split(/\s*-\s*/)[0].trim();
+    return (base && base !== k && retailSkus[base]) ? retailSkus[base] : '';
+  }
+
   function askTeachSku(sku, suggestedName, qty, typedText) {
+    const fromRetail = retailNameFor(sku);
+    // The retail system's name wins as the starting point, because it is
+    // the business's own wording rather than something scraped off the
+    // order line.
+    const startName = fromRetail || suggestedName;
     return new Promise(resolve => {
       const ov = document.createElement('div');
       ov.className = 'ask-overlay';
@@ -2378,13 +2529,18 @@
           '<div class="ask-title">Remember this product?</div>' +
           '<div class="ask-body">' +
             'SKU <b>' + escapeHtml(sku) + '</b><br><br>' +
+            (fromRetail
+              ? '<div class="teach-found">The retail system calls this ' +
+                  '<b>' + escapeHtml(fromRetail) + '</b>. If that is right, just check ' +
+                  'the two numbers below and press <b>Remember it</b>.</div>'
+              : '') +
             'Give the product name on its own. Leave the quantity out — it is ' +
             'worked out from each order. Check the sums underneath before you ' +
             'save: <b>Remember it</b> fixes this product on every order, ' +
             '<b>Just this order</b> changes only this one.' +
           '</div>' +
           '<label class="teach-l">Product name</label>' +
-          '<input class="teach-i" id="teach-name" value="' + escapeHtml(suggestedName) + '" />' +
+          '<input class="teach-i" id="teach-name" value="' + escapeHtml(startName) + '" />' +
           '<label class="teach-l">How many singles in ONE of these? (a 100-pack is 100)</label>' +
           '<input class="teach-i" id="teach-per" type="number" inputmode="numeric" min="1" value="' +
             (incGuessPerItem(typedText, qty) || 1) + '" />' +
@@ -3476,8 +3632,419 @@
       </div>`;
   }
 
+  // ---------- Manual labels ----------
+  //
+  // Two halves. The address book, which lives only in this browser on this
+  // computer and is never uploaded anywhere; and the request itself, which
+  // goes to PC 2 the same way a shop order's label does.
+  //
+  // The book is deliberately local. It is thousands of real customers'
+  // names and addresses, and the database rules are still open, so it is
+  // not going in there. Loading the CSV on a machine is a 10-second job and
+  // it stays loaded.
+
+  const MAN_DB_NAME = 'mega-address-book';
+  const MAN_STORE = 'rows';
+  const MAN_MAX_HITS = 25;
+
+  let manBook = [];           // [{ hay, row }]
+  let manLoadedAt = '';
+  let manDocId = null;        // one id per draft: pressing twice overwrites
+  let manUnsub = null;
+  let manBusy = false;
+
+  const manEl = (id) => document.getElementById(id);
+  const MAN_FIELDS = ['name', 'company', 'line1', 'line2', 'house', 'city',
+                      'postcode', 'country', 'phone', 'email',
+                      'weight', 'labels', 'length', 'width', 'height', 'ref'];
+
+  // ---- a CSV parser that survives real addresses ----
+  // Commas inside quoted names, doubled quotes, and line breaks inside a
+  // field all occur in this data, so this walks the text rather than
+  // splitting on commas and hoping.
+  function manParseCsv(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);   // Excel's BOM
+    const rows = [];
+    let row = [], cell = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') {
+          if (text[i + 1] === '"') { cell += '"'; i++; }
+          else quoted = false;
+        } else cell += c;
+        continue;
+      }
+      if (c === '"') { quoted = true; continue; }
+      if (c === ',') { row.push(cell); cell = ''; continue; }
+      if (c === '\r') continue;
+      if (c === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; continue; }
+      cell += c;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(r => r.some(v => String(v).trim() !== ''));
+  }
+
+  // One lowercase string per customer holding everything you might type.
+  // Typing matches across all of it at once, so "jane en8" and "plaice
+  // enfield" both find the right row.
+  function manHaystack(r) {
+    return [r.name, r.company_name, r.address_1, r.address_2, r.house_number,
+            r.city, r.postal_code, r.last_order_number]
+      .map(v => String(v || '')).join(' ')
+      .toLowerCase().replace(/\s+/g, ' ');
+  }
+
+  function manBuildBook(rows) {
+    if (!rows.length) return [];
+    const head = rows[0].map(h => String(h || '').trim().toLowerCase());
+    const idx = {};
+    head.forEach((h, i) => { idx[h] = i; });
+    if (!('name' in idx) || !('postal_code' in idx)) {
+      throw new Error('That file does not look like customer-address-book.csv — ' +
+                      'it has no "name" and "postal_code" columns.');
+    }
+    const out = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const get = (k) => (idx[k] != null && r[idx[k]] != null) ? String(r[idx[k]]) : '';
+      const row = {
+        name: get('name'), company_name: get('company_name'),
+        address_1: get('address_1'), address_2: get('address_2'),
+        house_number: get('house_number'), city: get('city'),
+        postal_code: get('postal_code'), country: get('country') || 'GB',
+        telephone: get('telephone'), email: get('email'),
+        last_order_number: get('last_order_number'), last_used: get('last_used')
+      };
+      if (!row.name && !row.postal_code) continue;
+      out.push({ hay: manHaystack(row), row });
+    }
+    return out;
+  }
+
+  // ---- keeping it between visits ----
+  // IndexedDB rather than localStorage: a few thousand addresses is over a
+  // megabyte and localStorage would throw. Every call is wrapped, because
+  // storage is refused outright in a private window and the page has to
+  // work anyway — it just asks for the file again.
+  function manIdb() {
+    return new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(MAN_DB_NAME, 1); }
+      catch (e) { return reject(e); }
+      req.onupgradeneeded = () => {
+        const d = req.result;
+        if (!d.objectStoreNames.contains(MAN_STORE)) d.createObjectStore(MAN_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('indexedDB refused'));
+    });
+  }
+
+  async function manSaveBook(rows, loadedAt) {
+    try {
+      const d = await manIdb();
+      await new Promise((resolve, reject) => {
+        const tx = d.transaction(MAN_STORE, 'readwrite');
+        tx.objectStore(MAN_STORE).put({ rows, loadedAt }, 'book');
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      d.close();
+    } catch (e) {
+      console.warn('Address book not saved for next time:', e && e.message);
+    }
+  }
+
+  async function manLoadSavedBook() {
+    try {
+      const d = await manIdb();
+      const got = await new Promise((resolve, reject) => {
+        const tx = d.transaction(MAN_STORE, 'readonly');
+        const r = tx.objectStore(MAN_STORE).get('book');
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+      });
+      d.close();
+      if (got && Array.isArray(got.rows)) {
+        manBook = got.rows.map(row => ({ hay: manHaystack(row), row }));
+        manLoadedAt = got.loadedAt || '';
+      }
+    } catch (e) {
+      // No saved book, or storage is unavailable. Neither is a problem.
+    }
+    manPaintBookState();
+  }
+
+  function manPaintBookState() {
+    const el = manEl('man-book-state');
+    const search = manEl('man-search');
+    if (!el) return;
+    if (manBook.length) {
+      el.className = 'man-book';
+      el.textContent = manBook.length.toLocaleString() + ' customers loaded on this computer' +
+                       (manLoadedAt ? ' (from the file of ' + manLoadedAt + ')' : '') +
+                       '. Pick a newer file any time to replace it.';
+      if (search) { search.disabled = false; search.placeholder = 'Type a name, business, street or postcode…'; }
+    } else {
+      el.className = 'man-book empty';
+      el.textContent = 'No address book loaded on this computer yet. Choose the ' +
+                       'customer-address-book.csv that PC 2 produced — it stays in this ' +
+                       'browser and is not uploaded anywhere.';
+      if (search) { search.disabled = true; search.placeholder = 'Load the address book first, or just type the address below'; }
+    }
+  }
+
+  // ---- search as you type ----
+  let manSearchTimer = null;
+
+  function manSearch(q) {
+    const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) return [];
+    const hits = [];
+    for (const entry of manBook) {
+      let all = true;
+      for (const t of terms) { if (entry.hay.indexOf(t) === -1) { all = false; break; } }
+      if (all) {
+        hits.push(entry);
+        if (hits.length >= MAN_MAX_HITS) break;
+      }
+    }
+    return hits;
+  }
+
+  function manRenderHits(hits, q) {
+    const box = manEl('man-results');
+    if (!box) return;
+    if (!q) { box.innerHTML = ''; return; }
+    if (!hits.length) {
+      box.innerHTML = '<div class="man-hit" style="cursor:default;">' +
+                      '<div class="man-hit-rest">Nobody matches that. Type the address below instead.</div></div>';
+      return;
+    }
+    box.innerHTML = hits.map((h, i) => {
+      const r = h.row;
+      const rest = [r.company_name, r.address_1, r.city, r.postal_code]
+        .filter(v => String(v || '').trim()).join(' · ');
+      return '<div class="man-hit" data-hit="' + i + '">' +
+             '<div class="man-hit-name">' + escapeHtml(r.name || '(no name)') + '</div>' +
+             '<div class="man-hit-rest">' + escapeHtml(rest) + '</div></div>';
+    }).join('');
+    for (const el of box.querySelectorAll('.man-hit[data-hit]')) {
+      el.addEventListener('click', () => {
+        manFill(hits[Number(el.dataset.hit)].row);
+        box.innerHTML = '';
+        const sb = manEl('man-search');
+        if (sb) sb.value = '';
+      });
+    }
+  }
+
+  // Straight copy, field for field. Nothing is corrected, completed or
+  // tidied on the way in — what Sendcloud held is what goes on the label
+  // unless Murat changes it himself.
+  function manFill(r) {
+    const set = (id, v) => { const el = manEl(id); if (el) el.value = v == null ? '' : String(v); };
+    set('man-name', r.name);
+    set('man-company', r.company_name);
+    set('man-line1', r.address_1);
+    set('man-line2', r.address_2);
+    set('man-house', r.house_number);
+    set('man-city', r.city);
+    set('man-postcode', r.postal_code);
+    set('man-country', r.country || 'GB');
+    set('man-phone', r.telephone);
+    set('man-email', r.email);
+    manMsg('');
+  }
+
+  function manMsg(text, kind) {
+    const el = manEl('man-msg');
+    if (!el) return;
+    el.innerHTML = text ? '<div class="man-msg ' + (kind || 'wait') + '">' + text + '</div>' : '';
+  }
+
+  function manClear() {
+    for (const f of MAN_FIELDS) {
+      const el = manEl('man-' + f);
+      if (el) el.value = (f === 'country') ? 'GB' : (f === 'labels' ? '1' : '');
+    }
+    const nd = manEl('man-standard'); if (nd) nd.checked = false;
+    const sb = manEl('man-search'); if (sb) sb.value = '';
+    const rs = manEl('man-results'); if (rs) rs.innerHTML = '';
+    if (manUnsub) { try { manUnsub(); } catch (e) {} manUnsub = null; }
+    manDocId = null;
+    manMsg('');
+  }
+
+  // ---- buying it ----
+  async function manCreate() {
+    if (manBusy) return;
+    const v = (id) => String((manEl('man-' + id) || {}).value || '').trim();
+    const num = (id) => { const n = Number(v(id).replace(',', '.')); return Number.isFinite(n) ? n : 0; };
+
+    const name = v('name'), line1 = v('line1'), postcode = v('postcode');
+    const weight = num('weight');
+    const labels = Math.max(1, Math.min(10, Math.round(num('labels')) || 1));
+
+    const missing = [];
+    if (!name) missing.push('a name');
+    if (!line1) missing.push('an address');
+    if (!postcode) missing.push('a postcode');
+    if (!(weight > 0)) missing.push('a weight in kg');
+    if (missing.length) {
+      manMsg('This needs ' + missing.join(', ') + ' before a label can be bought.', 'err');
+      return;
+    }
+
+    const L = num('length'), W = num('width'), H = num('height');
+    const some = (L > 0) || (W > 0) || (H > 0);
+    if (some && !(L > 0 && W > 0 && H > 0)) {
+      manMsg('Sendcloud only uses sizes as a complete set — give length, width and ' +
+             'height, or leave all three empty.', 'err');
+      return;
+    }
+
+    const manual = {
+      name: name,
+      companyName: v('company'),
+      line1: line1,
+      line2: v('line2'),
+      houseNumber: v('house'),
+      city: v('city'),
+      postcode: postcode,
+      countryCode: (v('country') || 'GB').toUpperCase(),
+      email: v('email'),
+      phone: v('phone'),
+      weightKg: weight,
+      lengthCm: L, widthCm: W, heightCm: H,
+      speed: (manEl('man-standard') || {}).checked ? 'standard' : 'nextday',
+      reference: v('ref')
+    };
+
+    // One document id per draft. Pressing Create twice replaces the same
+    // request instead of queueing a second label — which is the difference
+    // between a double-click and paying twice.
+    if (!manDocId) {
+      manDocId = 'manual_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    }
+
+    manBusy = true;
+    const btn = manEl('man-create');
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending to PC 2…'; }
+    manMsg('Sent to PC 2. It picks the service and buys the label — this usually takes under a minute.', 'wait');
+
+    try {
+      await db.collection('label-requests').doc(manDocId).set({
+        manual: true,
+        orderNumber: manual.reference || '',
+        labels: labels,
+        manualJson: JSON.stringify(manual),
+        status: 'pending',
+        requestedAt: Date.now()
+      });
+    } catch (e) {
+      manBusy = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Create label'; }
+      manMsg('Could not reach the database, so nothing was asked for: ' + escapeHtml(e.message), 'err');
+      return;
+    }
+
+    manWatch(manDocId, labels);
+  }
+
+  // Watches the request PC 2 is working on and says what happened.
+  function manWatch(docId, labels) {
+    if (manUnsub) { try { manUnsub(); } catch (e) {} manUnsub = null; }
+    const btn = manEl('man-create');
+    const done = () => {
+      manBusy = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Create label'; }
+      if (manUnsub) { try { manUnsub(); } catch (e) {} manUnsub = null; }
+    };
+
+    manUnsub = db.collection('label-requests').doc(docId).onSnapshot(snap => {
+      const d = snap.data();
+      if (!d) return;
+      if (d.status === 'working') {
+        manMsg('PC 2 has it and is buying the label now…', 'wait');
+        return;
+      }
+      if (d.status === 'done') {
+        const tracking = String(d.tracking || '').split(',').filter(Boolean);
+        manMsg('Label bought. ' +
+               (tracking.length
+                  ? 'Tracking: <strong>' + escapeHtml(tracking.join(', ')) + '</strong>. '
+                  : '') +
+               'It is in Sendcloud’s Created Labels and will print from the ' +
+               'warehouse like any other. Press Clear to start another.', 'ok');
+        // A new draft needs a new id, or the next label would overwrite this one.
+        manDocId = null;
+        done();
+        return;
+      }
+      if (d.status === 'failed' || d.status === 'skipped') {
+        manMsg('Not bought. ' + escapeHtml(d.error || 'PC 2 did not say why.') +
+               '<br/><br/>Nothing was charged. Fix it above and press Create label again.', 'err');
+        done();
+        return;
+      }
+    }, err => {
+      manMsg('Lost touch with the request — it may still have gone through. ' +
+             'Check Sendcloud before trying again. (' + escapeHtml(err.message) + ')', 'err');
+      done();
+    });
+  }
+
+  // ---- wiring ----
+  (function manWire() {
+    const file = manEl('man-book-file');
+    if (file) {
+      file.addEventListener('change', async () => {
+        const f = file.files && file.files[0];
+        if (!f) return;
+        manMsg('Reading the address book…', 'wait');
+        try {
+          const text = await f.text();
+          const built = manBuildBook(manParseCsv(text));
+          if (!built.length) throw new Error('That file has no customers in it.');
+          manBook = built;
+          manLoadedAt = new Date(f.lastModified || Date.now()).toISOString().slice(0, 10);
+          manPaintBookState();
+          manMsg(built.length.toLocaleString() + ' customers loaded. They stay in this ' +
+                 'browser on this computer and are not uploaded anywhere.', 'ok');
+          await manSaveBook(built.map(b => b.row), manLoadedAt);
+        } catch (e) {
+          manMsg('Could not read that file: ' + escapeHtml(e.message), 'err');
+        }
+        file.value = '';
+      });
+    }
+
+    const search = manEl('man-search');
+    if (search) {
+      const run = () => {
+        const q = search.value.trim();
+        manRenderHits(manSearch(q), q);
+      };
+      // A short wait so a fast typist does not re-filter on every keypress,
+      // short enough that it still feels immediate.
+      search.addEventListener('input', () => {
+        clearTimeout(manSearchTimer);
+        manSearchTimer = setTimeout(run, 80);
+      });
+    }
+
+    const create = manEl('man-create');
+    if (create) create.addEventListener('click', manCreate);
+    const clear = manEl('man-clear');
+    if (clear) clear.addEventListener('click', manClear);
+
+    manLoadSavedBook();
+  })();
+
   // ---------- Tabs ----------
-  const ALL_TABS = ['attention', 'incoming', 'other', 'skipped', 'notscanned', 'upload', 'learned', 'dimensions', 'measure'];
+  const ALL_TABS = ['attention', 'incoming', 'other', 'skipped', 'notscanned', 'upload', 'manual', 'learned', 'dimensions', 'measure'];
   let activeTab = null;
   let userPickedTab = false;   // once you choose a tab, renders stop moving you
 
