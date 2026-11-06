@@ -1927,6 +1927,13 @@
                              : '. Adding it to the warehouse list\u2026') +
             (lab.linked === false
               ? ' <b>The shop was not told</b> \u2014 mark it shipped there by hand.' : '')
+          : lab.status === 'failed' && lab.suggestStandard
+          // The carrier refused the service AFTER the parcel was bought, so
+          // this must not claim nothing was charged - a label does exist, it
+          // is just dead. Offer the switch he would make by hand.
+          ? '\u2717 ' + escapeHtml(lab.error || 'The carrier would not accept it.') +
+            ' <a href="#" data-live="standardlabel" data-key="' + escapeHtml(key) + '">' +
+            'create it on Standard instead</a>'
           : lab.status === 'failed'
           ? '\u2717 Sendcloud would not create it: ' + escapeHtml(lab.error || 'no reason given') +
             '. Nothing was charged. ' +
@@ -2251,7 +2258,7 @@
   // Asks PC 2 for the labels on one order. Shared by the single Process
   // button and by Create all, so a batch cannot drift from what one press
   // does — the same payload, the same document id, the same guards.
-  async function incWriteLabelRequest(order, key, n) {
+  async function incWriteLabelRequest(order, key, n, opts) {
     const payload = order && order.labelPayload;
     if (!payload) throw new Error('no service worked out for this order');
 
@@ -2273,6 +2280,11 @@
       labels: n,
       converted: incConvertedTextFor(order, key),
       payloadJson: JSON.stringify({ ...payload, parcel }),
+      // Set only by "create it on Standard instead", after the carrier
+      // refused the quicker service for that postcode. PC 2 picks the
+      // service; the page does not name one, because the page has no
+      // price list and guessing here is how you buy the wrong thing.
+      forceStandard: !!(opts && opts.forceStandard),
       status: 'pending',
       requestedAt: Date.now()
     });
@@ -2952,6 +2964,26 @@
         const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
         await db.collection('label-requests').doc(docId).delete();
       } catch (e) { /* already gone — the button returns either way */ }
+      await renderIncomingLive();
+      return;
+    }
+
+    // The carrier refused the quicker service for this postcode. Clear the
+    // dead request and ask again on the slower one — the same thing Murat
+    // would do by hand in the Sendcloud panel, in one click.
+    if (act === 'standardlabel') {
+      const prev = incLabelState[key] || {};
+      const n = Math.max(1, Number(prev.labels) || 1);
+      b.textContent = 'asking PC 2\u2026';
+      try {
+        const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
+        await db.collection('label-requests').doc(docId).delete();
+      } catch (e) { /* already gone */ }
+      try {
+        await incWriteLabelRequest(order, key, n, { forceStandard: true });
+      } catch (e) {
+        alert('Could not ask for the Standard label: ' + e.message);
+      }
       await renderIncomingLive();
       return;
     }
