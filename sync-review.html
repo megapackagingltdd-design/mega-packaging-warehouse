@@ -2068,6 +2068,14 @@
     incPollTimer = setTimeout(() => { renderIncomingLive().catch(() => {}); }, INC_POLL_MS);
   }
 
+  // Orders whose label is bought AND whose warehouse slot exists. They are
+  // dropped from the list the moment both are true, rather than lingering
+  // until the next sync — a finished order sitting among the unfinished
+  // ones reads as unprocessed, and on a busy morning that is how something
+  // gets done twice. Kept for the session only, so a reload shows whatever
+  // Sendcloud actually still has waiting.
+  const incFinishedThisSession = new Map();   // key -> { name, tracking }
+
   async function renderIncomingLive() {
     const wrap = document.getElementById('inc-live');
     const ageEl = document.getElementById('inc-age');
@@ -2148,6 +2156,26 @@
     // already been read, converted and confirmed on this very screen.
     await incCreateSlotsForFinishedLabels(items);
 
+    // Both halves done: the label exists and the warehouse has the job.
+    // Nothing on this screen applies to it any more.
+    for (const o of items) {
+      const k = o.orderNumber || o.id;
+      const lab = k && incLabelState[k];
+      // Not when the shop was never told. That card is the only place the
+      // "mark it shipped by hand" warning appears, and an order nobody has
+      // marked is unfinished however many labels exist for it.
+      const needsHandMarking = lab && lab.linked === false;
+      if (lab && lab.status === 'done' && lab[INC_SLOT_FLAG] && !needsHandMarking &&
+          !incFinishedThisSession.has(k)) {
+        const addr = o.address || {};
+        incFinishedThisSession.set(k, {
+          name: incStripTitle(addr.name || o.customerName || k),
+          tracking: String(lab.tracking || '')
+        });
+      }
+    }
+    items = items.filter(o => !incFinishedThisSession.has(o.orderNumber || o.id));
+
     // The retail system's product names, so an unrecognised code can be
     // answered with a yes rather than typed out. Loaded once and cached.
     loadRetailSkus();
@@ -2170,9 +2198,21 @@
     // again — unless you have already chosen a tab yourself.
     if (!userPickedTab) chooseDefaultTab();
 
+    // The cards go the moment they are finished, so this is the only
+    // acknowledgement that they were done at all. It has to survive the
+    // list emptying, which is exactly when it matters most.
+    const justDone = [...incFinishedThisSession.values()];
+    const doneNote = justDone.length
+      ? '<div class="amz-state done" style="margin-bottom:10px;">\u2713 ' +
+        justDone.length + (justDone.length === 1 ? ' label' : ' labels') +
+        ' created and sent to the warehouse: ' +
+        escapeHtml(justDone.map(x => x.name).join(', ')) + '</div>'
+      : '';
+
     if (!items.length) {
       wrap.dataset.loaded = '1';
-      wrap.innerHTML = '<div class="inc-empty"><b>No orders waiting</b>' +
+      wrap.innerHTML = doneNote +
+        '<div class="inc-empty"><b>No orders waiting</b>' +
         'Everything Sendcloud has from the last couple of weeks is already shipped or cancelled.</div>';
       return;
     }
@@ -2206,7 +2246,7 @@
       ? shown.map(incLiveCard).join('')
       : '<div class="inc-empty"><b>Nothing waiting for ' + escapeHtml(incChannelFilter || '') + '</b>' +
         'Tap the channel again to show everything.</div>';
-    wrap.innerHTML = incSummaryHtml(items) + note + body;
+    wrap.innerHTML = incSummaryHtml(items) + doneNote + note + body;
   }
 
 
