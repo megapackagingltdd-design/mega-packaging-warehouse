@@ -190,6 +190,17 @@
 
   /* ---------- Manual label ---------- */
   .man-note { font-size: 12.5px; color: #6b6760; line-height: 1.45; margin: 0 0 10px; }
+  .man-prod-row { display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+  .man-prod-row input.man-prod-text { flex:1 1 auto; min-width:0; }
+  .man-prod-row input.man-prod-qty { width:72px; flex:0 0 auto; text-align:center; }
+  .man-prod-row .man-prod-del {
+    flex:0 0 auto; width:32px; height:32px; line-height:1; font-size:16px; font-weight:800;
+    font-family:inherit; border:1.5px solid #d5d1c7; background:#fff; color:#8a8378;
+    border-radius:7px; cursor:pointer;
+  }
+  .man-prod-row .man-prod-del:hover { border-color:#c9574b; color:#c9574b; }
+  .man-prod-add { margin-bottom:4px; }
+  .man-step-wrap { display:flex; align-items:center; height:38px; }
   .man-sub { font-size: 13px; font-weight: 600; color: #3b3832; margin: 16px 0 8px;
              border-top: 1px solid #e6e3da; padding-top: 12px; }
   .man-sub:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
@@ -671,6 +682,10 @@
   .surcharge-box b { color:#5c4500; }
   .surcharge-row { display:flex; justify-content:space-between; gap:10px; }
   .quote-guess { font-size:11.5px; color:#857f74; }
+  .svc-forced {
+    display:block; margin-top:6px; font-size:12px; font-weight:700; line-height:1.45;
+    color:#7a4b00; background:#fdf3e2; border:1.5px solid #e6c489; border-radius:7px; padding:7px 9px;
+  }
   .svc-fallback {
     display:block; margin-top:6px; font-size:12px; font-weight:700; line-height:1.45;
     color:#0b4ea8; background:#eef4fd; border:1.5px solid #9ec1ef; border-radius:7px; padding:7px 9px;
@@ -854,13 +869,6 @@
   </div>
 
   <div class="card tab-panel" id="panel-manual" style="display:none;">
-    <p class="man-note">
-      A label for someone who did not come through a shop &mdash; a phone order, a
-      replacement, a sample. PC&nbsp;2 picks the service and buys it from Sendcloud,
-      exactly as it does for a shop order. Nothing is sent to Amazon, eBay or the
-      website, because there is no order there to tell.
-    </p>
-
     <div class="man-sub">Find a customer</div>
     <div class="man-book empty" id="man-book-state">No address book loaded on this computer yet.</div>
     <input type="file" id="man-book-file" accept=".csv,text/csv"/>
@@ -892,12 +900,24 @@
         <input type="text" id="man-email" inputmode="email" autocomplete="off"/></div>
     </div>
 
+    <div class="man-sub">What is in the parcel</div>
+    <div id="man-prod-rows"></div>
+    <datalist id="man-prod-list"></datalist>
+    <button class="btn btn-ghost man-prod-add" id="man-prod-add" type="button">+ Add another product</button>
+
     <div class="man-sub">The parcel</div>
     <div class="man-grid">
       <div><label class="man-lab" for="man-weight">Weight (kg)</label>
-        <input type="text" id="man-weight" inputmode="decimal" autocomplete="off"/></div>
-      <div><label class="man-lab" for="man-labels">How many labels</label>
-        <input type="text" id="man-labels" inputmode="numeric" value="1" autocomplete="off"/></div>
+        <input type="text" id="man-weight" inputmode="decimal" value="5" autocomplete="off"/></div>
+      <div><label class="man-lab">How many labels</label>
+        <div class="man-step-wrap">
+          <span class="stepper">
+            <button type="button" id="man-labels-minus" disabled>&minus;</button>
+            <span class="val" id="man-labels-val">1</span>
+            <button type="button" id="man-labels-plus">+</button>
+          </span>
+          <input type="hidden" id="man-labels" value="1"/>
+        </div></div>
       <div><label class="man-lab" for="man-length">Length (cm)</label>
         <input type="text" id="man-length" inputmode="decimal" autocomplete="off"/></div>
       <div><label class="man-lab" for="man-width">Width (cm)</label>
@@ -2035,6 +2055,10 @@
               // while scanning the list, so it sits behind the + with the
               // rest of the shipping detail.
               : '') +
+            (o.forcedStandardByArea
+              ? '<span class="svc-forced">Quoted on the slower service because ' +
+                escapeHtml(o.fallbackArea || 'this area') + ' refused the quicker one.</span>'
+              : '') +
             (o.fallbackTo
               ? '<span class="svc-fallback">' + escapeHtml(o.fallbackArea) +
                 ' turned this service down ' + (o.fallbackSeen > 1 ? o.fallbackSeen + ' times before' : 'before') +
@@ -2952,7 +2976,21 @@
       if (!ok) return;
 
       try {
-        await incWriteLabelRequest(order, key, n);
+        // If the carrier already refused the quicker service for this very
+        // order, Process must not walk into the same wall again. Pressing
+        // it is the natural thing to do after reading the warning, so it
+        // does what the warning asks rather than needing the link beside
+        // it. The link stays for the case where the card has been
+        // re-rendered and the failed request is no longer in hand.
+        const prevFail = incLabelState[key] || {};
+        const retryStandard = prevFail.status === 'failed' && !!prevFail.suggestStandard;
+        if (retryStandard) {
+          try {
+            const docId = String(key).replace(/[^A-Za-z0-9_-]+/g, '_').slice(0, 120);
+            await db.collection('label-requests').doc(docId).delete();
+          } catch (e) { /* already gone */ }
+        }
+        await incWriteLabelRequest(order, key, n, retryStandard ? { forceStandard: true } : undefined);
         document.getElementById('top-status').textContent =
           'Asked PC 2 to create ' + n + ' label' + (n > 1 ? 's' : '') + ' for ' +
           (order.orderNumber || key) + '.';
@@ -3877,12 +3915,14 @@
     const search = manEl('man-search');
     if (!el) return;
     if (manBook.length) {
-      el.className = 'man-book';
-      el.textContent = manBook.length.toLocaleString() + ' customers loaded on this computer' +
-                       (manLoadedAt ? ' (from the file of ' + manLoadedAt + ')' : '') +
-                       '. Pick a newer file any time to replace it.';
+      // Nothing to say once it is loaded. The search box going live is the
+      // only confirmation worth having, and a running count of customers is
+      // a line to read past every single time.
+      el.style.display = 'none';
+      el.textContent = '';
       if (search) { search.disabled = false; search.placeholder = 'Type a name, business, street or postcode…'; }
     } else {
+      el.style.display = '';
       el.className = 'man-book empty';
       el.textContent = 'No address book loaded on this computer yet. Choose the ' +
                        'customer-address-book.csv that PC 2 produced — it stays in this ' +
@@ -3963,8 +4003,14 @@
   function manClear() {
     for (const f of MAN_FIELDS) {
       const el = manEl('man-' + f);
-      if (el) el.value = (f === 'country') ? 'GB' : (f === 'labels' ? '1' : '');
+      // 5 kg is the usual parcel here, so it is what the form starts on.
+      // It decides the service band, so it is a real default, not decoration.
+      if (el) el.value = (f === 'country') ? 'GB'
+                       : (f === 'labels' ? '1'
+                       : (f === 'weight' ? '5' : ''));
     }
+    manSetLabels(1);
+    manResetProdRows();
     const nd = manEl('man-standard'); if (nd) nd.checked = false;
     const sb = manEl('man-search'); if (sb) sb.value = '';
     const rs = manEl('man-results'); if (rs) rs.innerHTML = '';
@@ -3974,6 +4020,107 @@
   }
 
   // ---- buying it ----
+  // ---------- What is in the parcel ----------
+  //
+  // A manual label used to produce a parcel with no picking line, so the
+  // warehouse slot could not be made here and the job had to be finished by
+  // hand on the Incoming screen afterwards. Asking for the contents on the
+  // same form means one trip: the label is bought and the slot goes to the
+  // warehouse in the same breath.
+  //
+  // The suggestions are the products this system already knows — the SKU
+  // corrections that have been taught to it and anything measured in the
+  // warehouse. It is a datalist, not a closed dropdown, so anything can
+  // still be typed. NOTHING is auto-corrected to a near match: the text
+  // that reaches the picker is the text that was typed or picked, exactly.
+  let manKnownProducts = [];
+
+  async function manLoadKnownProducts() {
+    const found = new Set();
+    try {
+      const snap = await db.collection('sku-corrections').get();
+      snap.forEach(d => {
+        const label = String((d.data() || {}).label || '').trim();
+        if (label) found.add(label);
+      });
+    } catch (e) { /* suggestions are a convenience, never a blocker */ }
+    try {
+      // The same store the Dimensions tab reads: an object of measured
+      // products keyed by product, under warehouse-storage.
+      const snap = await storageCollection.doc(DIMENSIONS_KEY).get();
+      const all = snap.exists ? JSON.parse(snap.data().value || '{}') : {};
+      for (const r of Object.values(all)) {
+        const n = String((r && (r.product || r.key)) || '').trim();
+        if (n) found.add(n);
+      }
+    } catch (e) { /* same */ }
+    manKnownProducts = Array.from(found).sort((a, b) => a.localeCompare(b));
+    const list = document.getElementById('man-prod-list');
+    if (list) {
+      list.innerHTML = manKnownProducts
+        .map(p => '<option value="' + escapeHtml(p) + '"></option>').join('');
+    }
+  }
+
+  function manProdRowHtml() {
+    return '<div class="man-prod-row">' +
+      '<input type="text" class="man-prod-text" list="man-prod-list" autocomplete="off" ' +
+        'placeholder="What is being sent — type it or pick a known one"/>' +
+      '<input type="text" class="man-prod-qty" inputmode="numeric" value="1" ' +
+        'aria-label="How many" title="How many of this product"/>' +
+      '<button type="button" class="man-prod-del" title="Remove this line">&times;</button>' +
+      '</div>';
+  }
+
+  function manAddProdRow() {
+    const wrap = document.getElementById('man-prod-rows');
+    if (!wrap) return;
+    wrap.insertAdjacentHTML('beforeend', manProdRowHtml());
+    const rows = wrap.querySelectorAll('.man-prod-text');
+    const last = rows[rows.length - 1];
+    if (last && rows.length > 1) last.focus();
+  }
+
+  function manResetProdRows() {
+    const wrap = document.getElementById('man-prod-rows');
+    if (wrap) wrap.innerHTML = manProdRowHtml();
+  }
+
+  // The lines as they will reach the picker. Quantity is written the way
+  // the rest of the system writes it, so a manual job reads like any other.
+  function manReadProducts() {
+    const wrap = document.getElementById('man-prod-rows');
+    if (!wrap) return [];
+    return Array.from(wrap.querySelectorAll('.man-prod-row')).map(row => {
+      const text = String((row.querySelector('.man-prod-text') || {}).value || '').trim();
+      const qtyRaw = Number(String((row.querySelector('.man-prod-qty') || {}).value || '1').trim());
+      const qty = Number.isFinite(qtyRaw) && qtyRaw > 0 ? Math.round(qtyRaw) : 1;
+      return { text, qty };
+    }).filter(p => p.text);
+  }
+
+  function manProductsLine(products) {
+    return products.map(p => p.qty > 1 ? p.text + ' x' + p.qty : p.text).join(' + ');
+  }
+
+  // ---------- How many labels ----------
+  function manLabelsCount() {
+    const n = Number((manEl('man-labels') || {}).value || 1);
+    return Math.max(1, Math.min(10, Math.round(n) || 1));
+  }
+
+  function manSetLabels(n) {
+    const v = Math.max(1, Math.min(10, Math.round(n) || 1));
+    const hidden = manEl('man-labels');
+    if (hidden) hidden.value = String(v);
+    const show = document.getElementById('man-labels-val');
+    if (show) show.textContent = String(v);
+    const minus = document.getElementById('man-labels-minus');
+    const plus = document.getElementById('man-labels-plus');
+    if (minus) minus.disabled = v <= 1;
+    if (plus) plus.disabled = v >= 10;
+  }
+
   async function manCreate() {
     if (manBusy) return;
     const v = (id) => String((manEl('man-' + id) || {}).value || '').trim();
@@ -3981,13 +4128,17 @@
 
     const name = v('name'), line1 = v('line1'), postcode = v('postcode');
     const weight = num('weight');
-    const labels = Math.max(1, Math.min(10, Math.round(num('labels')) || 1));
+    const labels = manLabelsCount();
+    const products = manReadProducts();
 
     const missing = [];
     if (!name) missing.push('a name');
     if (!line1) missing.push('an address');
     if (!postcode) missing.push('a postcode');
     if (!(weight > 0)) missing.push('a weight in kg');
+    // Required, because a slot with no picking line is no use to anybody and
+    // this is the whole reason the job used to need finishing by hand.
+    if (!products.length) missing.push('what is in the parcel');
     if (missing.length) {
       manMsg('This needs ' + missing.join(', ') + ' before a label can be bought.', 'err');
       return;
@@ -4018,6 +4169,14 @@
       reference: v('ref')
     };
 
+    // The warehouse line, built here where the typed words are, and stored
+    // on the request so the slot can be made the moment the label exists.
+    // Written exactly as typed or picked — never matched to a similar
+    // product, never tidied.
+    const slotHeader = (name + (postcode ? ' (' + postcode.toUpperCase() + ')' : '')) +
+                       (labels > 1 ? ' (' + labels + ')' : '');
+    const slotText = slotHeader + '\n' + manProductsLine(products);
+
     // One document id per draft. Pressing Create twice replaces the same
     // request instead of queueing a second label — which is the difference
     // between a double-click and paying twice.
@@ -4036,6 +4195,8 @@
         orderNumber: manual.reference || '',
         labels: labels,
         manualJson: JSON.stringify(manual),
+        productsJson: JSON.stringify(products),
+        slotText: slotText,
         status: 'pending',
         requestedAt: Date.now()
       });
@@ -4067,16 +4228,57 @@
         return;
       }
       if (d.status === 'done') {
-        const tracking = String(d.tracking || '').split(',').filter(Boolean);
+        const tracking = String(d.tracking || '').split(',').map(x => x.trim()).filter(Boolean);
+        const parcelIds = String(d.parcelIds || '').split(',').map(x => x.trim()).filter(Boolean);
         manMsg('Label bought. ' +
                (tracking.length
                   ? 'Tracking: <strong>' + escapeHtml(tracking.join(', ')) + '</strong>. '
                   : '') +
-               'It is in Sendcloud’s Created Labels and will print from the ' +
-               'warehouse like any other. Press Clear to start another.', 'ok');
-        // A new draft needs a new id, or the next label would overwrite this one.
-        manDocId = null;
-        done();
+               'Putting it on the warehouse list\u2026', 'ok');
+
+        // Straight onto the warehouse list, with the products typed on this
+        // form. No second trip to the Incoming screen to say what to pick.
+        //
+        // Claimed on the request first, exactly as shop orders are: a slot
+        // that fails to appear can be put right, a duplicated one gets
+        // picked and shipped twice. And no slot at all unless a label
+        // really exists — the same rule everywhere else.
+        (async () => {
+          try {
+            if (d.slotSent) { manDocId = null; done(); return; }
+            if (!tracking.length && !parcelIds.length) {
+              manMsg('Label request finished with no tracking number, so nothing has ' +
+                     'gone to the warehouse. Check Sendcloud before trying again.', 'err');
+              manDocId = null; done(); return;
+            }
+            const text = String(d.slotText || '').trim();
+            if (!text || text.indexOf('\n') < 0) {
+              manMsg('Label bought (' + escapeHtml(tracking.join(', ')) + '), but this ' +
+                     'request has no product line, so it was not put on the warehouse ' +
+                     'list. Add it there by hand.', 'err');
+              manDocId = null; done(); return;
+            }
+            await db.collection('label-requests').doc(docId).update({
+              slotSent: true, slotSentAt: Date.now()
+            });
+            const ref = String(d.orderNumber || '').trim();
+            await addOrderAsSlot(text, ref ? [ref] : [], false, false, tracking);
+            manMsg('Label bought' +
+                   (tracking.length ? ' \u2014 <strong>' + escapeHtml(tracking.join(', ')) +
+                    '</strong>' : '') +
+                   ', and it is on the warehouse list ready to print. ' +
+                   'Press Clear to start another.', 'ok');
+          } catch (e) {
+            manMsg('Label bought' +
+                   (tracking.length ? ' (' + escapeHtml(tracking.join(', ')) + ')' : '') +
+                   ', but it could not be added to the warehouse list: ' +
+                   escapeHtml((e && e.message) || 'unknown') +
+                   '. Add it there by hand.', 'err');
+          }
+          // A new draft needs a new id, or the next label would overwrite this one.
+          manDocId = null;
+          done();
+        })();
         return;
       }
       if (d.status === 'failed' || d.status === 'skipped') {
@@ -4136,6 +4338,34 @@
     const clear = manEl('man-clear');
     if (clear) clear.addEventListener('click', manClear);
 
+    const addProd = document.getElementById('man-prod-add');
+    if (addProd) addProd.addEventListener('click', manAddProdRow);
+    const prodWrap = document.getElementById('man-prod-rows');
+    if (prodWrap) {
+      prodWrap.addEventListener('click', (e) => {
+        const del = e.target.closest('.man-prod-del');
+        if (!del) return;
+        const rows = prodWrap.querySelectorAll('.man-prod-row');
+        // The last line is emptied rather than removed, so the form never
+        // ends up with nowhere to type.
+        if (rows.length <= 1) {
+          const t = prodWrap.querySelector('.man-prod-text');
+          const q = prodWrap.querySelector('.man-prod-qty');
+          if (t) t.value = '';
+          if (q) q.value = '1';
+          return;
+        }
+        del.closest('.man-prod-row').remove();
+      });
+    }
+    const lMinus = document.getElementById('man-labels-minus');
+    const lPlus = document.getElementById('man-labels-plus');
+    if (lMinus) lMinus.addEventListener('click', () => manSetLabels(manLabelsCount() - 1));
+    if (lPlus) lPlus.addEventListener('click', () => manSetLabels(manLabelsCount() + 1));
+
+    manResetProdRows();
+    manSetLabels(1);
+    manLoadKnownProducts();
     manLoadSavedBook();
   })();
 
